@@ -1,0 +1,9 @@
+## Dependency manifest for the C6 gateway app component.
+## In ESP-IDF v6.x, esp_websocket_client and cJSON moved out of the core
+## components tree into the component registry. The component manager
+## resolves and fetches them into build/managed_components automatically.
+version: "1.0.0"
+description: "imPress C6 class gateway — WiFi + WebSocket + SPI slave"
+dependencies:
+  espressif/esp_websocket_client: "^1.8.0"
+  espressif/cjson: "^1.7.19"

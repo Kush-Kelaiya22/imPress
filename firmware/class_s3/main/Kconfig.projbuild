@@ -1,0 +1,82 @@
+menu "imPress S3 Class Module Configuration"
+
+    menu "WiFi (OTA only)"
+        config WIFI_SSID
+            string "WiFi SSID"
+            default "impress-hotspot"
+            help
+                SSID of the WiFi network the S3 attaches to ONLY during
+                OTA updates. Normally the S3 uses ESP-NOW and is off-WiFi.
+
+        config WIFI_PASSWORD
+            string "WiFi Password"
+            default "impress123"
+            help
+                Password for the WiFi network (used for OTA only).
+
+        config WIFI_MAX_RETRY
+            int "Max WiFi connect retries (OTA)"
+            range 3 15
+            default 5
+            help
+                Maximum WiFi connection attempts during OTA. If this many
+                fail, the S3 abandons OTA and returns to mesh duty.
+
+    endmenu
+
+    menu "Backend Server (OTA)"
+        config BACKEND_HOST
+            string "Backend IP or hostname"
+            default "192.168.1.100"
+            help
+                IP or hostname of the FastAPI backend (for OTA downloads).
+
+        config BACKEND_PORT
+            int "Backend HTTP port"
+            default 8000
+            help
+                HTTP port of the FastAPI backend.
+
+        config DEVICE_API_KEY
+            string "Device API key"
+            default "impress-device-key-2024"
+            help
+                Shared secret sent in X-API-Key header during OTA.
+                Must match IMPRESS_DEVICE_API_KEY on the backend.
+
+    endmenu
+
+    menu "Mesh Timing"
+        config HEARTBEAT_INTERVAL_MS
+            int "Heartbeat interval (ms)"
+            range 2000 60000
+            default 5000
+            help
+                How often the S3 sends status to the C6 via SPI.
+
+        config STUDENT_TIMEOUT_MS
+            int "Student timeout (ms)"
+            range 10000 300000
+            default 60000
+            help
+                If no message is received from a student node for this long,
+                mark it inactive in the routing table.
+
+        config SPI_POLL_INTERVAL_MS
+            int "SPI poll interval (ms)"
+            range 20 500
+            default 50
+            help
+                How often the S3 polls the C6 for commands via SPI.
+
+        config MESH_WIFI_CHANNEL
+            int "Mesh WiFi channel (1-13)"
+            range 1 13
+            default 1
+            help
+                WiFi channel used for ESP-NOW mesh between S3 and students.
+                Must match student module channel.
+
+    endmenu
+
+endmenu

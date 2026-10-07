@@ -1,0 +1,108 @@
+menu "imPress C6 Gateway Configuration"
+
+    menu "WiFi"
+        config WIFI_SSID
+            string "WiFi SSID"
+            default "impress-hotspot"
+            help
+                SSID of the WiFi network the C6 connects to (backend LAN).
+
+        config WIFI_PASSWORD
+            string "WiFi Password"
+            default "impress123"
+            help
+                Password for the WiFi network.
+
+        config WIFI_MAX_RETRY
+            int "Max WiFi connect retries"
+            range 3 30
+            default 10
+            help
+                Maximum WiFi connection attempts before entering backoff.
+
+    endmenu
+
+    menu "Backend Server"
+        config BACKEND_HOST
+            string "Backend IP or hostname"
+            default "192.168.137.1"
+            help
+                IP or hostname of the FastAPI backend.
+
+        config BACKEND_PORT
+            int "Backend HTTP port"
+            default 8000
+            help
+                HTTP port of the FastAPI backend.
+
+        config DEVICE_API_KEY
+            string "Device API key"
+            default "impress-device-key-2024"
+            help
+                Shared secret sent in X-API-Key header and WS ?api_key= param.
+                Must match IMPRESS_DEVICE_API_KEY on the backend.
+
+        config CLASS_SESSION_ID
+            int "Class session ID (0 = auto-assign on first WS)"
+            default 0
+            help
+                Set to 0 to have the backend assign the class on first connect.
+                Set a positive integer to pin this gateway to a specific class.
+
+    endmenu
+
+    menu "Timing"
+        config HEARTBEAT_INTERVAL_S
+            int "Heartbeat interval (seconds)"
+            range 5 300
+            default 15
+            help
+                How often the C6 sends a heartbeat to the backend.
+
+        config WS_PING_INTERVAL_S
+            int "WebSocket ping interval (seconds)"
+            range 10 120
+            default 30
+
+        config STATUS_PING_INTERVAL_S
+            int "Classroom status ping interval (seconds)"
+            range 60 600
+            default 120
+            help
+                How often the C6 sends a classroom status update (student count,
+                uptime, class_id) to the backend. This is the "give updates
+                every 2 minutes" ping — separate from the fast liveness heartbeat.
+
+        config SPI_BATCH_MAX_WAIT_MS
+            int "Max time to wait before flushing SPI batch (ms)"
+            range 100 5000
+            default 500
+            help
+                The SPI→HTTP task accumulates student messages for up to this
+                many milliseconds before flushing them as a single /api/device/batch POST.
+
+        config BATCH_MAX_SIZE
+            int "Max messages per batch"
+            range 5 50
+            default 20
+            help
+                Maximum number of student messages per HTTP batch POST.
+
+    endmenu
+
+    menu "Battery ADC (optional)"
+        config BATTERY_ADC_EN
+            bool "Enable battery voltage ADC reading"
+            default n
+            help
+                Enable if a voltage divider on ADC GPIO is used to monitor
+                the gateway power supply.
+
+        config BATTERY_ADC_GPIO
+            int "Battery ADC GPIO number"
+            default 4
+            depends on BATTERY_ADC_EN
+
+    endmenu
+
+endmenu
