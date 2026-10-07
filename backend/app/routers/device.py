@@ -3,17 +3,19 @@
 import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Header
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
-from ..models import EspDevice, ClassSession, Attendance, StudentEnrollment, Student, ActivityLog
+from ..models import EspDevice, ClassSession, Attendance, StudentEnrollment, Student, ActivityLog, \
+    Quiz, QuizAnswer, Poll, PollVote
 from ..schemas import DeviceRegister, DeviceHeartbeat, DeviceStatusPing, DeviceAttendance, \
     DeviceDataBatch, DeviceFirmwareCheck, DeviceOtaApplied, OtaStatusResponse
 from ..config import settings
 from ..services.presence import mark_online, _push_after_commit
 from ..services.firmware_store import get_firmware_path
 from ..timeutil import istnow, istnow_aware
+from ..ws.manager import manager
 
 router = APIRouter(prefix="/api/device", tags=["device"])
 
@@ -382,6 +384,75 @@ async def _resolve_student_id_by_enrollment(db: AsyncSession, msg: dict) -> int 
     return None
 
 
+def _ints(*values) -> bool:
+    return all(isinstance(v, int) and not isinstance(v, bool) for v in values)
+
+
+async def _record_quiz_answer(db: AsyncSession, msg: dict) -> dict | None:
+    """Validate + de-duplicate one mesh quiz answer.
+
+    Mesh relays can deliver the same press several times, so (quiz, question,
+    student) is unique. Answers for unknown students, inactive/unknown quizzes,
+    unknown questions or out-of-range options are dropped.
+    Returns the teacher broadcast for a stored answer, else None.
+    """
+    quiz_id, order, option = msg.get("quiz_id"), msg.get("question_order", 0), msg.get("selected_option")
+    if not _ints(quiz_id, order, option):
+        return None
+    student_id = await _resolve_student_id_by_enrollment(db, msg)
+    quiz = await db.get(Quiz, quiz_id)
+    if student_id is None or quiz is None or quiz.status != "active":
+        return None
+    question = next((q for q in quiz.questions if q.order_num == order), None)
+    if question is None or not 0 <= option < len(question.options):
+        return None
+    dup = await db.execute(select(QuizAnswer.id).where(
+        QuizAnswer.quiz_id == quiz_id, QuizAnswer.question_order == order,
+        QuizAnswer.student_id == student_id))
+    if dup.first() is not None:
+        return None
+    resp = msg.get("response_time_ms", 0)
+    db.add(QuizAnswer(quiz_id=quiz_id, question_order=order, student_id=student_id,
+                      selected_option=option, response_time_ms=resp if _ints(resp) else 0))
+    return {"class_id": quiz.class_session_id, "type": "quiz_answer",
+            "quiz_id": quiz_id, "question_order": order}
+
+
+async def _record_poll_vote(db: AsyncSession, msg: dict) -> dict | None:
+    """Validate + de-duplicate one mesh poll vote ((poll, student) is unique)."""
+    poll_id, option = msg.get("poll_id"), msg.get("selected_option")
+    if not _ints(poll_id, option):
+        return None
+    student_id = await _resolve_student_id_by_enrollment(db, msg)
+    poll = await db.get(Poll, poll_id)
+    if student_id is None or poll is None or poll.status != "active":
+        return None
+    if not 0 <= option < len(poll.options):
+        return None
+    dup = await db.execute(select(PollVote.id).where(
+        PollVote.poll_id == poll_id, PollVote.student_id == student_id))
+    if dup.first() is not None:
+        return None
+    db.add(PollVote(poll_id=poll_id, student_id=student_id, selected_option=option))
+    return {"class_id": poll.class_session_id, "type": "poll_vote",
+            "poll_id": poll_id, "selected_option": option}
+
+
+async def _broadcast_participation(db: AsyncSession, event: dict) -> None:
+    """Same live-count frames the HTTP answer/vote routes send to teachers."""
+    class_id = event.pop("class_id")
+    if event["type"] == "quiz_answer":
+        total = await db.scalar(select(func.count()).select_from(QuizAnswer).where(
+            QuizAnswer.quiz_id == event["quiz_id"],
+            QuizAnswer.question_order == event["question_order"]))
+        event["total_answers"] = total or 0
+    else:
+        total = await db.scalar(select(func.count()).select_from(PollVote).where(
+            PollVote.poll_id == event["poll_id"]))
+        event["total_votes"] = total or 0
+    await manager.broadcast_to_class(class_id, event)
+
+
 async def _resolve_gateway(db: AsyncSession, mac: str) -> EspDevice | None:
     """Resolve the relaying C6 gateway device by its MAC (from a mesh event)."""
     mac = (mac or "").strip()
@@ -395,7 +466,9 @@ async def _resolve_gateway(db: AsyncSession, mac: str) -> EspDevice | None:
 async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db)):
     """C6 sends batched data from mesh students."""
     processed = 0
+    skipped = 0
     touched_device_ids: list[int] = []
+    participation: list[dict] = []
     for msg in body.messages:
         msg_type = msg.get("type", "")
 
@@ -507,32 +580,19 @@ async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db
                 touched_device_ids.append(gw.id)
             processed += 1
 
-        elif msg_type == "quiz_answer":
-            from ..models import QuizAnswer
-            student_id = await _resolve_student_id_by_enrollment(db, msg)
-            answer = QuizAnswer(
-                quiz_id=msg.get("quiz_id", 0),
-                question_order=msg.get("question_order", 0),
-                student_id=student_id,
-                selected_option=msg.get("selected_option", 0),
-                response_time_ms=msg.get("response_time_ms", 0),
-            )
-            db.add(answer)
-            processed += 1
-
-        elif msg_type == "poll_vote":
-            from ..models import PollVote
-            student_id = await _resolve_student_id_by_enrollment(db, msg)
-            vote = PollVote(
-                poll_id=msg.get("poll_id", 0),
-                student_id=student_id,
-                selected_option=msg.get("selected_option", 0),
-            )
-            db.add(vote)
-            processed += 1
+        elif msg_type in ("quiz_answer", "poll_vote"):
+            record = _record_quiz_answer if msg_type == "quiz_answer" else _record_poll_vote
+            event = await record(db, msg)
+            if event is None:
+                skipped += 1
+            else:
+                participation.append(event)
+                processed += 1
 
     await db.commit()
+    for event in participation:
+        await _broadcast_participation(db, event)
     # Push the refreshed presence to any connected teachers.
     for dev_id in set(touched_device_ids):
         asyncio.create_task(_push_after_commit(dev_id))
-    return {"status": "ok", "processed": processed}
+    return {"status": "ok", "processed": processed, "skipped": skipped}

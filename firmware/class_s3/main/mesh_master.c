@@ -45,6 +45,10 @@ static SemaphoreHandle_t s_queue_mutex;
 
 static mesh_master_recv_cb_t s_recv_callback;
 
+/* Each student message reaches the root once per relay path; forward it to
+ * the C6 once. Only touched from on_espnow_recv (Wi-Fi task). */
+static mesh_dedup_t s_seen;
+
 /* ── Mesh Header (must match student module) ──────────────────────── */
 
 typedef struct __attribute__((packed)) {
@@ -168,9 +172,13 @@ static void on_espnow_recv(const esp_now_recv_info_t *info,
     int consumed = msg_decode(msg_data, msg_len, &msg);
 
     const char *enrollment = NULL;
-    if (consumed > 0 && msg_verify_crc(&msg)) {
+    bool valid = consumed > 0 && msg_verify_crc(&msg);
+    if (valid) {
         enrollment = extract_enrollment(msg.type, msg.payload);
     }
+    uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    bool duplicate = valid &&
+        mesh_dedup_check(&s_seen, mesh_msg_id(hdr->sender_id, msg_data, consumed), now_ms);
 
     /* Update student routing table */
     xSemaphoreTake(s_student_mutex, portMAX_DELAY);
@@ -184,8 +192,9 @@ static void on_espnow_recv(const esp_now_recv_info_t *info,
     }
     xSemaphoreGive(s_student_mutex);
 
-    /* Queue message for SPI transfer to C6 */
-    if (consumed > 0 && msg_verify_crc(&msg)) {
+    /* Queue message for SPI transfer to C6 — once, however many relay
+     * copies arrive. (The routing-table refresh above still counts them.) */
+    if (valid && !duplicate) {
         xSemaphoreTake(s_queue_mutex, portMAX_DELAY);
         int next = (s_msg_queue_tail + 1) % MSG_QUEUE_SIZE;
         if (next != s_msg_queue_head) {
@@ -207,7 +216,7 @@ static void on_espnow_recv(const esp_now_recv_info_t *info,
 
     /* If this was a JOIN, broadcast a heartbeat (TTL=MAX) so the student
      * hears it and flips IS_CONNECTED (student mesh_espnow.c:112). */
-    if (msg.type == MSG_STUDENT_JOIN) {
+    if (valid && msg.type == MSG_STUDENT_JOIN) {   /* reply even to a retried JOIN */
         payload_heartbeat_t hb = {
             .device_id   = hdr->sender_id,
             .battery_pct = 100,

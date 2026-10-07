@@ -147,3 +147,37 @@ const char *msg_type_name(msg_type_t type)
         default:                  return "UNKNOWN";
     }
 }
+
+/* ── Mesh de-duplication ───────────────────────────────────────────── */
+
+uint32_t mesh_msg_id(uint32_t sender_id, const uint8_t *frame, size_t frame_len)
+{
+    uint32_t h = 2166136261u;                 /* FNV-1a */
+    for (int i = 0; i < 4; i++) {
+        h ^= (uint8_t)(sender_id >> (8 * i));
+        h *= 16777619u;
+    }
+    for (size_t i = 0; i < frame_len; i++) {
+        h ^= frame[i];
+        h *= 16777619u;
+    }
+    return h;
+}
+
+bool mesh_dedup_check(mesh_dedup_t *d, uint32_t id, uint32_t now_ms)
+{
+    for (int i = 0; i < MESH_DEDUP_SLOTS; i++) {
+        if (d->used[i] && d->id[i] == id) {
+            if ((uint32_t)(now_ms - d->seen_ms[i]) < MESH_DEDUP_WINDOW_MS) {
+                return true;
+            }
+            d->seen_ms[i] = now_ms;           /* expired: treat as new */
+            return false;
+        }
+    }
+    d->id[d->next] = id;
+    d->seen_ms[d->next] = now_ms;
+    d->used[d->next] = 1;
+    d->next = (d->next + 1) % MESH_DEDUP_SLOTS;
+    return false;
+}
