@@ -9,8 +9,8 @@ Base URL: `http(s)://<host>:<port>`. All bodies are JSON unless marked *multipar
 | Topic | Rule |
 |---|---|
 | Auth header | `Authorization: Bearer <access_token>` (an opaque `impress_…` token from `/api/auth/login`) |
-| Guards | **public** · **session** (any logged-in user) · **teacher+** (teacher, admin, super_admin) · **admin** (admin, super_admin) · **super_admin** |
-| Teacher scope | Teachers see and operate only classes where they are the primary `teacher_id` (class routes also accept secondary faculty). Admins see everything. |
+| Guards | **public** · **session** (any logged-in user) · **teacher+** (teacher, admin, super_admin) · **class access** (teacher+ *and* primary teacher / co-faculty of that class, or admin) · **admin** (admin, super_admin) · **super_admin** |
+| Class access | One rule everywhere (classes, quizzes, polls, results): the **primary teacher**, any **co-faculty** member, or an **admin**. Anyone else gets 403. Primary-only actions: deleting the class. |
 | Timestamps | ISO-8601, naive **IST** (e.g. `2026-10-07T21:35:16.319308`) unless the field says otherwise |
 | Validation errors | `422` with FastAPI's `{"detail":[{"loc":[…],"msg":…,"type":…}]}` |
 | Other errors | `{"detail": "<message>"}` with the status below |
@@ -130,8 +130,8 @@ CSV import response (used by both user and student imports):
 | `POST /api/classes/` | teacher+ | `ClassCreate`; default teacher = the caller |
 | `GET /api/classes/{id}` | teacher+ | 403 if not your class |
 | `GET /api/classes/{id}/presence` | teacher+ | live device snapshot ([device API](device-api.md#presence-snapshot)) |
-| `POST /api/classes/{id}/activate` · `/deactivate` | teacher+ | toggles `is_active` (gateways auto-link only to active classes) |
-| `POST /api/classes/join` | teacher+ | `{code}`; unknown → 404, inactive → 400 (⚠️ see [known issues](../reference/known-issues.md)) |
+| `POST /api/classes/{id}/activate` · `POST /api/classes/{id}/deactivate` | teacher+ | toggles `is_active` (gateways auto-link only to active classes) |
+| `POST /api/classes/join` | teacher+ | `{code}`; the caller becomes **co-faculty** (idempotent) and the primary teacher is never replaced (#19); unknown → 404, inactive → 400 |
 | `DELETE /api/classes/{id}` | teacher+ | primary teacher or admin |
 | `GET /api/devices/live` · `/api/devices/tree` | teacher+ | device presence across the caller's classes |
 
@@ -152,7 +152,7 @@ CSV import response (used by both user and student imports):
 | `GET /api/students/{id}/classes` | teacher+ | `[{enrollment_id, class_id, course_code, course_name, subject, course_section, term, year, meeting_schedule, location, teacher_name, is_active}]` |
 | `POST /api/students/import` | teacher+ | *multipart* CSV, below |
 | `POST /api/students/classes/{id}/import-students` | teacher+ | same CSV, plus enroll into the class |
-| `POST /api/admin/students` · `/bulk` | teacher+ | admin-path equivalents |
+| `POST /api/admin/students` · `POST /api/admin/students/bulk` | teacher+ | admin-path equivalents |
 | `POST /api/admin/classes/{id}/enroll` | teacher+ | `{student_id}` |
 | `POST /api/admin/classes/{id}/enroll-bulk` | teacher+ | `{student_ids: [...]}` |
 | `DELETE /api/admin/classes/{id}/unenroll/{student_id}` | teacher+ | |
@@ -186,13 +186,13 @@ stateDiagram-v2
 
 | Method & path | Guard | Notes |
 |---|---|---|
-| `POST /api/quizzes/` | teacher+ (own class) | `{class_session_id, title, questions: [{question_text, options (2-6), correct_option}], quiz_mode: planned|impromptu, timing_mode: per_question|total|manual, question_time_limit, total_time_limit}`; ≥ 1 question |
-| `GET /api/quizzes/class/{class_id}` | teacher+ (own class) | newest first |
-| `GET /api/quizzes/{id}` | session | `QuizResponse {id, class_session_id, title, status, quiz_mode, timing_mode, question_time_limit, total_time_limit, current_question, is_live, question_count, created_at, started_at}` |
-| `POST /api/quizzes/{id}/start` | teacher+ | already active → 400; broadcasts `quiz_question` (q 0) |
-| `POST /api/quizzes/{id}/next` | teacher+ | not active → 400; broadcasts the next `quiz_question`, or completes |
-| `POST /api/quizzes/{id}/stop` | teacher+ | → completed; broadcasts `quiz_end` |
-| `GET /api/quizzes/{id}/results` | session | below |
+| `POST /api/quizzes/` | class access | `{class_session_id, title, questions: [{question_text, options (2-6), correct_option}], quiz_mode: planned|impromptu, timing_mode: per_question|total|manual, question_time_limit, total_time_limit}`; ≥ 1 question; `correct_option` must be `< len(options)` (422, #22) |
+| `GET /api/quizzes/class/{class_id}` | class access | newest first |
+| `GET /api/quizzes/{id}` | class access (#20) | `QuizResponse {id, class_session_id, title, status, quiz_mode, timing_mode, question_time_limit, total_time_limit, current_question, is_live, question_count, created_at, started_at}` |
+| `POST /api/quizzes/{id}/start` | class access | already active → 400; broadcasts `quiz_question` (q 0) |
+| `POST /api/quizzes/{id}/next` | class access | not active → 400; broadcasts the next `quiz_question`, or completes |
+| `POST /api/quizzes/{id}/stop` | class access | → completed; broadcasts `quiz_end` |
+| `GET /api/quizzes/{id}/results` | class access (#20) | below |
 
 ```json
 {"quiz_id": 1, "title": "Q", "status": "active", "quiz_mode": "impromptu", "timing_mode": "manual",
@@ -204,12 +204,12 @@ stateDiagram-v2
 
 | Method & path | Guard | Notes |
 |---|---|---|
-| `POST /api/polls/` | teacher+ (own class) | `{class_session_id, title (1-256), options (2-6), poll_mode: live|planned}`; `live` → active immediately + `poll_start` broadcast |
-| `GET /api/polls/class/{class_id}` | teacher+ | |
-| `GET /api/polls/{id}` | session | `PollResponse {id, class_session_id, title, options, poll_mode, status, is_live, total_votes, created_at}` |
-| `POST /api/polls/{id}/start` | teacher+ | draft → active; already active → 400; broadcasts `poll_start` |
-| `POST /api/polls/{id}/end` | teacher+ | → closed; broadcasts `poll_end` with `option_counts` |
-| `GET /api/polls/{id}/results` | session | `{poll_id, title, options, poll_mode, status, total_votes, option_counts}` |
+| `POST /api/polls/` | class access | `{class_session_id, title (1-256), options (2-6), poll_mode: live|planned}`; `live` → active immediately + `poll_start` broadcast |
+| `GET /api/polls/class/{class_id}` | class access | |
+| `GET /api/polls/{id}` | class access (#20) | `PollResponse {id, class_session_id, title, options, poll_mode, status, is_live, total_votes, created_at}` |
+| `POST /api/polls/{id}/start` | class access | draft → active; already active → 400; broadcasts `poll_start` |
+| `POST /api/polls/{id}/end` | class access | → closed; broadcasts `poll_end` with `option_counts` |
+| `GET /api/polls/{id}/results` | class access (#20) | `{poll_id, title, options, poll_mode, status, total_votes, option_counts}` |
 
 ---
 
@@ -217,10 +217,10 @@ stateDiagram-v2
 
 | Method & path | Guard | Notes |
 |---|---|---|
-| `GET /api/admin/modules` · `/{id}` | admin | `DeviceResponse` (identity, presence, telemetry, OTA state, linked class) |
+| `GET /api/admin/modules` · `GET /api/admin/modules/{id}` | admin | `DeviceResponse` (identity, presence, telemetry, OTA state, linked class) |
 | `POST /api/admin/modules/{id}/access` | admin | `{is_active}` enable/disable a module |
 | `POST /api/admin/modules/{id}/verify` | admin | stamps `verified_at` |
-| `POST /api/admin/modules/{node_id}/link-device` · `/{id}/unlink` | admin | set/clear `gateway_id` relations |
+| `POST /api/admin/modules/{node_id}/link-device` · `POST /api/admin/modules/{id}/unlink` | admin | set/clear `gateway_id` relations |
 | `POST /api/admin/firmware/upload` | admin | *multipart* `device_type ∈ c6|s3|student`, `version` (semver, optional `v`), `file` → stored as `<type>-<version>.bin` |
 | `POST /api/admin/modules/{id}/ota` | admin | `{version}` → `pending_version`; for an S3 with a gateway, sends `device_command ota_update` to the gateway's class room |
 | `GET /api/admin/activity` | admin | activity log |

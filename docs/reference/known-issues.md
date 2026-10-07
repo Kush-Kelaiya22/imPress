@@ -2,16 +2,16 @@
 
 Verified observations that are **not fixed** on `v2`. Each tracked bug has a GitHub issue with reproduction steps.
 
-## Open bugs (tracked)
+## Open bugs
 
-| Issue | Severity | Summary |
-|---|---|---|
-| [#19](https://github.com/Kush-Kelaiya22/imPress/issues/19) | high · security | `POST /api/classes/join` lets any teacher who knows the code become the class's **primary teacher** (verified: ownership moves). |
-| [#20](https://github.com/Kush-Kelaiya22/imPress/issues/20) | medium · security | Quiz/poll details and **results** are readable by any logged-in user, even one who gets 403 on the class itself. |
-| [#21](https://github.com/Kush-Kelaiya22/imPress/issues/21) | medium | **Co-faculty** can view a class but get 403 creating or running its quizzes/polls (`_verify_class_access` ≠ `_has_access`). |
-| [#22](https://github.com/Kush-Kelaiya22/imPress/issues/22) | low | `correct_option` isn't validated against the number of options (2 options + `correct_option: 9` → 201). |
+None. Every issue opened by the audit (#1–#22) is fixed on its own branch and merged into `v2` (see the [changelog](changelog-v2.md)). The four found during the documentation pass were resolved like this:
 
-The test suite deliberately does **not** pin the current behaviour of these four. When fixing them, add the tests listed in each issue.
+| Issue | Resolution |
+|---|---|
+| [#19](https://github.com/Kush-Kelaiya22/imPress/issues/19) class takeover via join code | joining adds **co-faculty**; the primary teacher is never replaced |
+| [#20](https://github.com/Kush-Kelaiya22/imPress/issues/20) results readable cross-class | quiz/poll details and results require class access |
+| [#21](https://github.com/Kush-Kelaiya22/imPress/issues/21) co-faculty couldn't run quizzes | quizzes and polls share the class access rule |
+| [#22](https://github.com/Kush-Kelaiya22/imPress/issues/22) `correct_option` unchecked | validated against the number of options (422) |
 
 ## Limitations by design or pending decisions
 

@@ -6,40 +6,87 @@ The test suite exists so the system can change while its **core logic stays inta
 
 ```mermaid
 flowchart LR
-    subgraph PY["pytest (194)"]
-        BE["backend/tests (180)<br/>in-process FastAPI + fresh SQLite per test"]
+    RT["run_tests.py<br/>one command, one report"]
+    subgraph PY["pytest"]
+        BE["backend/tests (198)<br/>in-process FastAPI + fresh SQLite per test"]
         FS["firmware/tests (14)<br/>structural guards on C sources"]
+        RP["tests/ (76)<br/>CI, repository and docs consistency"]
     end
     subgraph C["host C (6 suites, 25 cases)<br/>cc + ASan + UBSan, no ESP-IDF"]
         PR["protocol: frames, SPI records, mesh de-dup"]
         C6["C6: SPI slave, WS command translation, runtime config"]
         STU["student: identity store"]
     end
-    subgraph HW["ESP-IDF v6.1 builds"]
-        B1["class_c6 · class_s3 · student"]
+    subgraph OPT["optional"]
+        IDF["ESP-IDF v6.1 builds ×3"]
+        FE["frontend build"]
     end
+    RT --> PY
+    RT --> C
+    RT -. "--with-idf / --with-frontend" .-> OPT
     CT[("firmware/contract/<br/>device_ws_frames.json")]
     BE -- "generates & checks" --> CT
     C6 -- "consumes" --> CT
 ```
 
-## Running
+## Running: `run_tests.py`
 
 ```bash
-pip install -r backend/requirements-dev.txt
-python -m pytest -q backend/tests          # ~3 min
-python -m pytest -q firmware/tests         # < 1 s
-firmware/run_host_tests.sh                 # ~30 s, needs cc/clang
-docker run --rm -v "$PWD/firmware":/project -w /project/class_c6 espressif/idf:v6.1 idf.py build
+pip install -r backend/requirements-dev.txt   # pytest, httpx, pyyaml
+python run_tests.py                           # every default suite, ~4 min
 ```
 
-Useful options: `pytest -k ws_auth -v`, `pytest -x --tb=long`, `pytest backend/tests/test_device_api.py::test_attendance_paths`.
+Real output from the `v2` branch (slowest list abridged):
+```
+imPress test report
+suite                      status    passed  failed  skipped      time
+backend                     PASS       198       0        0   3m19.4s
+firmware-static             PASS        14       0        0      0.4s
+repo                        PASS        76       0        0      3.0s
+host:class_c6               PASS         1       0        0      0.7s
+host:class_c6:config        PASS         5       0        0      0.6s
+host:class_c6:ws_command    PASS         2       0        0      0.7s
+host:protocol               PASS         6       0        0      0.5s
+host:protocol:mesh_dedup    PASS         4       0        0      0.6s
+host:student                PASS         7       0        0      0.6s
+
+Slowest 10 tests
+     3.0s  backend.tests.test_cofaculty_access::test_cofaculty_runs_quiz_end_to_end
+     3.0s  backend.tests.test_cofaculty_access::test_cofaculty_runs_poll
+     3.0s  backend.tests.test_cofaculty_access::test_outsider_still_forbidden_and_owner_and_admin_allowed
+     …
+
+ ALL PASSED   9 suites run, 0 skipped | 313 passed, 0 failed, 0 skipped | wall time 3m26.6s
+```
+
+| Option | Effect |
+|---|---|
+| `--list` | show every suite (default and optional) |
+| `-s/--suite NAME` | run matching suites; prefixes work (`-s host`, `-s host:class_c6`), repeatable |
+| `--with-idf` | also `idf.py build` all three projects (native IDF, else Docker `espressif/idf:v6.1`) |
+| `--with-frontend` | also `npm install && npm run build` |
+| `-x/--fail-fast` | stop after the first failing suite |
+| `-v/--verbose` | stream each suite's full output |
+| `--slowest N` | show the N slowest individual tests (default 10) |
+| `--json FILE` | machine-readable report (per suite and per test case, with durations) |
+| `--junit-dir DIR` | keep pytest JUnit XML files |
+| `--markdown FILE` | Markdown report; written to `$GITHUB_STEP_SUMMARY` automatically in Actions |
+| `--no-color` | plain output (`NO_COLOR` is honoured too) |
+
+- **Statuses:** PASS, FAIL, or **SKIP** when a prerequisite is missing (no `cc`, no Docker, pytest not installed). A skip is reported with its reason and never counts as a failure.
+- **Exit code:** 0 when nothing failed, 1 on any failure, 2 for an unknown suite name.
+
+Run a single test directly with pytest when iterating: `pytest backend/tests/test_device_api.py::test_attendance_paths -x`.
 
 ## Backend suites (`backend/tests`)
 
 | File | Module(s) under test | What is pinned |
 |---|---|---|
 | `test_api_smoke.py` | app | boot on an empty DB, login, auth gates, SPA fallback |
+| `test_class_join.py` | `POST /api/classes/join` | joining adds co-faculty, never replaces the owner; idempotent (#19) |
+| `test_results_access.py` | quiz/poll read routes | details and results require class access (#20) |
+| `test_cofaculty_access.py` | quizzes/polls | co-faculty run the full quiz and poll lifecycle; outsiders 403 (#21) |
+| `test_quiz_correct_option.py` | quiz validation | `correct_option` bounds; an invalid question rejects the whole quiz (#22) |
 | `test_auth_sessions.py` | `auth.py`, `routers/auth.py`, middleware, `services/sessions.py` | opaque tokens; bad/disabled logins; independent sessions; profile and password change; **idle vs hard expiry codes**; status endpoints don't extend sessions while real calls do; warning window; cleanup deletes only dead sessions |
 | `test_ws_auth.py` | `ws/handler.py`, `ws/manager.py` | teacher session-token auth (valid, garbage, revoked, idle, inactive); device key; role-targeted broadcasts |
 | `test_admin_users.py` | admin user routes | uniqueness, field limits, role filter, RBAC, deactivate/reset/delete guards, CSV import |
@@ -110,17 +157,50 @@ Each suite compiles **real firmware sources** with `-Wall -Wextra -Werror -fsani
 2. Reuse `stubs/` (types and prototypes only) and `firmware/test_support/nvs_fake.c`.
 3. Add `run_<thing>.sh` (copy an existing one). `run_host_tests.sh` picks it up automatically.
 
+## Repository and CI checks (`tests/`)
+
+These protect the pipeline and the docs from silently drifting:
+
+| File | Checks |
+|---|---|
+| `test_ci_workflow.py` | triggers (push, PR, manual); least-privilege permissions; concurrency cancellation; every job has a timeout; actions pinned to major versions; **every runner suite is wired into CI**; **every firmware project is in the build matrix**; one IDF version everywhere; the result gate depends on every job; JUnit reports uploaded |
+| `test_repo_hygiene.py` | no generated or compiled files tracked; no tracked file matches `.gitignore`; runtime paths ignored; first-party shell scripts are executable, have a shebang and are LF; `.gitattributes` rules; the runner finds every host suite |
+| `test_docs_consistency.py` | every internal link and anchor resolves; code fences balanced and Mermaid types valid; **every API route appears in the API docs**; **every backend setting appears in the configuration guide**; the README has no emoji and keeps its core sections |
+| `test_run_tests.py` | runner discovery and selection; JUnit and host-output parsing; SKIP on missing tools; failure reporting; Markdown report; an end-to-end JSON report; exit code 2 on an unknown suite |
+
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push and PR:
+`.github/workflows/ci.yml` runs on every push, every pull request and on demand (`workflow_dispatch`).
 
-| Job | Command |
-|---|---|
-| Backend tests | `pytest backend/tests` (Python 3.12) |
-| Firmware structural | `pytest firmware/tests` |
-| Firmware host | `firmware/run_host_tests.sh` (gcc + sanitizers) |
-| ESP-IDF v6.1 build | `idf.py build` for `class_c6`, `class_s3`, `student` in `espressif/idf:v6.1` |
-| Frontend build | `npm install && npm run build` (Node 20) |
+```mermaid
+flowchart LR
+    T["push · PR · manual"] --> R["Repository and CI checks"]
+    T --> B["Backend tests"]
+    T --> S["Firmware structural"]
+    T --> H["Firmware host (gcc + ASan/UBSan)"]
+    T --> I["ESP-IDF v6.1 build ×3<br/>size report + firmware artifacts"]
+    T --> F["Frontend build"]
+    R & B & S & H & I & F --> G{"CI result<br/>(single required check)"}
+```
+
+| Job | Runs | Artifacts |
+|---|---|---|
+| Repository and CI checks | byte-compile sources; `run_tests.py --suite repo` | JUnit XML |
+| Backend tests | `run_tests.py --suite backend` (Python 3.12) | JUnit XML |
+| Firmware structural | `run_tests.py --suite firmware-static` | – |
+| Firmware host | `run_tests.py --suite host` (gcc) | – |
+| ESP-IDF v6.1 build | `idf.py build` + `idf.py size` for `class_c6`, `class_s3`, `student` | `.bin` images (7 days) |
+| Frontend build | `run_tests.py --suite frontend` (Node 20) | – |
+| **CI result** | fails unless every job above succeeded | – |
+
+Pipeline properties:
+- **`permissions: contents: read`**: least privilege.
+- **`concurrency`**: a newer push cancels the running pipeline for the same ref.
+- **Per-job `timeout-minutes`**: a hang can't hold a runner.
+- **pip caching.**
+- **The runner's report appears in each job's summary page.**
+
+Mark **CI result** as the required status check in branch protection.
 
 ## What is *not* automatically tested
 

@@ -68,3 +68,14 @@ Short records of the non-obvious choices: the context, the decision, and its con
 **Context:** a shared cJSON tree mutated by two tasks (#4).
 **Decision:** shared mutable state has one owner task; other tasks hand off via flags or queues. This is enforced by structural tests.
 **Consequences:** no locks to forget, and no lock held across network I/O.
+
+### D14: One class-access rule for every class-scoped resource
+**Context:** class routes accepted co-faculty, quizzes and polls didn't (#21); read endpoints had no check at all (#20); joining by code transferred ownership (#19).
+**Decision:** `classes._has_access()` (primary teacher, co-faculty, admin) is *the* rule. Quiz and poll routes call it through `_verify_class_access`. Ownership changes only via admin actions; joining by code grants co-faculty.
+**Consequences:** a single place to change authorization for classes; co-teaching works end to end; enumeration of other classes' results is closed.
+
+### D15: One test command, used by developers and CI alike
+**Context:** five kinds of tests (backend, structural, repository, host C, builds) with different tooling.
+**Decision:** `run_tests.py` discovers and runs every suite with a uniform pass/fail/duration report; each CI job calls it with `--suite`, so the local and CI paths are the same code.
+**Consequences:** "works locally" means "works in CI". Adding a host suite (`firmware/*/test_host/run*.sh`) automatically adds it to both, and a repository test fails if a suite isn't wired into CI.
+

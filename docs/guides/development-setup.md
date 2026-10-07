@@ -91,9 +91,10 @@ python -m pytest -q firmware/tests    # structural guards
 ## 4. Before you push
 
 ```bash
-python -m pytest -q backend/tests firmware/tests && firmware/run_host_tests.sh
+python run_tests.py                 # every default suite with a pass/fail/duration report
+python run_tests.py --with-idf      # also build all three firmware projects (Docker or native IDF)
 ```
-CI runs the same suites plus IDF builds and the frontend build (see [testing](testing.md)).
+CI runs the same suites through the same runner, plus the IDF and frontend builds (see [testing](testing.md)).
 
 ## Repository hygiene
 

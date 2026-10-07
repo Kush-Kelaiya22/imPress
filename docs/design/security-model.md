@@ -38,7 +38,7 @@ flowchart LR
 | Principal | Mechanism | Details |
 |---|---|---|
 | Users | Opaque server-side **sessions** | `POST /api/auth/login` issues `impress_<urlsafe 64>`. Only `sha256(token)` is stored (`user_sessions.token_hash`; the legacy `session_token` column also holds the hash, #12). Validation checks revoked → hard expiry (6 h) → idle expiry (60 min) → user active. Logout revokes. |
-| Roles | `teacher` < `admin` < `super_admin`, closed `Literal` set | Only a super admin can grant or remove admin-level roles; nobody changes their own role (#10). Teachers only see and operate their classes (class routes also allow secondary faculty). |
+| Roles | `teacher` < `admin` < `super_admin`, closed `Literal` set | Only a super admin can grant or remove admin-level roles; nobody changes their own role (#10). Teachers only see and operate their classes: one access rule (primary teacher, co-faculty, admin) for class, quiz, poll and results routes (#20, #21). |
 | Gateways and hubs | Shared `X-API-Key` | Constant-time comparison (`secrets.compare_digest`). WebSocket: `X-API-Key` header (the legacy `?api_key=` still accepted) (#11). |
 | Teacher WebSocket | `?token=` = the login session token | Same validator as REST, no activity refresh (#8). Requires `wss://` in deployment, because browsers can't set WS headers. |
 | Students | **None on air** | ESP-NOW frames are unauthenticated; identity is the enrollment number inside the payload. |
@@ -58,7 +58,8 @@ flowchart LR
 | T9 | Radio spoofing: a rogue device sends answers with someone else's enrollment number | Answers count only for enrolled students and only once each. **No cryptographic protection on air.** | ⚠️ accepted risk |
 | T10 | Radio flooding / jamming | De-dup and bounded queues keep nodes alive; jamming can't be prevented in 2.4 GHz | ⚠️ accepted risk |
 | T11 | Path traversal via firmware version/type | Strict semver regex + a fixed device-type set (`firmware_store.py`), tested | ✅ |
-| T12 | Teacher takes over another teacher's class with its join code | `POST /api/classes/join` reassigns the primary teacher | ❌ open ([known issues](../reference/known-issues.md)) |
+| T12 | Teacher takes over another teacher's class with its join code | Joining by code only adds co-faculty; the primary teacher is never replaced (#19) | ✅ |
+| T13 | Reading other classes' questions, answers and results by enumerating ids | Quiz/poll details and results require class access (#20) | ✅ |
 
 ## Residual risks and recommended hardening
 

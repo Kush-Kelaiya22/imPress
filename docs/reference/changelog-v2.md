@@ -1,6 +1,6 @@
 # Changelog: v2
 
-`v2` = `main` + every fix from the October 2026 repository audit, plus a full test suite, CI and these docs. Each fix lives on its own `fix/*` branch, merged into `v2` with `--no-ff`. `main` is unchanged. Every GitHub issue has a resolution comment with before/after test output and a safety analysis.
+`v2` = `main` + every fix (#1–#22) from the October 2026 repository audit, plus a full test suite, CI and these docs. Each fix lives on its own `fix/*` branch, merged into `v2` with `--no-ff`. `main` is unchanged. Every GitHub issue has a resolution comment with before/after test output and a safety analysis.
 
 ## Fixes
 
@@ -24,14 +24,20 @@
 | [#16](https://github.com/Kush-Kelaiya22/imPress/issues/16) | medium | backend | `fix/16-firmware-upload-500` | Firmware upload 500 (`log_activity(None)`); OTA prompt audit-logged | `test_firmware_upload.py` |
 | [#17](https://github.com/Kush-Kelaiya22/imPress/issues/17) | high | backend | `fix/17-gateway-autolink-steal` | Only gateways auto-link, and only to classes without one (an S3 OTA hop stole the link) | `test_gateway_autolink.py` |
 | [#18](https://github.com/Kush-Kelaiya22/imPress/issues/18) | low | C6 firmware | `fix/18-c6-empty-nvs-default` | An empty NVS value no longer wipes the Kconfig default | `class_c6/test_host/test_c6_config.c` |
+| [#19](https://github.com/Kush-Kelaiya22/imPress/issues/19) | high | backend security | `fix/19-class-join-no-takeover` | Joining a class by code adds co-faculty; the owner is never replaced | `test_class_join.py` |
+| [#20](https://github.com/Kush-Kelaiya22/imPress/issues/20) | medium | backend security | `fix/20-results-access-check` | Quiz/poll details and results require class access | `test_results_access.py` |
+| [#21](https://github.com/Kush-Kelaiya22/imPress/issues/21) | medium | backend | `fix/21-cofaculty-quiz-poll-access` | One access rule for classes, quizzes and polls (co-faculty included) | `test_cofaculty_access.py` |
+| [#22](https://github.com/Kush-Kelaiya22/imPress/issues/22) | low | backend | `fix/22-correct-option-range` | `correct_option` validated against the number of options | `test_quiz_correct_option.py` |
 
 ## Also in v2
 
 - **Test suite** (see [testing](../guides/testing.md)):
-  - 180 backend tests;
+  - 198 backend tests;
   - 14 firmware structural guards;
+  - repository/CI/docs consistency checks (`tests/`);
   - 6 host C suites (25 cases) compiling real firmware sources under ASan/UBSan, sharing an in-memory NVS fake (`firmware/test_support`).
-- **CI:** backend, firmware structural, firmware host, ESP-IDF v6.1 builds of all three projects, frontend build.
+- **`run_tests.py`:** one command runs every suite and prints a pass/fail/duration report (also JSON, JUnit and Markdown).
+- **CI:** repository checks, backend, firmware structural, firmware host, ESP-IDF v6.1 builds of all three projects (with size reports and firmware artifacts), and a frontend build, behind a single **CI result** gate. Least-privilege permissions, concurrency cancellation and per-job timeouts.
 - **Repo hygiene:** categorised `.gitignore`; `.gitattributes` (LF, binaries, vendored components); runtime logs and stray `.pyc` untracked.
 - **Docs:** this folder.
 
@@ -41,7 +47,3 @@
 2. **Gateways and hubs:** flash new C6 and S3 images together (the SPI record format and command contract changed in lock-step), and put the new device key in their config/NVS. Flash the S3 **over serial once** for the rollback bootloader.
 3. **Students:** flash new student firmware (`POLL_START` handling, mesh de-dup, non-blocking receive).
 4. **Data:** classes whose gateway link was stolen before #17 keep it until the C6 re-registers with its `classroom_code`, or an admin re-links it.
-
-## Opened during the docs pass (not fixed on v2)
-
-[#19](https://github.com/Kush-Kelaiya22/imPress/issues/19) class join takeover · [#20](https://github.com/Kush-Kelaiya22/imPress/issues/20) results readable cross-class · [#21](https://github.com/Kush-Kelaiya22/imPress/issues/21) co-faculty can't run quizzes · [#22](https://github.com/Kush-Kelaiya22/imPress/issues/22) `correct_option` unchecked. See [known issues](known-issues.md).
