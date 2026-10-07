@@ -5,12 +5,13 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
-from ..models import User, ClassSession, Poll, PollVote
+from ..models import User, ClassSession, Poll, PollVote, EspDevice
 from ..schemas import PollCreate, PollResponse, PollVoteSubmit
 from ..auth import get_current_user, require_teacher_or_admin
 from ..ws.manager import manager
 from ..activity import log_activity
 from ..timeutil import istnow
+from .device import _verify_api_key
 
 router = APIRouter(prefix="/api/polls", tags=["polls"])
 
@@ -202,7 +203,7 @@ async def end_poll(
 
 # ── Vote ────────────────────────────────────────────────────────────
 
-@router.post("/{poll_id}/vote")
+@router.post("/{poll_id}/vote", dependencies=[Depends(_verify_api_key)])
 async def vote_poll(
     poll_id: int,
     body: PollVoteSubmit,
@@ -214,6 +215,11 @@ async def vote_poll(
         raise HTTPException(404, "Poll not found")
     if poll.status != "active":
         raise HTTPException(400, "Poll is not active")
+    if body.selected_option >= len(poll.options):
+        raise HTTPException(422, "selected_option out of range for this poll")
+    # device_id is the de-dup key, so it must be a real registered device.
+    if await db.get(EspDevice, body.device_id) is None:
+        raise HTTPException(404, "Device not registered")
 
     # Prevent duplicate votes from same device
     existing = await db.execute(

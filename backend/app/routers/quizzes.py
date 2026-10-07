@@ -5,12 +5,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
-from ..models import User, ClassSession, Quiz, QuizQuestion, QuizAnswer
+from ..models import User, ClassSession, Quiz, QuizQuestion, QuizAnswer, EspDevice
 from ..schemas import QuizCreate, QuizResponse, QuizAnswerSubmit
 from ..auth import get_current_user, require_teacher_or_admin
 from ..ws.manager import manager
 from ..activity import log_activity
 from ..timeutil import istnow
+from .device import _verify_api_key
 
 router = APIRouter(prefix="/api/quizzes", tags=["quizzes"])
 
@@ -243,7 +244,7 @@ async def next_question(
 
 # ── Device Answers ──────────────────────────────────────────────────
 
-@router.post("/{quiz_id}/answer")
+@router.post("/{quiz_id}/answer", dependencies=[Depends(_verify_api_key)])
 async def submit_answer(
     quiz_id: int,
     body: QuizAnswerSubmit,
@@ -257,6 +258,15 @@ async def submit_answer(
         raise HTTPException(400, "Quiz is not active")
 
     current_q = quiz.current_question or 0
+    question = next((q for q in quiz.questions if q.order_num == current_q), None)
+    if question is None:
+        raise HTTPException(409, "Quiz has no current question")
+    if body.selected_option >= len(question.options):
+        raise HTTPException(422, "selected_option out of range for this question")
+    # device_id is the de-dup key, so it must be a real registered device,
+    # not an arbitrary integer a caller can increment.
+    if await db.get(EspDevice, body.device_id) is None:
+        raise HTTPException(404, "Device not registered")
 
     # Prevent duplicate answers for the same question
     existing = await db.execute(
