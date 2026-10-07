@@ -38,6 +38,15 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 # ── User Management ─────────────────────────────────────────────────
 
+_PRIVILEGED_ROLES = ("admin", "super_admin")
+
+
+def _require_can_grant(actor: User, role: str) -> None:
+    """Only a super admin may grant (or take away) admin-level roles."""
+    if role in _PRIVILEGED_ROLES and actor.role != "super_admin":
+        raise HTTPException(403, "Only super admin can assign admin roles")
+
+
 @router.post("/users", response_model=UserResponse, status_code=201)
 async def create_user(
     body: AdminUserCreate,
@@ -45,8 +54,7 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
 ):
     """Admin creates a teacher or admin account. Super admin can also create admins."""
-    if body.role == "admin" and user.role != "super_admin":
-        raise HTTPException(403, "Only super admin can create admin accounts")
+    _require_can_grant(user, body.role)
 
     existing = await db.execute(select(User).where(User.username == body.username))
     if existing.scalar_one_or_none():
@@ -247,9 +255,11 @@ async def update_user(
         target.email = body.email
     if body.is_active is not None:
         target.is_active = body.is_active
-    if body.role is not None:
-        if body.role == "admin" and user.role != "super_admin":
-            raise HTTPException(403, "Only super admin can assign admin role")
+    if body.role is not None and body.role != target.role:
+        if target.id == user.id:
+            raise HTTPException(403, "You cannot change your own role")
+        _require_can_grant(user, body.role)     # granting admin-level
+        _require_can_grant(user, target.role)   # demoting an admin-level user
         target.role = body.role
 
     await log_activity(db, "user.update", user.id, "user", user_id, body.model_dump(exclude_unset=True))
