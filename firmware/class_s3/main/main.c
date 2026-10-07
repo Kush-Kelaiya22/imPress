@@ -140,15 +140,13 @@ static void heartbeat_task(void *arg)
         int n = msg_encode(MSG_HEARTBEAT, (const uint8_t *)&status,
                            sizeof(status), encoded, sizeof(encoded));
         if (n > 0) {
-            /* C6's SPI parser only understands the batch format:
-             * [LEN:2 BE][sender_id:4 LE][msg_encode frame]. */
-            static uint8_t slot[SPI_SLOT_BYTES - 4];     /* 4092 B — too big for task stack */
-            uint16_t len = (uint16_t)n;
-            slot[0] = (uint8_t)(len >> 8);
-            slot[1] = (uint8_t)(len & 0xFF);
-            slot[2] = slot[3] = slot[4] = slot[5] = 0;  /* S3 root id */
-            memcpy(slot + 6, encoded, n);
-            spi_master_send(slot, len + 6);
+            /* C6's SPI parser only understands the batch record format. */
+            static uint8_t slot[SPI_RECORD_HEADER_SIZE + MSG_MAX_SIZE];
+            int len = spi_record_write(slot, sizeof(slot), 0 /* S3 root id */,
+                                       encoded, (uint16_t)n);
+            if (len > 0) {
+                spi_master_send(slot, len);
+            }
         }
     }
 }

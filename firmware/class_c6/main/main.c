@@ -200,8 +200,8 @@ static cJSON *msg_to_json(msg_type_t type, const uint8_t *payload, uint16_t len,
 /**
  * Process a raw SPI payload from the S3.
  *
- * S3 flush format (repeated):
- *   [LEN:2BE][DEVICE_ID:4LE][PROTOCOL_FRAME:LEN]
+ * S3 flush format: a sequence of spi_record_* records (see protocol.h),
+ *   [FRAME_LEN:2BE][DEVICE_ID:4LE][PROTOCOL_FRAME:FRAME_LEN]
  *
  * Each PROTOCOL_FRAME is a standard binary frame:
  *   [START:0xAA][TYPE:1][LENGTH:2BE][PAYLOAD:N][CRC16:2]
@@ -209,20 +209,18 @@ static cJSON *msg_to_json(msg_type_t type, const uint8_t *payload, uint16_t len,
 static void process_spi_payload(const uint8_t *buf, int buf_len)
 {
     int offset = 0;
-    while (offset + 6 <= buf_len) {
-        uint16_t frame_len = ((uint16_t)buf[offset] << 8) | buf[offset + 1];
-        uint32_t device_id = (uint32_t)buf[offset + 2]
-                           | ((uint32_t)buf[offset + 3] << 8)
-                           | ((uint32_t)buf[offset + 4] << 16)
-                           | ((uint32_t)buf[offset + 5] << 24);
-        offset += 6;
-
-        if (offset + frame_len > buf_len) break;
+    for (;;) {
+        uint32_t device_id;
+        const uint8_t *frame;
+        uint16_t frame_len;
+        int n = spi_record_read(buf + offset, buf_len - offset,
+                                &device_id, &frame, &frame_len);
+        if (n <= 0) break;
+        offset += n;
 
         /* Decode the protocol frame inside */
         msg_t msg;
-        int consumed = msg_decode(buf + offset, frame_len, &msg);
-        offset += frame_len;
+        int consumed = msg_decode(frame, frame_len, &msg);
 
         if (consumed <= 0 || consumed > frame_len) continue;
 

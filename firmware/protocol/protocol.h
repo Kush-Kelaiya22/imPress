@@ -189,6 +189,27 @@ uint16_t crc16_ccitt(const uint8_t *data, size_t len);
  */
 const char *msg_type_name(msg_type_t type);
 
+/* ── SPI batch record (S3 → C6) ────────────────────────────────────────
+ * One S3 slot payload is a sequence of records:
+ *   [FRAME_LEN:2 BE][SENDER_ID:4 LE][FRAME:FRAME_LEN]
+ * FRAME_LEN counts the protocol frame ONLY (not the sender id). Both ends
+ * MUST use these helpers so the layout cannot drift again.
+ */
+#define SPI_RECORD_HEADER_SIZE 6
+
+/**
+ * @brief Append one record. @return bytes written, or -1 if it doesn't fit.
+ */
+int spi_record_write(uint8_t *out, size_t out_size, uint32_t sender_id,
+                     const uint8_t *frame, uint16_t frame_len);
+
+/**
+ * @brief Parse the record at the start of buf.
+ * @return bytes consumed (> 0), or 0 if buf holds no complete record.
+ */
+int spi_record_read(const uint8_t *buf, size_t buf_len, uint32_t *sender_id,
+                    const uint8_t **frame, uint16_t *frame_len);
+
 #ifdef __cplusplus
 }
 #endif
