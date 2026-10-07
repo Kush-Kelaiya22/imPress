@@ -242,10 +242,14 @@ async def join_class(
     if not cls.is_active:
         raise HTTPException(400, "Class is not active")
 
-    # If teacher, assign self
-    if user.role == "teacher":
-        cls.teacher_id = user.id
-        await log_activity(db, "class.join_via_code", user.id, "class", cls.id)
+    # A teacher joining by code becomes CO-FACULTY. The primary teacher is never
+    # replaced here: knowing a (shared, short) join code must not transfer
+    # ownership. Re-assigning the primary teacher is an admin action
+    # (/api/admin/classes/{id}/assign-teacher).
+    if user.role == "teacher" and not _has_access(cls, user):
+        cls.faculty.append(user)
+        await log_activity(db, "class.join_via_code", user.id, "class", cls.id,
+                           {"as": "co-faculty"})
         await db.commit()
         cls = await _reload_class(db, cls.id)
 
