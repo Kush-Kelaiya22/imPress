@@ -34,9 +34,17 @@ static void _nvs_write_str(nvs_handle_t h, const char *key, const char *val)
 
 void init_nvs_config(void)
 {
-    /* NVS is already initialised by mesh_master_init(); we just open it. */
+    /* Runs before mesh_master_init() (which needs g_cfg.mesh_channel), so it
+     * owns NVS init; a later nvs_flash_init() there is a no-op (ESP_OK). */
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(err);
+
     nvs_handle_t h;
-    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &h);
+    err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &h);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "NVS open failed — using Kconfig defaults");
         goto use_defaults;

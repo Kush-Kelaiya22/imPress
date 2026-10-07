@@ -176,7 +176,11 @@ int mesh_init(uint32_t device_id)
     /* esp_wifi_set_channel() requires WiFi to be started first */
     ESP_ERROR_CHECK(esp_wifi_start());
     vTaskDelay(pdMS_TO_TICKS(100));  /* let WiFi radio settle */
-    esp_wifi_set_channel(MESH_WIFI_CHANNEL, WIFI_SECOND_CHAN_NONE);
+    ret = esp_wifi_set_channel(MESH_WIFI_CHANNEL, WIFI_SECOND_CHAN_NONE);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_set_channel(%d) failed: %s",
+                 MESH_WIFI_CHANNEL, esp_err_to_name(ret));
+    }
 
     /* Initialize ESP-NOW */
     ESP_ERROR_CHECK(esp_now_init());

@@ -158,9 +158,9 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "=== imPress S3 Class Module v%s ===", FIRMWARE_VERSION);
 
-    /* Init NVS + ESP-NOW mesh FIRST so NVS partition is ready for config */
-    ESP_ERROR_CHECK(mesh_master_init());
+    /* Config first: mesh_master_init() reads g_cfg.mesh_channel. */
     init_nvs_config();
+    ESP_ERROR_CHECK(mesh_master_init());
 
     ESP_ERROR_CHECK(spi_master_init());
     mesh_master_on_receive(on_student_message);
