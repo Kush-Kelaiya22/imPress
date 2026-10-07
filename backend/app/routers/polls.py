@@ -81,6 +81,7 @@ async def create_poll(
 
     if poll.is_live:
         await manager.broadcast_to_class(cls.id, {
+            "event": "poll_start",  # device (C6) + React contract
             "type": "poll_started",
             "poll_id": poll.id,
             "title": poll.title,
@@ -147,6 +148,7 @@ async def start_poll(
     await db.refresh(poll)
 
     await manager.broadcast_to_class(cls.id, {
+        "event": "poll_start",  # device (C6) + React contract
         "type": "poll_started",
         "poll_id": poll.id,
         "title": poll.title,
@@ -190,6 +192,7 @@ async def end_poll(
             option_counts[v.selected_option] += 1
 
     await manager.broadcast_to_class(cls.id, {
+        "event": "poll_end",
         "type": "poll_ended",
         "poll_id": poll.id,
         "title": poll.title,

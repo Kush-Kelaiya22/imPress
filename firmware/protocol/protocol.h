@@ -130,6 +130,18 @@ typedef struct __attribute__((packed)) {
     uint32_t device_id;            /* optional diagnostic, 0 = unknown */
 } payload_poll_vote_t;
 
+/** Poll start: backend → students (MSG_POLL_START) */
+typedef struct __attribute__((packed)) {
+    uint16_t poll_id;
+    uint8_t  num_options;          /* buttons A.. (max 4) */
+    char     title[64];            /* poll question (null-terminated) */
+} payload_poll_start_t;
+
+/** Quiz / poll end: backend → students (MSG_QUIZ_END / MSG_POLL_END) */
+typedef struct __attribute__((packed)) {
+    uint16_t id;                   /* quiz_id or poll_id */
+} payload_session_end_t;
+
 /** SPI aggregate: S3 batches multiple student messages for C6 */
 typedef struct __attribute__((packed)) {
     uint8_t  count;                /* number of messages in batch */

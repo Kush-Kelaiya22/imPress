@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.c" "config.c" "spi_slave.c" "wifi_client.c" "ws_client.c"
+    SRCS "main.c" "config.c" "spi_slave.c" "wifi_client.c" "ws_client.c" "ws_command.c"
     INCLUDE_DIRS "."
     REQUIRES nvs_flash esp_wifi esp_event esp_netif esp_http_client
         esp_websocket_client espressif__cjson protocol

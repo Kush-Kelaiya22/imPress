@@ -1,0 +1,44 @@
+[
+  {
+    "event": "quiz_question",
+    "quiz_id": 1,
+    "question_order": 0,
+    "question_text": "2+2?",
+    "options": [
+      "3",
+      "4",
+      "5",
+      "6"
+    ],
+    "time_limit_s": 30
+  },
+  {
+    "event": "quiz_question",
+    "quiz_id": 1,
+    "question_order": 1,
+    "question_text": "Capital of France?",
+    "options": [
+      "Paris",
+      "Rome"
+    ],
+    "time_limit_s": 30
+  },
+  {
+    "event": "quiz_end",
+    "quiz_id": 1
+  },
+  {
+    "event": "poll_start",
+    "poll_id": 1,
+    "title": "Lab on Friday?",
+    "options": [
+      "Yes",
+      "No",
+      "Maybe"
+    ]
+  },
+  {
+    "event": "poll_end",
+    "poll_id": 1
+  }
+]
