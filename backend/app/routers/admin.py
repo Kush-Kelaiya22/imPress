@@ -1108,9 +1108,10 @@ async def admin_push_ota(
                 {"device_type": "s3", "version": body.version,
                  "mac_address": dev.mac_address},
             )
-            log_activity(None, "module.ota.prompt", user.id, "device",
-                         dev.gateway_id, {"to_class": cls_id,
-                                          "version": body.version})
+            await log_activity(db, "module.ota.prompt", user.id, "device",
+                               dev.gateway_id, {"to_class": cls_id,
+                                                "version": body.version})
+            await db.commit()
 
     return _device_response(dev)
 
@@ -1121,6 +1122,7 @@ async def admin_upload_firmware(
     version: str = Form(...),
     file: UploadFile = File(...),
     user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
 ):
     """Upload a firmware binary. Device type must be c6, s3, or student.
     The uploaded .bin is stored as <device_type>-<version>.bin and served
@@ -1129,8 +1131,9 @@ async def admin_upload_firmware(
         raise HTTPException(400, "device_type must be c6 | s3 | student")
 
     await save_firmware(file, device_type, version)
-    await log_activity(None, "firmware.upload", user.id, "firmware", 0,
+    await log_activity(db, "firmware.upload", user.id, "firmware", 0,
                        {"device_type": device_type, "version": version})
+    await db.commit()
     return DeviceResponse(
         id=0, mac_address="", device_name="", device_type=device_type,
         firmware_version=version, pending_version="", ota_status="uploaded"
