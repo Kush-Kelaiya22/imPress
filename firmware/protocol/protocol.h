@@ -222,6 +222,29 @@ int spi_record_write(uint8_t *out, size_t out_size, uint32_t sender_id,
 int spi_record_read(const uint8_t *buf, size_t buf_len, uint32_t *sender_id,
                     const uint8_t **frame, uint16_t *frame_len);
 
+/* ── Mesh de-duplication ───────────────────────────────────────────────
+ * A message relayed through the mesh is the same message at every hop:
+ * identify it by (origin sender_id, protocol frame) — NEVER by the mesh
+ * header, whose ttl/hops change on every relay.
+ */
+uint32_t mesh_msg_id(uint32_t sender_id, const uint8_t *frame, size_t frame_len);
+
+#define MESH_DEDUP_SLOTS      64
+#define MESH_DEDUP_WINDOW_MS  10000u   /* relay copies arrive within ms; retries after */
+
+typedef struct {
+    uint32_t id[MESH_DEDUP_SLOTS];
+    uint32_t seen_ms[MESH_DEDUP_SLOTS];
+    uint8_t  used[MESH_DEDUP_SLOTS];
+    int      next;
+} mesh_dedup_t;
+
+/**
+ * @brief Record id; @return true if it was already seen within the window.
+ *        Caller supplies a monotonic ms clock (wraps safely). Not thread-safe.
+ */
+bool mesh_dedup_check(mesh_dedup_t *d, uint32_t id, uint32_t now_ms);
+
 #ifdef __cplusplus
 }
 #endif

@@ -16,6 +16,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
+#include "freertos/queue.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "esp_now.h"
@@ -39,49 +40,23 @@ static uint32_t s_device_id;
 static uint16_t s_student_id;
 static mesh_recv_cb_t s_recv_callback;
 
-/* Relay tracking: avoid relaying same message twice */
-#define RELAY_CACHE_SIZE 64
-static struct {
-    uint32_t msg_hash;
-    uint32_t timestamp;
-} s_relay_cache[RELAY_CACHE_SIZE];
-static int s_relay_cache_idx;
+/* ESP-NOW receive callback runs in the Wi-Fi task: it only copies the
+ * packet here; mesh_rx_task does decoding, delivery, de-dup and relaying. */
+typedef struct {
+    int     len;
+    uint8_t data[sizeof(uint8_t) * 6 + MSG_MAX_SIZE];   /* mesh header + frame */
+} rx_item_t;
+static QueueHandle_t s_rx_queue;
 
-/* Root node MAC (S3) — learned from received messages */
-static uint8_t s_root_mac[6];
+/* Messages already handled (by origin sender + frame, not ttl/hops). Only
+ * touched from mesh_rx_task. */
+static mesh_dedup_t s_seen;
+
+/* Root node (S3) — learned from received messages */
 static bool s_root_known = false;
 static int s_hop_count = 99;
 
 /* ── Helpers ───────────────────────────────────────────────────────── */
-
-static uint32_t compute_msg_hash(const uint8_t *data, size_t len)
-{
-    /* Simple FNV-1a hash for relay dedup */
-    uint32_t hash = 2166136261u;
-    for (size_t i = 0; i < len && i < 20; i++) {  /* hash first 20 bytes */
-        hash ^= data[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
-static bool should_relay(const uint8_t *raw_msg, size_t raw_len)
-{
-    uint32_t hash = compute_msg_hash(raw_msg, raw_len);
-    uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
-
-    for (int i = 0; i < RELAY_CACHE_SIZE; i++) {
-        if (s_relay_cache[i].msg_hash == hash) {
-            return false;  /* already relayed */
-        }
-    }
-
-    /* Add to cache */
-    s_relay_cache[s_relay_cache_idx].msg_hash = hash;
-    s_relay_cache[s_relay_cache_idx].timestamp = now;
-    s_relay_cache_idx = (s_relay_cache_idx + 1) % RELAY_CACHE_SIZE;
-    return true;
-}
 
 /**
  * @brief Custom framing for mesh transport: adds TTL + sender info
@@ -97,15 +72,12 @@ typedef struct __attribute__((packed)) {
 } mesh_header_t;
 
 #define MESH_HEADER_SIZE sizeof(mesh_header_t)
+_Static_assert(sizeof(mesh_header_t) == 6, "rx_item_t.data assumes a 6-byte mesh header");
 
-/* ── ESP-NOW Receive Callback ──────────────────────────────────────── */
+/* ── Receive path ───────────────────────────────────────────────────── */
 
-static void on_espnow_recv(const esp_now_recv_info_t *info, const uint8_t *data, int len)
+static void handle_packet(const uint8_t *data, int len)
 {
-    if (!info || !data || len < (int)MESH_HEADER_SIZE) {
-        return;
-    }
-
     const mesh_header_t *hdr = (const mesh_header_t *)data;
 
     /* Don't process our own messages */
@@ -113,23 +85,26 @@ static void on_espnow_recv(const esp_now_recv_info_t *info, const uint8_t *data,
         return;
     }
 
-    /* Learn root MAC from messages with TTL = max (originated by root) */
-    if (hdr->ttl == MESH_RELAY_TTL && !s_root_known) {
-        memcpy(s_root_mac, info->src_addr, 6);
+    const uint8_t *msg_data = data + MESH_HEADER_SIZE;
+    int msg_len = len - MESH_HEADER_SIZE;
+
+    /* Every relayed copy is the same message: handle (and relay) it once. */
+    uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    if (mesh_dedup_check(&s_seen, mesh_msg_id(hdr->sender_id, msg_data, msg_len), now_ms)) {
+        return;
+    }
+
+    /* Root (S3, sender_id 0) originated this — reached us directly (hops 0)
+     * or through relays; either way it is addressed to every student. */
+    bool from_root = (hdr->sender_id == 0);
+    if (from_root && !s_root_known) {
         s_root_known = true;
         s_hop_count = hdr->hops + 1;
         xEventGroupSetBits(s_mesh_event_group, IS_CONNECTED);
         ESP_LOGI(TAG, "Root node found, hop count: %d", s_hop_count);
     }
 
-    /* Check if message is addressed to us (broadcast from root) or relayable */
-    bool for_us = (hdr->ttl == MESH_RELAY_TTL);  /* messages from root are for everyone */
-
-    /* Parse the inner protocol message */
-    const uint8_t *msg_data = data + MESH_HEADER_SIZE;
-    int msg_len = len - MESH_HEADER_SIZE;
-
-    if (for_us && s_recv_callback) {
+    if (from_root && s_recv_callback) {
         msg_t msg;
         int consumed = msg_decode(msg_data, msg_len, &msg);
         if (consumed > 0 && msg_verify_crc(&msg)) {
@@ -138,20 +113,40 @@ static void on_espnow_recv(const esp_now_recv_info_t *info, const uint8_t *data,
     }
 
     /* Relay if TTL allows */
-    if (hdr->ttl > 1 && should_relay(data, len)) {
+    if (hdr->ttl > 1) {
+        uint8_t relay_buf[MESH_HEADER_SIZE + MSG_MAX_SIZE];
         mesh_header_t relay_hdr = *hdr;
         relay_hdr.ttl--;
         relay_hdr.hops++;
-
-        uint8_t relay_buf[MESH_HEADER_SIZE + MSG_MAX_SIZE];
         memcpy(relay_buf, &relay_hdr, MESH_HEADER_SIZE);
         memcpy(relay_buf + MESH_HEADER_SIZE, msg_data, msg_len);
 
         /* Small random delay to avoid collision with other relays */
         vTaskDelay(pdMS_TO_TICKS(10 + (esp_random() % 50)));
-
-        esp_now_send(NULL /* broadcast */, relay_buf, MESH_HEADER_SIZE + msg_len);
+        esp_now_send(s_broadcast_mac, relay_buf, MESH_HEADER_SIZE + msg_len);
     }
+}
+
+static void mesh_rx_task(void *arg)
+{
+    rx_item_t item;
+    for (;;) {
+        if (xQueueReceive(s_rx_queue, &item, portMAX_DELAY) == pdTRUE) {
+            handle_packet(item.data, item.len);
+        }
+    }
+}
+
+static void on_espnow_recv(const esp_now_recv_info_t *info, const uint8_t *data, int len)
+{
+    /* Wi-Fi task context: no blocking, no I/O — copy and hand off. */
+    if (!info || !data || len < (int)MESH_HEADER_SIZE ||
+        len > (int)sizeof(((rx_item_t *)0)->data)) {
+        return;
+    }
+    rx_item_t item = { .len = len };
+    memcpy(item.data, data, len);
+    xQueueSend(s_rx_queue, &item, 0);   /* full queue → drop, never block */
 }
 
 /* ── Public API ────────────────────────────────────────────────────── */
@@ -160,6 +155,8 @@ int mesh_init(uint32_t device_id)
 {
     s_device_id = device_id;
     s_mesh_event_group = xEventGroupCreate();
+    s_rx_queue = xQueueCreate(16, sizeof(rx_item_t));
+    xTaskCreate(mesh_rx_task, "mesh_rx", 4096, NULL, 4, NULL);
 
     /* Initialize NVS (required by WiFi) */
     esp_err_t ret = nvs_flash_init();
