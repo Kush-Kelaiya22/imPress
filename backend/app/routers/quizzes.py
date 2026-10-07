@@ -130,6 +130,7 @@ async def get_quiz(
     quiz = result.scalar_one_or_none()
     if not quiz:
         raise HTTPException(404, "Quiz not found")
+    await _verify_class_access(quiz.class_session_id, user, db)   # same rule as the class itself
     return _quiz_response(quiz)
 
 
@@ -328,6 +329,7 @@ async def quiz_results(
     quiz = result.scalar_one_or_none()
     if not quiz:
         raise HTTPException(404, "Quiz not found")
+    await _verify_class_access(quiz.class_session_id, user, db)   # same rule as the class itself
 
     questions_result = await db.execute(
         select(QuizQuestion).where(QuizQuestion.quiz_id == quiz_id).order_by(QuizQuestion.order_num)

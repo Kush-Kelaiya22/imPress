@@ -120,6 +120,7 @@ async def get_poll(
     poll = result.scalar_one_or_none()
     if not poll:
         raise HTTPException(404, "Poll not found")
+    await _verify_class_access(poll.class_session_id, user, db)   # same rule as the class itself
     return await _poll_response(poll, db)
 
 
@@ -276,6 +277,7 @@ async def poll_results(
     poll = result.scalar_one_or_none()
     if not poll:
         raise HTTPException(404, "Poll not found")
+    await _verify_class_access(poll.class_session_id, user, db)   # same rule as the class itself
 
     votes_result = await db.execute(
         select(PollVote).where(PollVote.poll_id == poll_id)
