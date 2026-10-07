@@ -44,6 +44,12 @@ static volatile bool s_gateway_ready = false;
 static volatile int64_t s_boot_time_us = 0;
 static volatile int s_student_count = 0;  /* updated from S3 heartbeats */
 
+/* Set from the WS event handler (websocket task) when the backend assigns a
+ * new class; app_main's loop restarts the client. The client must never be
+ * stopped/destroyed from its own task — the component frees itself under
+ * its running task (use-after-free). */
+static volatile bool s_ws_restart_pending = false;
+
 /* ── Batch Accumulator ──────────────────────────────────────────────── */
 
 #define BATCH_BUF_SIZE  (HTTP_BUF_SIZE - 128)
@@ -329,11 +335,8 @@ static void handle_class_assignment(const cJSON *msg)
         if (new_id != g_cfg.class_id) {
             ESP_LOGI(TAG, "Backend assigned class_id %ld → saving to NVS", (long)new_id);
             nvs_save_class_id(new_id);
-            /* Restart the WS client so it connects to the NEW class URI. */
-            ws_client_stop();
-            if (new_id > 0) {
-                ws_client_start(new_id, on_ws_command);
-            }
+            /* Reconnect to the NEW class URI from app_main, not from here. */
+            s_ws_restart_pending = true;
         }
     }
 }
@@ -564,6 +567,18 @@ void app_main(void)
             } else {
                 wifi_delay_ms = (wifi_delay_ms * 3) / 2;
                 if (wifi_delay_ms > max_wifi_delay) wifi_delay_ms = max_wifi_delay;
+            }
+            continue;
+        }
+
+        /* Deferred class reassignment (see s_ws_restart_pending). */
+        if (s_ws_restart_pending) {
+            s_ws_restart_pending = false;
+            ws_client_stop();
+            if (g_cfg.class_id > 0) {
+                ESP_LOGI(TAG, "WS switching to class %ld", (long)g_cfg.class_id);
+                ws_client_start(g_cfg.class_id, on_ws_command);
+                ws_delay_ms = 5000;
             }
             continue;
         }
