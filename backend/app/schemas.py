@@ -147,6 +147,8 @@ class ClassCreate(BaseModel):
     year: Optional[int] = None
     start_date: Optional[date] = None     # instruction start
     end_date: Optional[date] = None       # instruction end (before exams)
+    exam_start_date: Optional[date] = None   # exams begin (ClassSession.exam_start_date)
+    exam_end_date: Optional[date] = None     # exams end
     meeting_schedule: list[ScheduleSlot] = []
     location: str = ""
     capacity: int = 0
