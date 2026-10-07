@@ -37,6 +37,19 @@ async def _reset_db():
     await engine.dispose()
 
 
+# Fire-and-forget DB tasks the app spawns (presence pushes, WS presence
+# refresh). If one outlives a test, its open SQLite connection makes the next
+# test's _reset_db() fail with "database is locked".
+_BACKGROUND_TASKS = {"_push_after_commit", "_touch_device_on_message"}
+
+
+async def _drain_background_tasks(timeout=5.0):
+    pending = [t for t in asyncio.all_tasks()
+               if not t.done() and t.get_coro().__name__ in _BACKGROUND_TASKS]
+    if pending:
+        await asyncio.wait(pending, timeout=timeout)
+
+
 @pytest.fixture
 def client():
     """TestClient on an empty database (the app seeds the super admin)."""
@@ -44,6 +57,7 @@ def client():
     asyncio.run(_reset_db())
     with TestClient(app) as c:
         yield c
+        c.portal.call(_drain_background_tasks)
 
 
 @pytest.fixture
@@ -69,3 +83,33 @@ def login(client, username="admin", password="admin123"):
 
 def auth(token):
     return {"Authorization": f"Bearer {token}"}
+
+
+# ── Domain helpers (keep tests short and intention-revealing) ───────────────
+
+PASSWORD = "Passw0rd!x"
+
+
+def make_user(client, admin_headers, username, role="teacher", password=PASSWORD):
+    """Create a user through the admin API; returns (user_id, auth headers)."""
+    r = client.post("/api/admin/users", headers=admin_headers, json={
+        "username": username, "email": f"{username}@example.edu", "password": password,
+        "full_name": username.title(), "role": role})
+    assert r.status_code == 201, r.text
+    return r.json()["id"], auth(login(client, username, password))
+
+
+def make_class(client, admin_headers, name="Physics", code="PHY101", activate=False, **extra):
+    """Create a class via /api/admin/classes; optionally activate it."""
+    r = client.post("/api/admin/classes", headers=admin_headers, json={"name": name, "code": code, **extra})
+    assert r.status_code == 201, r.text
+    cid = r.json()["id"]
+    if activate:
+        assert client.post(f"/api/classes/{cid}/activate", headers=admin_headers).status_code == 200
+    return cid
+
+
+def make_student(client, headers, roll="ABCDE12345", name="Asha Rao", **extra):
+    r = client.post("/api/students/", headers=headers, json={"roll_number": roll, "student_name": name, **extra})
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
