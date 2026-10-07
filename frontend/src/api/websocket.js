@@ -3,7 +3,8 @@
  * Connects to /ws/class/{classId} and dispatches events.
  */
 
-const WS_BASE = 'ws://localhost:8000/ws/class/'
+// Same host as the page (works behind the Vite dev proxy and in production).
+const WS_BASE = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/class/`
 
 class ClassSocket {
   constructor() {
@@ -27,7 +28,9 @@ class ClassSocket {
     this.classId = classId
     this.manuallyClosed = false
 
-    const url = `${WS_BASE}${classId}?role=${role}`
+    // The backend requires the login session token for role=teacher.
+    const token = encodeURIComponent(localStorage.getItem('token') || '')
+    const url = `${WS_BASE}${classId}?role=${role}&token=${token}`
     this.ws = new WebSocket(url)
 
     this.ws.onopen = () => {

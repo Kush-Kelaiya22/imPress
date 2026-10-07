@@ -60,26 +60,18 @@ async def _touch_device_on_message(class_id: int, msg: dict | None) -> None:
 
 
 async def _ws_user_from_token(token: str):
-    """Validate a JWT for WebSocket auth. Returns the User row or None."""
-    import jwt as _jwt
-    from ..config import settings as _settings
-    from ..database import async_session
-    from ..models import User
+    """Validate a login session token for WebSocket auth. Returns the User or None.
+
+    Login issues opaque server-side session tokens (auth.create_session), not
+    JWTs, so this must use the same check as the HTTP API. refresh_activity is
+    off: an open socket must not keep an idle session alive.
+    """
     if not token:
         return None
-    try:
-        payload = _jwt.decode(token, _settings.JWT_SECRET, algorithms=[_settings.JWT_ALGORITHM])
-    except (_jwt.PyJWTError, TypeError, ValueError):
-        return None
-    user_id = payload.get("sub")
-    if user_id is None:
-        return None
+    from ..auth import validate_session
     async with async_session() as db:
-        res = await db.execute(select(User).where(User.id == int(user_id)))
-        user = res.scalar_one_or_none()
-        if user is None or not user.is_active:
-            return None
-        return user
+        _session, user, error = await validate_session(db, token, refresh_activity=False)
+    return user if error is None else None
 
 
 @router.websocket("/ws/class/{class_id}")
@@ -90,7 +82,7 @@ async def class_websocket(websocket: WebSocket, class_id: int):
     Connect with: ws://host/ws/class/{class_id}?role=teacher|device&api_key=...&token=...
 
     Roles:
-      - teacher   (browser): must present ?token=<JWT> (teacher/admin/super_admin)
+      - teacher   (browser): must present ?token=<login session token> (teacher/admin/super_admin)
       - device    (C6):      must present ?api_key=<settings.DEVICE_API_KEY>
 
     Teacher connections receive:
@@ -122,7 +114,7 @@ async def class_websocket(websocket: WebSocket, class_id: int):
         await websocket.close(code=4400, reason="invalid role")
         return
 
-    await manager.connect(websocket, class_id)
+    await manager.connect(websocket, class_id, role)
     logger.info(f"WS connected: class={class_id}, role={role}")
 
     try:
