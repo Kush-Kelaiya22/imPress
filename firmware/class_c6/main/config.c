@@ -13,18 +13,17 @@ static const char *TAG = "c6_cfg";
 
 c6_config_t g_cfg;
 
-/* Helper: read a string blob from NVS into a caller buffer. */
+/* Helper: overlay an NVS string onto a caller buffer that holds the default.
+ * Missing, empty (len counts the NUL, so 1 = "") or oversized values leave the
+ * default untouched — check BEFORE copying, or an empty value wipes it. */
 static void _read_str(nvs_handle_t h, const char *key, char *buf, size_t sz)
 {
     size_t len = 0;
-    if (nvs_get_str(h, key, NULL, &len) == ESP_OK && len > 0 && len <= sz) {
-        nvs_get_str(h, key, buf, &sz);
-        if (strlen(buf) == 0) {
-            /* empty stored string — fall through, keep default */
-            return;
-        }
-        ESP_LOGD(TAG, "NVS %s = %s", key, buf);
+    if (nvs_get_str(h, key, NULL, &len) != ESP_OK || len <= 1 || len > sz) {
+        return;
     }
+    nvs_get_str(h, key, buf, &sz);
+    ESP_LOGD(TAG, "NVS %s = %s", key, buf);
 }
 
 void init_nvs_config(void)
