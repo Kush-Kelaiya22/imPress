@@ -6,7 +6,7 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from .manager import manager
-from ..config import settings
+from ..config import settings, api_key_ok
 from ..database import async_session
 from ..models import EspDevice, ClassSession
 from ..services.presence import mark_online, _push_after_commit
@@ -83,7 +83,8 @@ async def class_websocket(websocket: WebSocket, class_id: int):
 
     Roles:
       - teacher   (browser): must present ?token=<login session token> (teacher/admin/super_admin)
-      - device    (C6):      must present ?api_key=<settings.DEVICE_API_KEY>
+      - device    (C6):      must present the device key as an X-API-Key header
+                             (or ?api_key= for older firmware)
 
     Teacher connections receive:
       - quiz_question, quiz_end
@@ -98,7 +99,8 @@ async def class_websocket(websocket: WebSocket, class_id: int):
     # ── Auth gate ──────────────────────────────────────────────────────────
     if settings.WS_REQUIRE_AUTH:
         if role == "device":
-            if websocket.query_params.get("api_key", "") != settings.DEVICE_API_KEY:
+            key = websocket.headers.get("x-api-key") or websocket.query_params.get("api_key")
+            if not api_key_ok(key):
                 await websocket.close(code=4401, reason="invalid device api_key")
                 return
         elif role == "teacher":
