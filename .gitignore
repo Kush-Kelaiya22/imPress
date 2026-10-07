@@ -1,29 +1,83 @@
-# Runtime data — never commit (may contain student PII and session material)
+# ─────────────────────────────────────────────────────────────────────────────
+# imPress .gitignore — never commit runtime data, secrets or build output.
+# Sections: secrets · runtime data · Python · Node · ESP-IDF · tests · OS/IDE
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Secrets / local configuration ───────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secure_boot_signing_key*
+sdkconfig.local
+# …except Espressif's public example certs inside the vendored component.
+!firmware/class_c6/managed_components/**/*.pem
+
+# ── Runtime data (may contain student PII, sessions, uploaded firmware) ─────
 *.db
 *.db-journal
 *.db-wal
 *.db-shm
 *.db.bak*
 *.sqlite
+*.sqlite3
 backend/firmware_bins/
-.env
+firmware_bins/
+logs/
+*.log
 
-# Python
+# ── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
-.pytest_cache/
+*.egg-info/
+.eggs/
+build/
+dist/
 .venv/
 venv/
+env/
+.python-version
+.mypy_cache/
+.ruff_cache/
 
-# Node
+# ── Tests / coverage ────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.gcda
+*.gcno
+
+# ── Node / frontend ─────────────────────────────────────────────────────────
 node_modules/
 frontend/dist/
+.vite/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
-# ESP-IDF build output / local state
+# ── ESP-IDF (build output, generated config backups, compiled artefacts) ────
 firmware/*/build/
 firmware/*/sdkconfig.old
+firmware/*/dependencies.lock.bak
+*.elf
+*.bin
+*.map
+*.o
+*.a
+*.out
+# managed_components/ is intentionally TRACKED: it pins the exact registry
+# component sources (see dependencies.lock) for offline/reproducible builds and
+# the C6 host tests compile the vendored cJSON from it.
 
-# Editors / OS
+# ── OS / editors ────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
 .vscode/
 .idea/
-.DS_Store
+*.code-workspace

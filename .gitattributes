@@ -1,0 +1,40 @@
+# Normalise line endings: LF in the repository and in working trees, so shell
+# scripts, C sources and CSV/JSON fixtures behave the same on Windows checkouts.
+* text=auto eol=lf
+
+# Windows-only helpers keep CRLF in the working tree.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Explicit text types (diffable).
+*.c       text diff=cpp
+*.h       text diff=cpp
+*.py      text diff=python
+*.md      text diff=markdown
+*.sh      text eol=lf
+*.json    text
+*.csv     text
+*.yml     text
+*.yaml    text
+*.lock    text
+sdkconfig*  text
+Kconfig*    text
+
+# Binary artefacts — never diff or convert.
+*.bin     binary
+*.elf     binary
+*.db      binary
+*.sqlite  binary
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.ico     binary
+*.pdf     binary
+*.woff    binary
+*.woff2   binary
+
+# GitHub language stats: vendored ESP-IDF registry components aren't ours.
+firmware/class_c6/managed_components/** linguist-vendored
+firmware/contract/*.json linguist-generated=false
