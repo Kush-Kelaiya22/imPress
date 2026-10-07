@@ -32,7 +32,7 @@ Live quizzes and polls with one-tap answers, delivered over an ESP-NOW mesh, wit
 </div>
 
 > [!NOTE]
-> You are reading the **`v2`** branch: `main` plus every fix from the October 2026 audit (issues #1–#22), a full test suite, CI and documentation. `main` is unchanged. See the [v2 changelog](docs/reference/changelog-v2.md).
+> You are reading the **`v2`** branch: `main` plus every fix from the October 2026 audit (issues #1–#25), a full test suite, CI and documentation. `main` is unchanged. See the [v2 changelog](docs/reference/changelog-v2.md).
 
 ---
 
@@ -152,8 +152,9 @@ cd firmware/class_c6 && idf.py menuconfig && idf.py -p <PORT> flash monitor
 One command runs every suite and prints a consolidated report with status, counts and duration per suite, the slowest tests, and details for anything that failed:
 
 ```bash
+python3 -m venv .venv && . .venv/bin/activate
 pip install -r backend/requirements-dev.txt
-python run_tests.py                       # all default suites
+python run_tests.py                       # all default suites (~35 s)
 python run_tests.py --list                # list suites
 python run_tests.py -s backend -s host    # selected suites
 python run_tests.py --with-idf --with-frontend --json report.json
@@ -163,10 +164,13 @@ python run_tests.py --with-idf --with-frontend --json report.json
 |---|---|---|
 | `backend` | Every router and service: auth and sessions, RBAC, classes, students, quizzes and polls, device API, presence, utilities | 198 |
 | `firmware-static` | Structural guards on firmware sources: task ownership, WebSocket lifecycle, OTA safety, configuration order | 14 |
-| `repo` | CI workflow (incl. actionlint), repository hygiene, documentation consistency, the test runner itself | 76 |
+| `repo` | CI workflow (incl. actionlint), repository hygiene, documentation consistency, the test runner itself | 89 |
 | `host:*` | Real firmware C compiled on the host with AddressSanitizer and UBSan: protocol, mesh de-dup, SPI slave, WebSocket commands, device config, student identity | 6 suites, 25 cases |
 | `idf:*` (optional) | ESP-IDF v6.1 builds of all three firmware projects | 3 builds |
 | `frontend` (optional) | React production build | 1 build |
+
+> [!TIP]
+> Long suites show a live status line (elapsed time and the latest build or test output), and Ctrl-C stops cleanly with a report. If the interpreter is missing a backend package, the runner says which one and prints the exact `pip install` command. See [running the tests](docs/guides/testing.md#running-run_testspy).
 
 > [!NOTE]
 > GitHub Actions runs the same suites through `run_tests.py`, plus the firmware builds (with size reports and downloadable images), behind a single **CI result** check. See the [testing guide](docs/guides/testing.md).
@@ -208,7 +212,7 @@ imPress/
 
 | Area | Status |
 |---|---|
-| Audit findings (#1–#22) | All fixed on individual `fix/*` branches and merged into `v2` |
+| Audit findings (#1–#25) | All fixed on individual `fix/*` branches and merged into `v2` |
 | Automated verification | Backend, firmware host and structural tests, repository checks, firmware builds, frontend build in CI |
 | Hardware verification | Pending: a classroom soak test on real boards ([procedure](docs/guides/troubleshooting.md)) |
 | Hardening options | OTA image signing, TLS for device traffic, per-device keys ([security model](docs/design/security-model.md)) |

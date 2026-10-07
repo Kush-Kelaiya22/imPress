@@ -10,7 +10,7 @@ flowchart LR
     subgraph PY["pytest"]
         BE["backend/tests (198)<br/>in-process FastAPI + fresh SQLite per test"]
         FS["firmware/tests (14)<br/>structural guards on C sources"]
-        RP["tests/ (76)<br/>CI, repository and docs consistency"]
+        RP["tests/ (89)<br/>CI, repository and docs consistency"]
     end
     subgraph C["host C (6 suites, 25 cases)<br/>cc + ASan + UBSan, no ESP-IDF"]
         PR["protocol: frames, SPI records, mesh de-dup"]
@@ -32,32 +32,34 @@ flowchart LR
 ## Running: `run_tests.py`
 
 ```bash
-pip install -r backend/requirements-dev.txt   # pytest, httpx, pyyaml
-python run_tests.py                           # every default suite, ~4 min
+python3 -m venv .venv && . .venv/bin/activate   # once; any Python 3.12+ (3.14 tested)
+pip install -r backend/requirements-dev.txt     # runtime deps + pytest, httpx, pyyaml
+python run_tests.py                             # every default suite, ~35 s
 ```
 
-Real output from the `v2` branch (slowest list abridged):
+Real output from the `v2` branch:
 ```
 imPress test report
 suite                      status    passed  failed  skipped      time
-backend                     PASS       198       0        0   3m19.4s
-firmware-static             PASS        14       0        0      0.4s
-repo                        PASS        76       0        0      3.0s
-host:class_c6               PASS         1       0        0      0.7s
-host:class_c6:config        PASS         5       0        0      0.6s
-host:class_c6:ws_command    PASS         2       0        0      0.7s
-host:protocol               PASS         6       0        0      0.5s
-host:protocol:mesh_dedup    PASS         4       0        0      0.6s
-host:student                PASS         7       0        0      0.6s
+backend                     PASS       198       0        0     18.4s
+firmware-static             PASS        14       0        0      0.5s
+repo                        PASS        89       0        0      9.9s
+host:class_c6               PASS         1       0        0      0.8s
+host:class_c6:config        PASS         5       0        0      0.8s
+host:class_c6:ws_command    PASS         2       0        0      1.0s
+host:protocol               PASS         6       0        0      0.8s
+host:protocol:mesh_dedup    PASS         4       0        0      0.8s
+host:student                PASS         7       0        0      1.0s
 
 Slowest 10 tests
-     3.0s  backend.tests.test_cofaculty_access::test_cofaculty_runs_quiz_end_to_end
-     3.0s  backend.tests.test_cofaculty_access::test_cofaculty_runs_poll
-     3.0s  backend.tests.test_cofaculty_access::test_outsider_still_forbidden_and_owner_and_admin_allowed
+     1.6s  tests.test_run_tests::test_end_to_end_json_report
+     1.2s  backend.tests.test_device_ws_contract::test_device_socket_receives_firmware_contract
      …
 
- ALL PASSED   9 suites run, 0 skipped | 313 passed, 0 failed, 0 skipped | wall time 3m26.6s
+ ALL PASSED   9 suites run, 0 skipped | 326 passed, 0 failed, 0 skipped | wall time 34.0s
 ```
+
+With `--with-idf --with-frontend` the same run adds four builds: about 1.5 min per IDF project on a clean build, a few seconds when incremental.
 
 | Option | Effect |
 |---|---|
@@ -67,14 +69,30 @@ Slowest 10 tests
 | `--with-frontend` | also `npm install && npm run build` |
 | `-x/--fail-fast` | stop after the first failing suite |
 | `-v/--verbose` | stream each suite's full output |
+| `--timeout SECONDS` | stop any suite that runs longer than this (default: no limit) |
 | `--slowest N` | show the N slowest individual tests (default 10) |
 | `--json FILE` | machine-readable report (per suite and per test case, with durations) |
 | `--junit-dir DIR` | keep pytest JUnit XML files |
 | `--markdown FILE` | Markdown report; written to `$GITHUB_STEP_SUMMARY` automatically in Actions |
 | `--no-color` | plain output (`NO_COLOR` is honoured too) |
 
-- **Statuses:** PASS, FAIL, or **SKIP** when a prerequisite is missing (no `cc`, no Docker, pytest not installed). A skip is reported with its reason and never counts as a failure.
-- **Exit code:** 0 when nothing failed, 1 on any failure, 2 for an unknown suite name.
+- **Statuses:**
+  - **PASS**.
+  - **FAIL:** a test failed, the suite timed out or was interrupted, or a **required Python package is missing**. Before starting a pytest suite, the runner checks that every package in its requirements file is installed in the interpreter running it. If not, the suite fails once with the exact install command instead of hundreds of import errors:
+    ```
+    ── backend: missing Python packages: aiosqlite, bcrypt, aiofiles
+       │ /opt/homebrew/opt/python@3.14/bin/python3.14 has no aiosqlite, bcrypt, aiofiles.
+       │ Install with:  /opt/homebrew/opt/python@3.14/bin/python3.14 -m pip install -r backend/requirements-dev.txt
+    ```
+  - **SKIP:** an optional tool is missing (no `cc`/`bash`, no `npm`, neither `idf.py` nor a reachable Docker daemon). A skip is reported with its reason and never counts as a failure.
+- **Progress:** suite output is read as it is produced, so long suites never look frozen.
+  - **On a terminal:** one live status line shows elapsed time and the suite's latest output, such as `... 1m02s  [609/1043] Building C object …` for an IDF build, pytest's `[ 45%]`, or npm.
+  - **Off a terminal (CI, pipes):** a `... still running (1m30s): …` heartbeat every 30 s.
+  - **`-v`:** streams everything.
+- **First IDF run:** if the Docker image `espressif/idf:v6.1` (~12 GB) isn't present, the runner says it is pulling it before the build starts.
+- **Ctrl-C:** stops the running suite and everything it started (process group; `docker run --init`, so the build container stops too), marks it *interrupted*, prints the report for the suites that ran, and exits 130.
+- **Clean checkout:** running the suites leaves no untracked files. The frontend suite uses `npm install --no-package-lock`; build outputs are git-ignored.
+- **Exit code:** 0 when nothing failed, 1 on any failure, 2 for an unknown suite name, 130 when interrupted.
 
 Run a single test directly with pytest when iterating: `pytest backend/tests/test_device_api.py::test_attendance_paths -x`.
 
@@ -109,7 +127,8 @@ Run a single test directly with pytest when iterating: `pytest backend/tests/tes
 ### How the backend fixtures work (`backend/tests/conftest.py`)
 
 - Environment is set **before** the app is imported: a temp SQLite file, a non-default JWT secret and device key (`test-device-key`), and `IMPRESS_INITIAL_ADMIN_PASSWORD=admin123`.
-- `client`: drops and recreates all tables, then starts the app with `TestClient` (lifespan runs, so the admin is seeded). At teardown it **drains the app's fire-and-forget DB tasks**, so no SQLite connection leaks into the next test.
+- **bcrypt cost 4 in tests** (production keeps the default 12). Every test seeds an admin and logs users in, and at cost 12 bcrypt alone took over 3 minutes of the suite. `checkpw` reads the cost from the hash, so the code paths are identical.
+- `client`: deletes the temp database file and recreates the schema (deleting the file sidesteps the `class_sessions`/`esp_devices`/`student_enrollments` foreign-key cycle that `drop_all` can't order), then starts the app with `TestClient` (lifespan runs, so the admin is seeded). At teardown it **drains the app's fire-and-forget DB tasks**, so no SQLite connection leaks into the next test.
 - `db(fn)`: runs an async ORM function in the app's event loop and commits. Use it for setup the API doesn't offer (e.g. ageing a session).
 - Helpers: `login()`, `auth()`, `make_user()`, `make_class(…, activate=True)`, `make_student()`, `DEVICE` (device-key headers).
 
@@ -166,7 +185,7 @@ These protect the pipeline and the docs from silently drifting:
 | `test_ci_workflow.py` | triggers (push, PR, manual); least-privilege permissions; concurrency cancellation; every job has a timeout; actions pinned to major versions; **every runner suite is wired into CI**; **every firmware project is in the build matrix**; one IDF version everywhere; the result gate depends on every job; JUnit reports uploaded |
 | `test_repo_hygiene.py` | no generated or compiled files tracked; no tracked file matches `.gitignore`; runtime paths ignored; first-party shell scripts are executable, have a shebang and are LF; `.gitattributes` rules; the runner finds every host suite |
 | `test_docs_consistency.py` | every internal link and anchor resolves; code fences balanced and Mermaid types valid; **every API route appears in the API docs**; **every backend setting appears in the configuration guide**; the README has no emoji and keeps its core sections |
-| `test_run_tests.py` | runner discovery and selection; JUnit and host-output parsing; SKIP on missing tools; failure reporting; Markdown report; an end-to-end JSON report; exit code 2 on an unknown suite |
+| `test_run_tests.py` | runner discovery and selection; JUnit and host-output parsing; SKIP on missing tools; **missing-package preflight** (requirements parsing with `-r` includes, one FAIL with the install command); failure reporting; Markdown report; **live status line, CI heartbeat, ANSI and partial-line handling, `--timeout`, Ctrl-C kills the whole process group, interrupted run prints the report and exits 130**; `docker run --init` and the daemon-down SKIP; frontend writes no lockfile; an end-to-end JSON report; exit code 2 on an unknown suite |
 
 ## Continuous integration
 

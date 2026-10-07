@@ -4,7 +4,7 @@ Verified observations that are **not fixed** on `v2`. Each tracked bug has a Git
 
 ## Open bugs
 
-None. Every issue opened by the audit (#1–#22) is fixed on its own branch and merged into `v2` (see the [changelog](changelog-v2.md)). The four found during the documentation pass were resolved like this:
+None. Every issue opened so far (#1–#25) is fixed on its own branch and merged into `v2` (see the [changelog](changelog-v2.md)). The ones found after the first audit were resolved like this:
 
 | Issue | Resolution |
 |---|---|
@@ -12,6 +12,9 @@ None. Every issue opened by the audit (#1–#22) is fixed on its own branch and 
 | [#20](https://github.com/Kush-Kelaiya22/imPress/issues/20) results readable cross-class | quiz/poll details and results require class access |
 | [#21](https://github.com/Kush-Kelaiya22/imPress/issues/21) co-faculty couldn't run quizzes | quizzes and polls share the class access rule |
 | [#22](https://github.com/Kush-Kelaiya22/imPress/issues/22) `correct_option` unchecked | validated against the number of options (422) |
+| [#23](https://github.com/Kush-Kelaiya22/imPress/issues/23) missing Python deps showed as 180 test failures | runner checks each suite's requirements first; one FAIL with the install command |
+| [#24](https://github.com/Kush-Kelaiya22/imPress/issues/24) idf/frontend suites looked frozen; Ctrl-C traceback | live progress / CI heartbeat, clean Ctrl-C (exit 130), `--timeout`, `docker run --init` |
+| [#25](https://github.com/Kush-Kelaiya22/imPress/issues/25) backend tests took 3m22s, ~160 SAWarnings | bcrypt cost 4 in tests, DB reset by file deletion: ~18 s, no warnings |
 
 ## Limitations by design or pending decisions
 

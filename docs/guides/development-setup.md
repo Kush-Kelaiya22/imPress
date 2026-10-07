@@ -91,10 +91,10 @@ python -m pytest -q firmware/tests    # structural guards
 ## 4. Before you push
 
 ```bash
-python run_tests.py                 # every default suite with a pass/fail/duration report
+python run_tests.py                 # every default suite (~35 s) with a pass/fail/duration report
 python run_tests.py --with-idf      # also build all three firmware projects (Docker or native IDF)
 ```
-CI runs the same suites through the same runner, plus the IDF and frontend builds (see [testing](testing.md)).
+Run it with the interpreter that has the backend requirements (e.g. the activated `backend/.venv`). Otherwise the runner names the missing packages and prints the install command. CI runs the same suites through the same runner, plus the IDF and frontend builds (see [testing](testing.md)).
 
 ## Repository hygiene
 

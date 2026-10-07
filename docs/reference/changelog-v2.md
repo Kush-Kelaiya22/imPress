@@ -1,6 +1,6 @@
 # Changelog: v2
 
-`v2` = `main` + every fix (#1–#22) from the October 2026 repository audit, plus a full test suite, CI and these docs. Each fix lives on its own `fix/*` branch, merged into `v2` with `--no-ff`. `main` is unchanged. Every GitHub issue has a resolution comment with before/after test output and a safety analysis.
+`v2` = `main` + every fix (#1–#25) from the October 2026 repository audit, plus a full test suite, CI and these docs. Each fix lives on its own `fix/*` branch, merged into `v2` with `--no-ff`. `main` is unchanged. Every GitHub issue has a resolution comment with before/after test output and a safety analysis.
 
 ## Fixes
 
@@ -28,6 +28,9 @@
 | [#20](https://github.com/Kush-Kelaiya22/imPress/issues/20) | medium | backend security | `fix/20-results-access-check` | Quiz/poll details and results require class access | `test_results_access.py` |
 | [#21](https://github.com/Kush-Kelaiya22/imPress/issues/21) | medium | backend | `fix/21-cofaculty-quiz-poll-access` | One access rule for classes, quizzes and polls (co-faculty included) | `test_cofaculty_access.py` |
 | [#22](https://github.com/Kush-Kelaiya22/imPress/issues/22) | low | backend | `fix/22-correct-option-range` | `correct_option` validated against the number of options | `test_quiz_correct_option.py` |
+| [#23](https://github.com/Kush-Kelaiya22/imPress/issues/23) | low | tooling | `fix/23-runner-dependency-preflight` | `run_tests.py` checks each pytest suite's requirements before running; one FAIL with the install command instead of 180 import errors | `tests/test_run_tests.py` (preflight tests) |
+| [#24](https://github.com/Kush-Kelaiya22/imPress/issues/24) | medium | tooling | `fix/24-runner-live-progress` | Streaming output: live status line / CI heartbeat; Ctrl-C stops the process group, prints the report, exits 130; `--timeout`; `docker run --init`; daemon-down SKIP; no lockfile written | `tests/test_run_tests.py` (progress, timeout, interrupt tests) |
+| [#25](https://github.com/Kush-Kelaiya22/imPress/issues/25) | low | tests | `fix/25-fast-backend-tests` | bcrypt cost 4 in tests; DB reset deletes the file (FK cycle). Backend suite 3m22s → ~18 s, no `SAWarning`s | the whole backend suite |
 
 ## Also in v2
 
@@ -36,7 +39,7 @@
   - 14 firmware structural guards;
   - repository/CI/docs consistency checks (`tests/`);
   - 6 host C suites (25 cases) compiling real firmware sources under ASan/UBSan, sharing an in-memory NVS fake (`firmware/test_support`).
-- **`run_tests.py`:** one command runs every suite and prints a pass/fail/duration report (also JSON, JUnit and Markdown).
+- **`run_tests.py`:** one command runs every suite (~35 s by default) and prints a pass/fail/duration report (also JSON, JUnit and Markdown), with live progress, a missing-package preflight, `--timeout` and clean Ctrl-C handling.
 - **CI:** repository checks, backend, firmware structural, firmware host, ESP-IDF v6.1 builds of all three projects (with size reports and firmware artifacts), and a frontend build, behind a single **CI result** gate. Least-privilege permissions, concurrency cancellation and per-job timeouts.
 - **Repo hygiene:** categorised `.gitignore`; `.gitattributes` (LF, binaries, vendored components); runtime logs and stray `.pyc` untracked.
 - **Docs:** this folder.
