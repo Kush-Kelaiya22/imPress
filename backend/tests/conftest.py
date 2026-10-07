@@ -22,7 +22,14 @@ os.environ.update({
 })
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import bcrypt  # noqa: E402
 import pytest  # noqa: E402
+
+# Production hashes use bcrypt's default cost (12, ~0.25 s each). Every test
+# seeds an admin and logs users in, so that cost dominated the suite's runtime.
+# Cost 4 is the minimum; checkpw reads the cost from the hash, so nothing else changes.
+_gensalt = bcrypt.gensalt
+bcrypt.gensalt = lambda rounds=4, prefix=b"2b": _gensalt(rounds, prefix)
 from fastapi.testclient import TestClient  # noqa: E402
 
 DEVICE_KEY = "test-device-key"
@@ -30,9 +37,12 @@ DEVICE = {"X-API-Key": DEVICE_KEY}
 
 
 async def _reset_db():
+    # Delete the file rather than drop_all(): the schema has a foreign-key cycle
+    # (class_sessions / esp_devices / student_enrollments) that SQLite can't sort.
     from app.database import Base, engine
+    await engine.dispose()
+    (_TMP / "test.db").unlink(missing_ok=True)
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     await engine.dispose()
 
