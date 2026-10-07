@@ -70,7 +70,9 @@ async def create_session(
     session = UserSession(
         user_id=user.id,
         token_hash=token_hash,
-        session_token=raw_token,
+        # Legacy NOT NULL/UNIQUE column: holds the hash too. The raw bearer
+        # token is never persisted — it's returned to the client once.
+        session_token=token_hash,
         created_at=now,
         last_activity_at=now,
         expires_at=expires_at,

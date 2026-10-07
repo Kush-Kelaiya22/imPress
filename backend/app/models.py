@@ -313,7 +313,7 @@ class UserSession(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     token_hash = Column(String(64), unique=True, nullable=False, index=True)  # sha256 hex of the opaque token
-    session_token = Column(String(64), unique=True, nullable=False)            # opaque string, returned to client
+    session_token = Column(String(64), unique=True, nullable=False)            # legacy column; stores token_hash, NEVER the raw token
     created_at = Column(DateTime, default=istnow)
     last_activity_at = Column(DateTime, default=istnow)
     expires_at = Column(DateTime, nullable=False)          # created_at + SESSION_HARD_MINUTES

@@ -2,6 +2,8 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+import logging
+
 from sqlalchemy import text
 
 from .config import settings
@@ -78,6 +80,24 @@ async def _migrate_columns():
                     ))
 
 
+async def _scrub_raw_session_tokens() -> int:
+    """Older versions stored the raw bearer token in user_sessions.session_token.
+
+    Any such row is treated as leaked: revoke it and overwrite the column with
+    the hash. Idempotent — rows written by current code already hold the hash.
+    """
+    from sqlalchemy import update
+    from .models import UserSession  # late import: models imports Base from here
+
+    async with engine.begin() as conn:
+        result = await conn.execute(
+            update(UserSession)
+            .where(UserSession.session_token != UserSession.token_hash)
+            .values(revoked=True, session_token=UserSession.token_hash)
+        )
+    return result.rowcount or 0
+
+
 async def init_db():
     """Create all tables on startup, then best-effort migrate existing ones."""
     async with engine.begin() as conn:
@@ -86,3 +106,7 @@ async def init_db():
         await _migrate_columns()
     except Exception:
         pass
+    scrubbed = await _scrub_raw_session_tokens()
+    if scrubbed:
+        logging.getLogger(__name__).warning(
+            "Revoked %d legacy session(s) that stored raw bearer tokens", scrubbed)
