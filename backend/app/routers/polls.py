@@ -12,6 +12,7 @@ from ..ws.manager import manager
 from ..activity import log_activity
 from ..timeutil import istnow
 from .device import _verify_api_key
+from .classes import _has_access
 
 router = APIRouter(prefix="/api/polls", tags=["polls"])
 
@@ -21,7 +22,8 @@ async def _verify_class_access(class_id: int, user: User, db: AsyncSession) -> C
     cls = result.scalar_one_or_none()
     if not cls:
         raise HTTPException(404, "Class not found")
-    if user.role == "teacher" and cls.teacher_id != user.id:
+    # Same rule as the class routes: primary teacher, co-faculty or admin.
+    if not _has_access(cls, user):
         raise HTTPException(403, "You don't have access to this class")
     return cls
 
