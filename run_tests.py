@@ -30,7 +30,9 @@ import re
 import shutil
 import subprocess
 import sys
+import signal
 import tempfile
+import threading
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass, field
@@ -39,6 +41,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 IDF_IMAGE = "espressif/idf:v6.1"
 IDF_PROJECTS = ("class_c6", "class_s3", "student")
+HEARTBEAT_SECONDS = 30.0      # progress line interval when stdout is not a terminal (CI)
 
 # ── Data ────────────────────────────────────────────────────────────────────
 
@@ -112,7 +115,7 @@ def discover() -> list[Suite]:
         suites.append(Suite(f"idf:{project}", "cmd", f"ESP-IDF v6.1 build: {project}",
                             [], optional=True))
     suites.append(Suite("frontend", "cmd", "Frontend build (npm install + vite build)",
-                        ["sh", "-c", "npm install --no-audit --no-fund --loglevel=error && npm run build"],
+                        ["sh", "-c", "npm install --no-audit --no-fund --no-package-lock --loglevel=error && npm run build"],
                         cwd=ROOT / "frontend", optional=True, requires=["npm"]))
     return suites
 
@@ -121,9 +124,20 @@ def _idf_command(project: str) -> tuple[list[str] | None, str]:
     if shutil.which("idf.py"):
         return ["idf.py", "-C", f"firmware/{project}", "build"], ""
     if shutil.which("docker"):
-        return ["docker", "run", "--rm", "-v", f"{ROOT / 'firmware'}:/project",
+        try:
+            up = subprocess.run(["docker", "info"], capture_output=True, timeout=20).returncode == 0
+        except subprocess.TimeoutExpired:
+            up = False
+        if not up:
+            return None, "docker daemon not reachable (start Docker Desktop or install ESP-IDF)"
+        # --init: idf.py would otherwise be PID 1 and ignore the SIGTERM sent on Ctrl-C / timeout
+        return ["docker", "run", "--rm", "--init", "-v", f"{ROOT / 'firmware'}:/project",
                 "-w", f"/project/{project}", IDF_IMAGE, "idf.py", "build"], ""
     return None, "needs idf.py or docker"
+
+
+def _idf_image_present() -> bool:
+    return subprocess.run(["docker", "image", "inspect", IDF_IMAGE], capture_output=True).returncode == 0
 
 
 # ── Parsing ─────────────────────────────────────────────────────────────────
@@ -194,12 +208,89 @@ def missing_packages(requirements: str) -> list[str]:
     return missing
 
 
-def run_suite(suite: Suite, junit_dir: Path | None, verbose: bool) -> SuiteResult:
+def _stop(proc: subprocess.Popen) -> None:
+    """Terminate the child and everything it started (npm, ninja, docker run)."""
+    try:
+        if os.name == "nt":
+            proc.terminate()
+        else:
+            os.killpg(proc.pid, signal.SIGTERM)
+        proc.wait(timeout=10)
+    except (ProcessLookupError, subprocess.TimeoutExpired):
+        if os.name != "nt":
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            proc.kill()
+
+
+def run_streaming(cmd, cwd, env, verbose=False, live=False, timeout=0.0) -> tuple[int, str, str]:
+    """Run `cmd` and return (exit code, combined output, abort reason).
+
+    Output is read on a thread so the caller can show progress while the child runs:
+    `verbose` echoes everything, `live` keeps one status line (elapsed time + latest
+    output) on a terminal, otherwise a heartbeat is printed every HEARTBEAT_SECONDS.
+    Ctrl-C or `timeout` stops the whole process group; the reason is returned.
+    """
+    group = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
+             else {"start_new_session": True})
+    proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **group)
+    chunks: list[bytes] = []
+    latest = [""]
+
+    def reader():
+        tail = b""
+        for data in iter(lambda: proc.stdout.read1(4096), b""):
+            chunks.append(data)
+            if verbose:
+                sys.stdout.write(data.decode(errors="replace"))
+                sys.stdout.flush()
+            tail = (tail + data)[-4096:]
+            lines = [ln for ln in re.split(rb"[\r\n]", tail) if ln.strip()]
+            if lines:
+                latest[0] = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", lines[-1].decode(errors="replace")).strip()
+
+    thread = threading.Thread(target=reader, daemon=True)
+    thread.start()
+    start, next_beat, aborted = time.perf_counter(), HEARTBEAT_SECONDS, ""
+    width = shutil.get_terminal_size((100, 20)).columns - 1
+    try:
+        while proc.poll() is None:
+            time.sleep(0.25)
+            elapsed = time.perf_counter() - start
+            if timeout and elapsed > timeout:
+                aborted = f"timed out after {fmt_secs(timeout).strip()}"
+                _stop(proc)
+                break
+            if live:
+                sys.stdout.write("\r" + f"   ... {fmt_secs(elapsed).strip():>7}  {latest[0]}"[:width].ljust(width))
+                sys.stdout.flush()
+            elif not verbose and elapsed >= next_beat:
+                print(f"   ... still running ({fmt_secs(elapsed).strip()}): {latest[0][:120]}", flush=True)
+                next_beat += HEARTBEAT_SECONDS
+    except KeyboardInterrupt:
+        aborted = "interrupted"
+        _stop(proc)
+    finally:
+        if live:
+            sys.stdout.write("\r" + " " * width + "\r")
+            sys.stdout.flush()
+    proc.wait()
+    thread.join(timeout=5)
+    return proc.returncode, b"".join(chunks).decode(errors="replace"), aborted
+
+
+def run_suite(suite: Suite, junit_dir: Path | None, verbose: bool, live: bool = False,
+              timeout: float = 0.0) -> SuiteResult:
     cmd = list(suite.cmd)
     if suite.name.startswith("idf:"):
         cmd, why = _idf_command(suite.name.split(":", 1)[1])
         if cmd is None:
             return SuiteResult(suite.name, suite.description, "SKIP", 0.0, reason=why)
+        if cmd[0] == "docker" and not _idf_image_present():
+            print(f"   note: pulling {IDF_IMAGE} (several GB, first run only)", flush=True)
     missing = _missing(suite)
     if missing:
         return SuiteResult(suite.name, suite.description, "SKIP", 0.0, reason=f"missing: {missing}")
@@ -226,34 +317,33 @@ def run_suite(suite: Suite, junit_dir: Path | None, verbose: bool) -> SuiteResul
         xml_path = out_dir / f"{suite.name.replace(':', '_')}.xml"
         cmd += [f"--junitxml={xml_path}"]
 
-    env = {**os.environ, **suite.env}
+    env = {**os.environ, "PYTHONUNBUFFERED": "1", **suite.env}
     start = time.perf_counter()
     if verbose:
         print(f"\n$ {' '.join(cmd)}", flush=True)
-    proc = subprocess.run(cmd, cwd=suite.cwd, env=env, text=True,
-                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    returncode, output, aborted = run_streaming(cmd, suite.cwd, env, verbose, live, timeout)
     seconds = time.perf_counter() - start
-    output = proc.stdout or ""
-    if verbose:
-        print(output)
 
     if suite.kind == "pytest" and xml_path and xml_path.exists():
         cases = parse_junit(xml_path)
     elif suite.kind == "host":
         cases = parse_host_output(output)
     else:
-        cases = [CaseResult(suite.name, "passed" if proc.returncode == 0 else "failed")]
+        cases = [CaseResult(suite.name, "passed" if returncode == 0 else "failed")]
 
     res = SuiteResult(suite.name, suite.description, "PASS", seconds, cases=cases)
     res.passed = sum(c.status == "passed" for c in cases)
     res.failed = sum(c.status == "failed" for c in cases)
     res.skipped = sum(c.status == "skipped" for c in cases)
     res.errors = sum(c.status == "error" for c in cases)
-    if proc.returncode != 0 or res.failed or res.errors:
+    if returncode != 0 or res.failed or res.errors:
         res.status = "FAIL"
-        res.reason = f"exit code {proc.returncode}"
+        res.reason = aborted or f"exit code {returncode}"
         res.output_tail = "\n".join(output.rstrip().splitlines()[-25:])
-        if proc.returncode != 0 and not (res.failed or res.errors):
+        if aborted and not (res.failed or res.errors):
+            res.cases.append(CaseResult(suite.name, "error", seconds, aborted))
+            res.errors = 1
+        elif returncode != 0 and not (res.failed or res.errors):
             res.errors = 1   # crashed / collection error / build error without parsed cases
     return res
 
@@ -358,6 +448,8 @@ def main(argv=None) -> int:
     ap.add_argument("--with-frontend", action="store_true", help="also build the React frontend")
     ap.add_argument("-x", "--fail-fast", action="store_true", help="stop after the first failing suite")
     ap.add_argument("-v", "--verbose", action="store_true", help="stream each suite's full output")
+    ap.add_argument("--timeout", type=float, default=0, metavar="SECONDS",
+                    help="stop a suite that runs longer than this (default: no limit)")
     ap.add_argument("--slowest", type=int, default=10, help="show the N slowest tests (default 10)")
     ap.add_argument("--json", type=Path, help="write a machine-readable report")
     ap.add_argument("--markdown", type=Path, help="write a Markdown report (default: $GITHUB_STEP_SUMMARY if set)")
@@ -385,12 +477,20 @@ def main(argv=None) -> int:
     wall_start = time.perf_counter()
     for suite in suites:
         print(f"{paint('▶', '36')} {suite.name:<28} {paint(suite.description, '2')}", flush=True)
-        res = run_suite(suite, args.junit_dir, args.verbose)
+        try:
+            res = run_suite(suite, args.junit_dir, args.verbose,
+                            live=sys.stdout.isatty() and not args.verbose, timeout=args.timeout)
+        except KeyboardInterrupt:   # Ctrl-C outside the child process (preflight, parsing)
+            res = SuiteResult(suite.name, suite.description, "FAIL", 0.0, errors=1, reason="interrupted")
         results.append(res)
         print(f"  {paint.status(res.status)} {fmt_secs(res.seconds).strip()}"
               + (f"  {res.passed} passed" if res.status != "SKIP" else f"  {res.reason}")
               + (paint(f", {res.failed + res.errors} failed", "31") if res.failed + res.errors else "")
-              + (paint(f"  ({res.reason})", "31") if res.status == "FAIL" and not res.cases else ""), flush=True)
+              + (paint(f"  ({res.reason})", "31") if res.status == "FAIL" and not res.reason.startswith("exit code")
+                 else ""), flush=True)
+        if res.reason == "interrupted":
+            print(paint("   interrupted: remaining suites not run", "33"), flush=True)
+            break
         if args.fail_fast and res.status == "FAIL":
             break
     wall = time.perf_counter() - wall_start
@@ -406,6 +506,8 @@ def main(argv=None) -> int:
     if md_target:
         with md_target.open("a") as fh:
             fh.write(markdown_report(results, wall))
+    if any(r.reason == "interrupted" for r in results):
+        return 130
     return 1 if any(r.status == "FAIL" for r in results) else 0
 
 

@@ -1,9 +1,13 @@
 """Unit tests for the root test runner (run_tests.py)."""
 
 import json
+import os
 import shutil
+import signal
 import subprocess
 import sys
+import threading
+import time
 
 import pytest
 
@@ -124,3 +128,100 @@ def test_suites_declare_their_requirements():
     assert suites["backend"].pip_requires == run_tests.DEV_REQUIREMENTS
     assert suites["repo"].pip_requires == run_tests.DEV_REQUIREMENTS   # imports the app for docs checks
     assert suites["firmware-static"].pip_requires == ""
+
+
+# ── Live progress, timeout and interruption (#24) ───────────────────────────
+
+posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups / signals")
+
+
+def _py(code):
+    return [sys.executable, "-c", code]
+
+
+def test_timeout_stops_the_suite_quickly():
+    suite = run_tests.Suite("slow", "cmd", "sleeps", _py("import time; print('started', flush=True); time.sleep(60)"))
+    t0 = time.perf_counter()
+    res = run_tests.run_suite(suite, None, False, timeout=1.0)
+    assert time.perf_counter() - t0 < 15
+    assert res.status == "FAIL" and res.reason.startswith("timed out after") and "started" in res.output_tail
+
+
+def test_heartbeat_reports_progress_when_not_a_terminal(monkeypatch, capsys):
+    monkeypatch.setattr(run_tests, "HEARTBEAT_SECONDS", 0.3)
+    code, out, aborted = run_tests.run_streaming(
+        _py("import time; print('[3/10] Building C object x.o', flush=True); time.sleep(1.2)"), ROOT, None)
+    shown = capsys.readouterr().out
+    assert code == 0 and aborted == "" and "[3/10] Building" in out
+    assert "still running" in shown and "[3/10] Building C object x.o" in shown
+
+
+def test_live_status_line_shows_latest_output_and_is_cleared(capsys):
+    run_tests.run_streaming(_py("import time; print('step one', flush=True); time.sleep(0.8)"), ROOT, None, live=True)
+    shown = capsys.readouterr().out
+    assert "\r" in shown and "step one" in shown and shown.endswith("\r")
+
+
+def test_partial_lines_and_ansi_colours_reach_the_status_line(monkeypatch, capsys):
+    # pytest -q prints dots without a newline; ninja/npm may colour their output
+    monkeypatch.setattr(run_tests, "HEARTBEAT_SECONDS", 0.3)
+    run_tests.run_streaming(_py("import sys, time; sys.stdout.write('\\x1b[32m....\\x1b[0m'); sys.stdout.flush(); time.sleep(1)"),
+                            ROOT, None)
+    shown = capsys.readouterr().out
+    assert "still running" in shown and "...." in shown and "\x1b[32m" not in shown
+
+
+@posix_only
+def test_ctrl_c_stops_the_whole_process_group():
+    # the grandchild `sleep` must die too (npm -> vite, docker run -> container)
+    cmd = ["sh", "-c", "sleep 60; echo should-not-print"]
+    threading.Timer(0.7, os.kill, (os.getpid(), signal.SIGINT)).start()
+    t0 = time.perf_counter()
+    code, out, aborted = run_tests.run_streaming(cmd, ROOT, None)
+    assert aborted == "interrupted" and code != 0 and "should-not-print" not in out
+    assert time.perf_counter() - t0 < 15
+
+
+@posix_only
+def test_interrupt_prints_report_and_exits_130(tmp_path):
+    script = tmp_path / "drive.py"
+    script.write_text(f"""
+import os, signal, sys, threading
+sys.path.insert(0, {str(ROOT)!r})
+import run_tests
+run_tests.discover = lambda: [run_tests.Suite("hang", "cmd", "hangs", ["sleep", "60"]),
+                              run_tests.Suite("never", "cmd", "not reached", ["true"])]
+threading.Timer(1.0, os.kill, (os.getpid(), signal.SIGINT)).start()
+sys.exit(run_tests.main(["--no-color"]))
+""")
+    proc = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 130, proc.stdout + proc.stderr
+    assert "Traceback" not in proc.stderr
+    assert "interrupted" in proc.stdout and "imPress test report" in proc.stdout and "never" not in proc.stdout.split("imPress test report")[1]
+
+
+def test_idf_docker_command_uses_init_and_skips_when_daemon_down(monkeypatch):
+    monkeypatch.setattr(run_tests.shutil, "which", lambda exe: "/usr/bin/docker" if exe == "docker" else None)
+    monkeypatch.setattr(run_tests.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0))
+    cmd, _ = run_tests._idf_command("student")
+    assert cmd[:4] == ["docker", "run", "--rm", "--init"] and run_tests.IDF_IMAGE in cmd and cmd[-1] == "build"
+    monkeypatch.setattr(run_tests.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 1))
+    cmd, why = run_tests._idf_command("student")
+    assert cmd is None and "daemon" in why
+
+
+def test_pytest_children_are_unbuffered(monkeypatch):
+    seen = {}
+
+    def fake(cmd, cwd, env, *a):
+        seen.update(env)
+        return 0, "", ""
+    monkeypatch.setattr(run_tests, "run_streaming", fake)
+    run_tests.run_suite(run_tests.Suite("x", "cmd", "d", ["true"]), None, False)
+    assert seen["PYTHONUNBUFFERED"] == "1"
+
+
+def test_frontend_suite_does_not_write_a_lockfile():
+    # a test run must leave the checkout clean (the project has no package-lock.json)
+    frontend = {s.name: s for s in run_tests.discover()}["frontend"]
+    assert "--no-package-lock" in " ".join(frontend.cmd)
