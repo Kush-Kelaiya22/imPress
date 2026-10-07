@@ -3,44 +3,102 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+# Least privilege: the workflow only reads the repository.
+permissions:
+  contents: read
+
+# A newer push to the same branch/PR supersedes the running pipeline.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+  FORCE_COLOR: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
 jobs:
-  backend:
-    name: Backend tests (pytest)
+  repo:
+    name: Repository and CI checks
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: backend/requirements*.txt
-      - run: pip install -r backend/requirements-dev.txt
-      - run: python -m pytest -q backend/tests
+      - name: Install dependencies
+        run: pip install -r backend/requirements-dev.txt
+      - name: Lint workflow (actionlint + shellcheck)
+        run: docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.12 -no-color
+      - name: Byte-compile sources
+        run: python -m compileall -q backend/app run_tests.py tests firmware/tests
+      - name: Repository, CI and docs checks
+        run: python run_tests.py --suite repo --junit-dir reports
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-repo
+          path: reports/
+          retention-days: 14
 
-  firmware-static:
-    name: Firmware structural tests (pytest)
+  backend:
+    name: Backend tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - run: pip install pytest
-      - name: pytest firmware/tests
-        run: |
-          if [ -d firmware/tests ]; then python -m pytest -q firmware/tests; else echo "no firmware/tests"; fi
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: Install dependencies
+        run: pip install -r backend/requirements-dev.txt
+      - name: pytest backend/tests
+        run: python run_tests.py --suite backend --junit-dir reports
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-backend
+          path: reports/
+          retention-days: 14
 
-  firmware-host:
-    name: Firmware host tests (cc + ASan/UBSan)
+  firmware-static:
+    name: Firmware structural tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: firmware/run_host_tests.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install pytest
+        run: pip install "pytest>=8"
+      - name: pytest firmware/tests
+        run: python run_tests.py --suite firmware-static --junit-dir reports
+
+  firmware-host:
+    name: Firmware host tests (gcc + ASan/UBSan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Host C suites
+        run: python run_tests.py --suite host
 
   firmware-build:
     name: ESP-IDF v6.1 build (${{ matrix.project }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     container: espressif/idf:v6.1
     strategy:
       fail-fast: false
@@ -54,16 +112,44 @@ jobs:
           . "$IDF_PATH/export.sh" >/dev/null
           cd firmware/${{ matrix.project }}
           idf.py build
+      - name: Size report
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh" >/dev/null
+          cd firmware/${{ matrix.project }}
+          idf.py size | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.project }}
+          path: |
+            firmware/${{ matrix.project }}/build/*.bin
+            firmware/${{ matrix.project }}/build/bootloader/bootloader.bin
+            firmware/${{ matrix.project }}/build/partition_table/partition-table.bin
+          retention-days: 7
+          if-no-files-found: error
 
   frontend:
-    name: Frontend build (Vite)
+    name: Frontend build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
-      - working-directory: frontend
+          node-version: ${{ env.NODE_VERSION }}
+      - name: npm install + vite build
+        run: python3 run_tests.py --suite frontend
+
+  result:
+    name: CI result
+    if: always()
+    needs: [repo, backend, firmware-static, firmware-host, firmware-build, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: All required jobs succeeded
+        env:
+          RESULTS: ${{ toJSON(needs) }}
         run: |
-          npm install --no-audit --no-fund
-          npm run build
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key)\t\(.value.result)"' | column -t
+          echo "$RESULTS" | jq -e 'all(.[]; .result == "success")' > /dev/null
