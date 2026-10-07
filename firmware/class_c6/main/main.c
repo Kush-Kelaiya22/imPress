@@ -44,8 +44,15 @@ static char s_mac_str[DEVICE_MAC_STR_LEN] = "";
 static volatile bool s_gateway_ready = false;
 static volatile int64_t s_boot_time_us = 0;
 static volatile int s_student_count = 0;  /* updated from S3 heartbeats */
+static TaskHandle_t s_spi2http_task;
+
+/* heartbeat_task → spi2http: "append the C6's own heartbeat to the batch".
+ * s_batch (a non-thread-safe cJSON tree) is owned by spi2http alone; other
+ * tasks only raise this flag. */
+static volatile bool s_hb_item_pending = false;
 
 /* ── Batch Accumulator ──────────────────────────────────────────────── */
+/* Only ever touched from spi_to_http_task (see s_hb_item_pending). */
 
 #define BATCH_BUF_SIZE  (HTTP_BUF_SIZE - 128)
 
@@ -257,6 +264,15 @@ static void spi_to_http_task(void *arg)
             process_spi_payload(buf, len);
         }
 
+        if (s_hb_item_pending) {
+            s_hb_item_pending = false;
+            cJSON *j = cJSON_CreateObject();
+            cJSON_AddStringToObject(j, "type", "heartbeat");
+            cJSON_AddStringToObject(j, "device_mac", s_mac_str);
+            cJSON_AddNumberToObject(j, "battery_pct", 100);  /* C6 is mains-powered */
+            batch_add(j);
+        }
+
         /* Periodic flush check */
         if (batch_flush_needed()) {
             batch_flush();
@@ -278,15 +294,8 @@ static void heartbeat_task(void *arg)
         /* Send heartbeat to backend with real telemetry */
         http_send_heartbeat(s_mac_str, s_student_count);
 
-        /* Send C6's own status to backend */
-        cJSON *j = cJSON_CreateObject();
-        cJSON_AddStringToObject(j, "type", "heartbeat");
-        cJSON_AddStringToObject(j, "device_mac", s_mac_str);
-        cJSON_AddNumberToObject(j, "battery_pct", 100);  /* C6 is mains-powered */
-        batch_add(j);
-        if (batch_flush_needed()) {
-            batch_flush();
-        }
+        /* C6's own status goes in the next batch; spi2http owns s_batch. */
+        s_hb_item_pending = true;
     }
 }
 
@@ -482,13 +491,14 @@ void app_main(void)
     }
 
     /* 6. Start persistent tasks — larger stacks to avoid canary overflow with cJSON+HTTP */
-    xTaskCreate(spi_to_http_task, "spi2http", 12288, NULL, 5, NULL);
+    xTaskCreate(spi_to_http_task, "spi2http", 12288, NULL, 5, &s_spi2http_task);
     xTaskCreate(heartbeat_task, "heartbeat", 6144, NULL, 3, NULL);
     xTaskCreate(status_ping_task, "status_ping", 6144, NULL, 2, NULL);
 
     /* Log stack watermarks periodically for debugging */
     vTaskDelay(pdMS_TO_TICKS(5000));
-    ESP_LOGI(TAG, "spi2http HWM: %d", uxTaskGetStackHighWaterMark(NULL));
+    ESP_LOGI(TAG, "spi2http HWM: %u",
+             (unsigned)uxTaskGetStackHighWaterMark(s_spi2http_task));
 
     /* 7. Main loop: WiFi/WS reconnect with exponential backoff */
     uint32_t wifi_delay_ms = 2000;
