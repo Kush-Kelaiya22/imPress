@@ -1,6 +1,6 @@
 """Pydantic request/response schemas."""
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import datetime, date
 from typing import Literal, Optional
 
@@ -251,6 +251,13 @@ class QuizQuestionCreate(BaseModel):
     question_text: str = Field(min_length=1)
     options: list[str] = Field(min_length=2, max_length=6)
     correct_option: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _correct_option_in_range(self):
+        if self.correct_option >= len(self.options):
+            raise ValueError(
+                f"correct_option must be < number of options ({len(self.options)})")
+        return self
 
 
 class QuizCreate(BaseModel):
