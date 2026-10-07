@@ -75,14 +75,19 @@ static uint16_t crc16_local(const uint8_t *data, size_t len)
 
 /* ── Queue the persistent full-duplex slot transaction ─────────────── */
 
+/* The driver keeps this POINTER until the S3 clocks the slot, reads it from
+ * the ISR and writes trans_len back into it, so it must not live on a stack.
+ * Exactly one transaction is in flight at a time (see spi_slave_read). */
+static spi_slave_transaction_t s_trans;
+
 static void queue_slot(void)
 {
-    spi_slave_transaction_t trans = {
+    s_trans = (spi_slave_transaction_t){
         .length = SPI_SLOT_BYTES * 8,
         .rx_buffer = s_slot_rx,
         .tx_buffer = s_slot_tx,
     };
-    spi_slave_queue_trans(SPI_HOST, &trans, portMAX_DELAY);
+    spi_slave_queue_trans(SPI_HOST, &s_trans, portMAX_DELAY);
 }
 
 static void IRAM_ATTR spi_post_setup_cb(spi_slave_transaction_t *trans)
@@ -187,6 +192,14 @@ bool spi_slave_has_data(void)
 
 int spi_slave_read(uint8_t *buf, size_t buf_size)
 {
+    /* Re-arm only after the armed slot completed (reaping it is mandatory).
+     * Re-queueing on every poll piled stale descriptors into the depth-3
+     * queue and then blocked forever while the S3 was idle. */
+    spi_slave_transaction_t *done;
+    if (spi_slave_get_trans_result(SPI_HOST, &done, 0) != ESP_OK) {
+        return 0;
+    }
+
     int n = 0;
     if (s_has_data) {
         uint8_t *rx = s_slot_rx;
@@ -196,7 +209,7 @@ int spi_slave_read(uint8_t *buf, size_t buf_size)
         s_has_data = false;
     }
 
-    /* Keep a live slot queued at all times (S3 bounded-wait covers the gap). */
+    /* Re-arm for the next S3 exchange (S3 bounded-wait covers the gap). */
     queue_slot();
     return n;
 }
