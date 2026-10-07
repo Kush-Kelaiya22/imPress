@@ -10,9 +10,13 @@
  *   4. GET /api/device/register + /firmware/check, then /firmware/download,
  *   5. stream the .bin into the inactive OTA partition,
  *   6. set the boot partition and restart.
+ * If there is nothing to install (or anything fails) the S3 detaches from
+ * WiFi, returns to the mesh channel and keeps running — no reboot.
  *
  * After restart the S3 boots normally into mesh + SPI master role with
- * the new firmware; settings survive in NVS.
+ * the new firmware; settings survive in NVS. With app rollback enabled the
+ * new image must reach app_main's mark-valid point or the bootloader
+ * reverts to the previous one.
  */
 
 #include "ota.h"
@@ -38,6 +42,8 @@
 static const char *TAG = "s3_ota";
 
 static EventGroupHandle_t s_wifi_events;
+static esp_event_handler_instance_t s_wifi_evt_inst;
+static esp_event_handler_instance_t s_ip_evt_inst;
 static volatile bool     s_ota_in_progress = false;
 static volatile bool     s_ota_ackd        = false;
 
@@ -69,7 +75,10 @@ static void _wifi_event_handler(void *arg, esp_event_base_t ev, int32_t id,
 
 static bool _wifi_attach(void)
 {
-    s_wifi_events = xEventGroupCreate();
+    if (!s_wifi_events) {
+        s_wifi_events = xEventGroupCreate();
+    }
+    xEventGroupClearBits(s_wifi_events, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
 
     wifi_config_t cfg = {
         .sta = { .threshold.authmode = WIFI_AUTH_WPA2_PSK },
@@ -80,9 +89,9 @@ static bool _wifi_attach(void)
     strlcpy((char *)cfg.sta.password, g_cfg.wifi_pass, sizeof(cfg.sta.password));
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
-        WIFI_EVENT, ESP_EVENT_ANY_ID, _wifi_event_handler, NULL, NULL));
+        WIFI_EVENT, ESP_EVENT_ANY_ID, _wifi_event_handler, NULL, &s_wifi_evt_inst));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
-        IP_EVENT, IP_EVENT_STA_GOT_IP, _wifi_event_handler, NULL, NULL));
+        IP_EVENT, IP_EVENT_STA_GOT_IP, _wifi_event_handler, NULL, &s_ip_evt_inst));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &cfg));
 
@@ -102,6 +111,37 @@ static bool _wifi_attach(void)
         s_wifi_events, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
         pdFALSE, pdFALSE, pdMS_TO_TICKS(20000));
     return (bits & WIFI_CONNECTED_BIT) != 0;
+}
+
+/** Leave the AP and go back to mesh duty without rebooting. */
+static void _wifi_detach(void)
+{
+    /* Unregister first: the DISCONNECTED handler would otherwise reconnect. */
+    if (s_wifi_evt_inst) {
+        esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, s_wifi_evt_inst);
+        s_wifi_evt_inst = NULL;
+    }
+    if (s_ip_evt_inst) {
+        esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, s_ip_evt_inst);
+        s_ip_evt_inst = NULL;
+    }
+    esp_wifi_disconnect();
+    /* Associating moved the radio to the AP's channel; ESP-NOW peers are on
+     * the mesh channel. */
+    esp_err_t err = esp_wifi_set_channel(g_cfg.mesh_channel, WIFI_SECOND_CHAN_NONE);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Restoring mesh channel %d failed: %s",
+                 g_cfg.mesh_channel, esp_err_to_name(err));
+    }
+    ESP_LOGI(TAG, "OTA hop finished — back on mesh channel %d", g_cfg.mesh_channel);
+}
+
+/** End the OTA task and resume normal mesh + SPI duty. */
+static void _ota_finish_without_update(void)
+{
+    _wifi_detach();
+    s_ota_in_progress = false;
+    vTaskDelete(NULL);
 }
 
 /* ── Backend helpers ──────────────────────────────────────────────── */
@@ -323,10 +363,8 @@ static void _ota_task(void *arg)
 
     /* 1. Attach to classroom WiFi */
     if (!_wifi_attach()) {
-        ESP_LOGE(TAG, "OTA aborted — could not connect to WiFi; rebooting to mesh");
-        s_ota_in_progress = false;
-        vTaskDelay(pdMS_TO_TICKS(500));
-        esp_restart();  /* cleanly rebuild ESP-NOW mesh state */
+        ESP_LOGE(TAG, "OTA aborted — could not connect to WiFi");
+        _ota_finish_without_update();
         return;
     }
 
@@ -353,10 +391,8 @@ static void _ota_task(void *arg)
     char target_version[32] = "";
     if (!_firmware_check(mac, FIRMWARE_VERSION, target_version,
                          sizeof(target_version))) {
-        ESP_LOGI(TAG, "No pending update — rebooting back to mesh duty");
-        s_ota_in_progress = false;
-        vTaskDelay(pdMS_TO_TICKS(500));
-        esp_restart();
+        ESP_LOGI(TAG, "No pending update — back to mesh duty (no reboot)");
+        _ota_finish_without_update();
         return;
     }
 
@@ -365,11 +401,9 @@ static void _ota_task(void *arg)
     /* 4. Download + apply */
     esp_err_t ret = _download_and_apply(mac, target_version);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "OTA failed: %s; rebooting to mesh duty",
+        ESP_LOGE(TAG, "OTA failed: %s; staying on current firmware",
                  esp_err_to_name(ret));
-        s_ota_in_progress = false;
-        vTaskDelay(pdMS_TO_TICKS(500));
-        esp_restart();
+        _ota_finish_without_update();
         return;
     }
 

@@ -241,7 +241,9 @@ async def firmware_download(mac_address: str, version: str,
         raise HTTPException(404, "Device not registered")
 
     version = version.strip()
-    if device.pending_version and version != device.pending_version:
+    if not device.pending_version:
+        raise HTTPException(403, "No OTA update is pending for this device")
+    if version != device.pending_version:
         raise HTTPException(403, "Requested version does not match pending OTA")
 
     path = get_firmware_path(device.device_type or "c6", version)
