@@ -190,6 +190,7 @@ async def stop_quiz(
 
     # Broadcast quiz_ended to devices
     await manager.broadcast_to_class(cls.id, {
+        "event": "quiz_end",  # device (C6) contract
         "type": "quiz_ended",
         "quiz_id": quiz_id,
         "title": quiz.title,
@@ -227,6 +228,7 @@ async def next_question(
         await db.refresh(quiz)
 
         await manager.broadcast_to_class(cls.id, {
+            "event": "quiz_end",  # device (C6) contract
             "type": "quiz_ended",
             "quiz_id": quiz_id,
             "title": quiz.title,
@@ -364,6 +366,7 @@ async def _broadcast_question(quiz: Quiz, class_id: int):
         return
 
     await manager.broadcast_to_class(class_id, {
+        "event": "quiz_question",  # device (C6) + React contract
         "type": "quiz_question",
         "quiz_id": quiz.id,
         "title": quiz.title,
@@ -373,4 +376,5 @@ async def _broadcast_question(quiz: Quiz, class_id: int):
         "options": q.options,
         "timing_mode": quiz.timing_mode,
         "time_limit": quiz.question_time_limit if quiz.timing_mode == "per_question" else 0,
+        "time_limit_s": quiz.question_time_limit if quiz.timing_mode == "per_question" else 0,
     })

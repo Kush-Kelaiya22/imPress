@@ -84,14 +84,17 @@ static void on_mesh_message(const msg_t *msg)
             break;
         }
 
+        case MSG_POLL_START:      /* what the C6 sends (see ws_command.c) */
         case MSG_POLL_OPTIONS: {
             if (msg->length >= 3) {  /* min: poll_id(2) + num_options(1) */
-                payload_poll_vote_t *p = (payload_poll_vote_t *)msg->payload;
+                const payload_poll_start_t *p = (const payload_poll_start_t *)msg->payload;
                 s_current_poll_id = p->poll_id;
                 s_selected_option = -1;
                 s_state = STATE_POLL_ACTIVE;
 
-                display_show_waiting("POLL: Select option");
+                /* Title only when the full struct arrived (NUL-terminated). */
+                bool has_title = msg->length >= sizeof(payload_poll_start_t) && p->title[0];
+                display_show_waiting(has_title ? p->title : "POLL: Select option");
                 ESP_LOGI(TAG, "Poll %d active", s_current_poll_id);
             }
             break;

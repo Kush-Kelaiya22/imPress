@@ -32,6 +32,7 @@
 #include "spi_slave.h"
 #include "wifi_client.h"
 #include "ws_client.h"
+#include "ws_command.h"
 #include "esp_efuse.h"
 #include "esp_mac.h"
 
@@ -357,66 +358,13 @@ static void on_ws_command(const char *json)
     const cJSON *event = cJSON_GetObjectItem(msg, "event");
     const char *evt = cJSON_IsString(event) ? event->valuestring : "";
 
-    if (strcmp(evt, "quiz_question") == 0) {
-        /* Extract question data and forward as MSG_QUIZ_QUESTION to S3 */
-        const cJSON *quiz_id  = cJSON_GetObjectItem(msg, "quiz_id");
-        const cJSON *q_num    = cJSON_GetObjectItem(msg, "question_order");
-        const cJSON *q_text   = cJSON_GetObjectItem(msg, "question_text");
-        const cJSON *options  = cJSON_GetObjectItem(msg, "options");
-        const cJSON *time_lim = cJSON_GetObjectItem(msg, "time_limit_s");
-
-        if (quiz_id && q_text && options) {
-            payload_quiz_question_t pq = {0};
-            pq.quiz_id = (uint16_t)quiz_id->valueint;
-            pq.question_num = q_num ? q_num->valueint : 0;
-            pq.num_options = cJSON_GetArraySize(options);
-            pq.time_limit_s = time_lim ? (uint32_t)time_lim->valueint : 0;
-
-            const char *qt = q_text->valuestring;
-            strncpy(pq.question_text, qt, sizeof(pq.question_text) - 1);
-            for (int i = 0; i < pq.num_options && i < 4; i++) {
-                const cJSON *opt = cJSON_GetArrayItem(options, i);
-                if (opt && cJSON_IsString(opt)) {
-                    strncpy(pq.options[i], opt->valuestring, sizeof(pq.options[i]) - 1);
-                }
-            }
-
-            uint8_t spi_buf[MSG_MAX_SIZE];
-            int n = msg_encode(MSG_QUIZ_QUESTION, (const uint8_t *)&pq, sizeof(pq),
-                               spi_buf, sizeof(spi_buf));
-            if (n > 0) {
-                spi_slave_send(spi_buf, n);
-            }
-        }
-
-    } else if (strcmp(evt, "poll_start") == 0) {
-        const cJSON *poll_id = cJSON_GetObjectItem(msg, "poll_id");
-        const cJSON *title   = cJSON_GetObjectItem(msg, "title");
-        const cJSON *options = cJSON_GetObjectItem(msg, "options");
-
-        if (poll_id && options) {
-            /* Build MSG_POLL_START payload: poll_id(2) + num_options(1) + question_text */
-            uint8_t payload_buf[128] = {0};
-            int off = 0;
-            uint16_t pid = (uint16_t)poll_id->valueint;
-            payload_buf[off++] = (pid >> 8) & 0xFF;
-            payload_buf[off++] = pid & 0xFF;
-            int n_opts = cJSON_GetArraySize(options);
-            payload_buf[off++] = (uint8_t)n_opts;
-            /* Poll title as UTF-8 text */
-            const char *t = title ? title->valuestring : "";
-            int tlen = strlen(t);
-            if (tlen > (int)sizeof(payload_buf) - off - 1) tlen = sizeof(payload_buf) - off - 1;
-            memcpy(payload_buf + off, t, tlen);
-            off += tlen;
-
-            uint8_t spi_buf[MSG_MAX_SIZE];
-            int n = msg_encode(MSG_POLL_START, payload_buf, off, spi_buf, sizeof(spi_buf));
-            if (n > 0) {
-                spi_slave_send(spi_buf, n);
-            }
-        }
-
+    /* Mesh commands (quiz/poll start + end): JSON → protocol frame → S3. */
+    uint8_t frame[MSG_MAX_SIZE];
+    int fn = ws_command_to_frame(msg, frame, sizeof(frame));
+    if (fn > 0) {
+        spi_slave_send(frame, fn);
+    } else if (fn < 0) {
+        ESP_LOGW(TAG, "Malformed '%s' command — dropped", evt);
     } else if (strcmp(evt, "device_command") == 0) {
         const cJSON *cmd = cJSON_GetObjectItem(msg, "command");
         const cJSON *pld = cJSON_GetObjectItem(msg, "payload");

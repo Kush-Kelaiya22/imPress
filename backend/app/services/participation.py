@@ -41,6 +41,7 @@ async def broadcast_question(db: AsyncSession, quiz_id: int, question_order: int
         "event": "quiz_question",
         "quiz_id": quiz_id,
         "question_num": q.order_num,
+        "question_order": q.order_num,  # key the C6 firmware reads
         "question_text": q.question_text,
         "options": q.options,
         "time_limit_s": q.time_limit_s,
