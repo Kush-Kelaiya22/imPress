@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime, date
-from typing import Optional
+from typing import Literal, Optional
 
 # Academic calendar: Monsoon → Winter → Summer (R5)
 SEMESTERS = ("Monsoon", "Winter", "Summer")
@@ -13,12 +13,15 @@ ENROLL_RE = r"^[A-Za-z0-9]{10}$"
 
 # ── Auth ─────────────────────────────────────────────────────────────
 
+# The only roles the auth layer understands (auth.require_*).
+Role = Literal["teacher", "admin", "super_admin"]
+
 class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     email: str
     password: str = Field(min_length=6)
     full_name: str = ""
-    role: str = "teacher"  # "admin" | "teacher"
+    role: Role = "teacher"
 
 
 class AdminUserCreate(BaseModel):
@@ -27,7 +30,7 @@ class AdminUserCreate(BaseModel):
     email: str
     password: str = Field(min_length=6)
     full_name: str = ""
-    role: str = "teacher"  # "admin" | "teacher"
+    role: Role = "teacher"  # admin/super_admin only grantable by a super admin
 
 
 class SuperAdminUserCreate(BaseModel):
@@ -85,7 +88,7 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     email: Optional[str] = None
     is_active: Optional[bool] = None
-    role: Optional[str] = None
+    role: Optional[Role] = None
 
 
 # ── Courses (universal catalog) ──────────────────────────────────────
