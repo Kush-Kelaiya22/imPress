@@ -53,6 +53,7 @@ class Suite:
     optional: bool = False
     requires: list[str] = field(default_factory=list)   # executables that must exist
     env: dict = field(default_factory=dict)
+    pip_requires: str = ""    # requirements file whose packages must be installed
 
 
 @dataclass
@@ -85,17 +86,20 @@ class SuiteResult:
 # ── Discovery ───────────────────────────────────────────────────────────────
 
 
-def _pytest_suite(name, path, description):
+DEV_REQUIREMENTS = "backend/requirements-dev.txt"
+
+
+def _pytest_suite(name, path, description, pip_requires=DEV_REQUIREMENTS):
     return Suite(name, "pytest", description,
                  [sys.executable, "-m", "pytest", path, "-q", "-p", "no:cacheprovider",
                   "-W", "ignore::DeprecationWarning"],
-                 env={"PYTHONDONTWRITEBYTECODE": "1"})
+                 env={"PYTHONDONTWRITEBYTECODE": "1"}, pip_requires=pip_requires)
 
 
 def discover() -> list[Suite]:
     suites = [
         _pytest_suite("backend", "backend/tests", "Backend API, services and security (pytest)"),
-        _pytest_suite("firmware-static", "firmware/tests", "Firmware structural guards (pytest)"),
+        _pytest_suite("firmware-static", "firmware/tests", "Firmware structural guards (pytest)", pip_requires=""),
         _pytest_suite("repo", "tests", "CI, repository and docs consistency (pytest)"),
     ]
     for script in sorted((ROOT / "firmware").glob("*/test_host/run*.sh")):
@@ -165,12 +169,29 @@ def _missing(suite: Suite) -> str:
     return ", ".join(exe for exe in suite.requires if not shutil.which(exe))
 
 
-def _pytest_available() -> bool:
-    try:
-        import pytest  # noqa: F401
-        return True
-    except ImportError:
-        return False
+def _requirements(path: Path) -> list[str]:
+    """Distribution names from a requirements file, following -r includes."""
+    names = []
+    for line in path.read_text().splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line.startswith("-r"):
+            names += _requirements(path.parent / line[2:].strip())
+        elif line and not line.startswith("-"):
+            names.append(re.split(r"[\[<>=!~;\s]", line, maxsplit=1)[0])
+    return names
+
+
+def missing_packages(requirements: str) -> list[str]:
+    """Packages from `requirements` (plus pytest) not installed in this interpreter."""
+    from importlib.metadata import PackageNotFoundError, distribution
+    names = ["pytest"] + (_requirements(ROOT / requirements) if requirements else [])
+    missing = []
+    for name in dict.fromkeys(names):
+        try:
+            distribution(name)
+        except PackageNotFoundError:
+            missing.append(name)
+    return missing
 
 
 def run_suite(suite: Suite, junit_dir: Path | None, verbose: bool) -> SuiteResult:
@@ -183,11 +204,20 @@ def run_suite(suite: Suite, junit_dir: Path | None, verbose: bool) -> SuiteResul
     if missing:
         return SuiteResult(suite.name, suite.description, "SKIP", 0.0, reason=f"missing: {missing}")
     if suite.kind == "pytest":
-        if not _pytest_available():
-            return SuiteResult(suite.name, suite.description, "SKIP", 0.0,
-                               reason="pytest not installed (pip install -r backend/requirements-dev.txt)")
         if not (ROOT / suite.cmd[3]).exists():
             return SuiteResult(suite.name, suite.description, "SKIP", 0.0, reason=f"{suite.cmd[3]} not found")
+        # Mandatory suites: a missing package is one clear FAIL, not a skip (a skip
+        # would hide a broken install in CI) and not hundreds of per-test errors.
+        missing_pkgs = missing_packages(suite.pip_requires)
+        if missing_pkgs:
+            req = suite.pip_requires or "pytest"
+            return SuiteResult(suite.name, suite.description, "FAIL", 0.0, errors=1,
+                               reason=f"missing Python packages: {', '.join(missing_pkgs)}",
+                               output_tail=f"{sys.executable} has no {', '.join(missing_pkgs)}.\n"
+                                           f"Install with:  {sys.executable} -m pip install -r {req}\n"
+                                           f"(or activate the venv that has them and rerun)"
+                                           if suite.pip_requires else
+                                           f"Install with:  {sys.executable} -m pip install pytest")
 
     xml_path = None
     if suite.kind == "pytest":
@@ -273,7 +303,7 @@ def print_report(results: list[SuiteResult], wall: float, paint: Paint, slowest:
             for ln in r.output_tail.splitlines():
                 print(paint(f"   │ {ln}", "2"))
 
-    timed = sorted((c for r in results for c in r.cases if c.seconds > 0),
+    timed = sorted((c for r in results for c in r.cases if c.seconds >= 0.05),
                    key=lambda c: c.seconds, reverse=True)[:slowest]
     if timed:
         print()
@@ -359,7 +389,8 @@ def main(argv=None) -> int:
         results.append(res)
         print(f"  {paint.status(res.status)} {fmt_secs(res.seconds).strip()}"
               + (f"  {res.passed} passed" if res.status != "SKIP" else f"  {res.reason}")
-              + (paint(f", {res.failed + res.errors} failed", "31") if res.failed + res.errors else ""), flush=True)
+              + (paint(f", {res.failed + res.errors} failed", "31") if res.failed + res.errors else "")
+              + (paint(f"  ({res.reason})", "31") if res.status == "FAIL" and not res.cases else ""), flush=True)
         if args.fail_fast and res.status == "FAIL":
             break
     wall = time.perf_counter() - wall_start

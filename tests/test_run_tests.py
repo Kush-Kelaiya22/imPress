@@ -93,3 +93,34 @@ def test_unknown_suite_exits_2():
     proc = subprocess.run([sys.executable, "run_tests.py", "--suite", "nope-nothing"], cwd=ROOT,
                           capture_output=True, text=True)
     assert proc.returncode == 2
+
+
+def test_requirements_parsing_follows_includes_and_strips_specifiers(tmp_path):
+    (tmp_path / "base.txt").write_text("fastapi>=0.115.0\nuvicorn[standard]>=0.30\n# comment\n\nsqlalchemy[asyncio] ; python_version>'3'\n")
+    (tmp_path / "dev.txt").write_text("-r base.txt\npytest>=8  # inline comment\n--index-url https://x\n")
+    assert run_tests._requirements(tmp_path / "dev.txt") == ["fastapi", "uvicorn", "sqlalchemy", "pytest"]
+
+
+def test_dev_requirements_cover_every_runtime_requirement():
+    names = run_tests._requirements(ROOT / run_tests.DEV_REQUIREMENTS)
+    assert {"pytest", "httpx", "pyyaml", "fastapi", "aiosqlite"} <= set(names)
+
+
+def test_missing_packages_reported_once_with_install_hint(tmp_path, monkeypatch):
+    req = tmp_path / "req.txt"
+    req.write_text("pytest\ndefinitely-not-a-real-package-xyz>=1\n")
+    monkeypatch.setattr(run_tests, "ROOT", tmp_path)
+    assert run_tests.missing_packages("req.txt") == ["definitely-not-a-real-package-xyz"]
+    (tmp_path / "tests").mkdir()
+    suite = run_tests._pytest_suite("fake", "tests", "needs a package", pip_requires="req.txt")
+    res = run_tests.run_suite(suite, None, False)
+    assert res.status == "FAIL" and res.errors == 1 and res.passed == 0
+    assert "definitely-not-a-real-package-xyz" in res.reason
+    assert "pip install -r req.txt" in res.output_tail
+
+
+def test_suites_declare_their_requirements():
+    suites = {s.name: s for s in run_tests.discover()}
+    assert suites["backend"].pip_requires == run_tests.DEV_REQUIREMENTS
+    assert suites["repo"].pip_requires == run_tests.DEV_REQUIREMENTS   # imports the app for docs checks
+    assert suites["firmware-static"].pip_requires == ""
