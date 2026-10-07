@@ -67,16 +67,19 @@ int ws_client_start(int class_id, ws_recv_cb_t callback)
         ws_client_stop();
     }
 
-    /* ws://host:port/ws/class/<id>?role=device&api_key=<key>
-     * host and api_key are both up to 127 chars → keep plenty of room. */
-    char uri[512];
-    snprintf(uri, sizeof(uri),
-             "ws://%s:%u/ws/class/%d?role=device&api_key=%s",
-             g_cfg.backend_host, g_cfg.backend_port, class_id, g_cfg.api_key);
-    ESP_LOGI(TAG, "WS connecting: %s", uri);
+    /* ws://host:port/ws/class/<id>?role=device — the device key goes in an
+     * X-API-Key header, not the URL (URLs end up in proxy/access logs). */
+    char uri[256];
+    snprintf(uri, sizeof(uri), "ws://%s:%u/ws/class/%d?role=device",
+             g_cfg.backend_host, g_cfg.backend_port, class_id);
+    ESP_LOGI(TAG, "WS connecting: %s", uri);   /* no secret in this string */
+
+    char headers[sizeof(g_cfg.api_key) + 16];   /* copied (strdup) by the client init */
+    snprintf(headers, sizeof(headers), "X-API-Key: %s\r\n", g_cfg.api_key);
 
     esp_websocket_client_config_t cfg = {
         .uri = uri,
+        .headers = headers,
         .reconnect_timeout_ms = 5000,
         .network_timeout_ms = 10000,
     };

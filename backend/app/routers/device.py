@@ -10,7 +10,7 @@ from ..database import get_db
 from ..models import EspDevice, ClassSession, Attendance, StudentEnrollment, Student, ActivityLog
 from ..schemas import DeviceRegister, DeviceHeartbeat, DeviceStatusPing, DeviceAttendance, \
     DeviceDataBatch, DeviceFirmwareCheck, DeviceOtaApplied, OtaStatusResponse
-from ..config import settings
+from ..config import settings, api_key_ok
 from ..services.presence import mark_online, _push_after_commit
 from ..services.firmware_store import get_firmware_path
 from ..timeutil import istnow, istnow_aware
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/device", tags=["device"])
 
 
 async def _verify_api_key(x_api_key: str = Header(...)):
-    if x_api_key != settings.DEVICE_API_KEY:
+    if not api_key_ok(x_api_key):
         raise HTTPException(403, "Invalid device API key")
 
 

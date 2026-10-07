@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
@@ -12,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
-from .config import settings
+from .config import settings, check_secure, insecure_settings
 from .database import init_db, async_session
 from .timeutil import istnow
 from .routers import auth, classes, quizzes, polls, device, admin, courses, students
@@ -30,6 +31,10 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Create tables and seed a default super admin on startup."""
+    check_secure(settings)
+    if insecure_settings(settings):
+        logger.warning("DEBUG mode with default secrets %s — never deploy like this",
+                       insecure_settings(settings))
     await init_db()
     logger.info("Database tables created")
 
@@ -43,16 +48,22 @@ async def lifespan(app: FastAPI):
     async with async_session() as db:
         result = await db.execute(select(User).limit(1))
         if not result.scalar_one_or_none():
+            password = settings.INITIAL_ADMIN_PASSWORD or secrets.token_urlsafe(12)
             admin_user = User(
                 username="admin",
                 email="admin@impress.local",
-                hashed_password=hash_password("admin123"),
+                hashed_password=hash_password(password),
                 full_name="Super Admin",
                 role="super_admin",
             )
             db.add(admin_user)
             await db.commit()
-            logger.info("Default super admin created (admin / admin123)")
+            if settings.INITIAL_ADMIN_PASSWORD:
+                logger.warning("Initial super admin 'admin' created with IMPRESS_INITIAL_ADMIN_PASSWORD")
+            else:
+                # Shown once, on the very first start only. Change it after login.
+                logger.warning("Initial super admin created: username=admin password=%s "
+                               "(shown once — change it now)", password)
 
     try:
         yield
@@ -80,7 +91,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
