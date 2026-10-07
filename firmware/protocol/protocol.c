@@ -147,3 +147,43 @@ const char *msg_type_name(msg_type_t type)
         default:                  return "UNKNOWN";
     }
 }
+
+/* ── SPI batch record ──────────────────────────────────────────────── */
+
+int spi_record_write(uint8_t *out, size_t out_size, uint32_t sender_id,
+                     const uint8_t *frame, uint16_t frame_len)
+{
+    size_t total = SPI_RECORD_HEADER_SIZE + (size_t)frame_len;
+    if (!out || (frame_len && !frame) || total > out_size) {
+        return -1;
+    }
+    out[0] = (uint8_t)(frame_len >> 8);
+    out[1] = (uint8_t)(frame_len & 0xFF);
+    out[2] = (uint8_t)(sender_id);
+    out[3] = (uint8_t)(sender_id >> 8);
+    out[4] = (uint8_t)(sender_id >> 16);
+    out[5] = (uint8_t)(sender_id >> 24);
+    if (frame_len) {
+        memcpy(out + SPI_RECORD_HEADER_SIZE, frame, frame_len);
+    }
+    return (int)total;
+}
+
+int spi_record_read(const uint8_t *buf, size_t buf_len, uint32_t *sender_id,
+                    const uint8_t **frame, uint16_t *frame_len)
+{
+    if (!buf || buf_len < SPI_RECORD_HEADER_SIZE) {
+        return 0;
+    }
+    uint16_t len = ((uint16_t)buf[0] << 8) | buf[1];
+    if (SPI_RECORD_HEADER_SIZE + (size_t)len > buf_len) {
+        return 0;
+    }
+    if (sender_id) {
+        *sender_id = (uint32_t)buf[2] | ((uint32_t)buf[3] << 8) |
+                     ((uint32_t)buf[4] << 16) | ((uint32_t)buf[5] << 24);
+    }
+    if (frame) *frame = buf + SPI_RECORD_HEADER_SIZE;
+    if (frame_len) *frame_len = len;
+    return SPI_RECORD_HEADER_SIZE + len;
+}

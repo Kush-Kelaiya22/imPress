@@ -474,14 +474,18 @@ int mesh_master_flush_to_spi(uint8_t *buf, size_t buf_size)
     int total = 0;
     xSemaphoreTake(s_queue_mutex, portMAX_DELAY);
 
-    while (s_msg_queue_head != s_msg_queue_tail &&
-           total + s_msg_queue[s_msg_queue_head].length + 2 < (int)buf_size) {
-        uint16_t len = s_msg_queue[s_msg_queue_head].length;
-        buf[total]     = (uint8_t)(len >> 8);   /* big-endian — C6 parse */
-        buf[total + 1] = (uint8_t)(len & 0xFF);
-        memcpy(buf + total + 2,
-               s_msg_queue[s_msg_queue_head].data, len);
-        total += 2 + len;
+    /* Queue entries hold [sender_id:4 native][frame]; emit the shared
+     * spi_record layout, whose length field covers the frame only. */
+    while (s_msg_queue_head != s_msg_queue_tail) {
+        const uint8_t *data = s_msg_queue[s_msg_queue_head].data;
+        uint32_t sender_id;
+        memcpy(&sender_id, data, 4);
+        int n = spi_record_write(buf + total, buf_size - total, sender_id,
+                                 data + 4, s_msg_queue[s_msg_queue_head].length - 4);
+        if (n < 0) {
+            break;  /* slot full — rest goes in the next flush */
+        }
+        total += n;
         s_msg_queue_head = (s_msg_queue_head + 1) % MSG_QUEUE_SIZE;
     }
 
