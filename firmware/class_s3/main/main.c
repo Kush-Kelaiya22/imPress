@@ -17,6 +17,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_efuse.h"
+#include "esp_ota_ops.h"
 
 #include "config.h"
 #include "protocol.h"
@@ -165,6 +166,17 @@ void app_main(void)
     mesh_master_on_receive(on_student_message);
 
     ESP_LOGI(TAG, "S3 ready — mesh root + SPI master active");
+
+    /* App rollback: an image booted for the first time after OTA is
+     * PENDING_VERIFY. Only keep it once mesh + SPI came up (a crash before
+     * this point makes the bootloader revert to the previous image). */
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    esp_ota_img_states_t ota_state;
+    if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK &&
+        ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
+        esp_ota_mark_app_valid_cancel_rollback();
+        ESP_LOGI(TAG, "New firmware verified — rollback cancelled");
+    }
 
     /* Start tasks */
     xTaskCreate(spi_link_task, "spi_link", 4096, NULL, 5, NULL);

@@ -12,3 +12,6 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 # PSRAM for large student routing table
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_USE_MALLOC=y
+
+# OTA safety: a new image must reach app_main mark-valid or the bootloader reverts
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
