@@ -249,7 +249,13 @@ int mesh_master_init(void)
     /* esp_wifi_set_channel() requires WiFi to be started first */
     ESP_ERROR_CHECK(esp_wifi_start());
     vTaskDelay(pdMS_TO_TICKS(100));  /* let WiFi radio settle */
-    esp_wifi_set_channel(g_cfg.mesh_channel, WIFI_SECOND_CHAN_NONE);
+    ret = esp_wifi_set_channel(g_cfg.mesh_channel, WIFI_SECOND_CHAN_NONE);
+    if (ret != ESP_OK) {
+        /* Don't abort (the old ESP_ERROR_CHECK here boot-looped), but say so:
+         * students on the configured channel won't hear us. */
+        ESP_LOGE(TAG, "esp_wifi_set_channel(%d) failed: %s",
+                 g_cfg.mesh_channel, esp_err_to_name(ret));
+    }
 
     /* Init ESP-NOW */
     ESP_ERROR_CHECK(esp_now_init());
