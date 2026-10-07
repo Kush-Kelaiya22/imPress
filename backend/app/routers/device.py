@@ -72,12 +72,16 @@ async def register_device(body: DeviceRegister, db: AsyncSession = Depends(get_d
         )
         linked_class_id = linked.scalar_one_or_none()
 
-        if linked_class_id is None and (not body.classroom_code or not body.classroom_code.strip()):
-            # No room code given: auto-link this gateway to the first available
-            # classroom (single available classroom expected; earliest id wins).
+        if (linked_class_id is None
+                and (body.device_type or "").lower() == "c6"
+                and (not body.classroom_code or not body.classroom_code.strip())):
+            # No room code given: auto-link this GATEWAY to the first active
+            # classroom that has no gateway yet. Other device types (an S3
+            # registering during its OTA hop, student nodes) must never take
+            # over a class's gateway link.
             avail = await db.execute(
                 select(ClassSession)
-                .where(ClassSession.is_active.is_(True))
+                .where(ClassSession.is_active.is_(True), ClassSession.device_id.is_(None))
                 .order_by(ClassSession.id.asc())
             )
             cls = avail.scalars().first()
