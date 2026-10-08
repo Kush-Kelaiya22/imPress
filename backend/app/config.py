@@ -1,6 +1,7 @@
 """Application configuration loaded from environment variables."""
 
 import secrets
+from pathlib import Path
 
 from pydantic_settings import BaseSettings
 
@@ -51,6 +52,10 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# The release, from the repository's VERSION file (#42); /health reports it.
+_VERSION_FILE = Path(__file__).resolve().parents[2] / "VERSION"
+APP_VERSION = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else "unknown"
 
 
 def insecure_settings(s: Settings) -> list[str]:

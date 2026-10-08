@@ -6,12 +6,22 @@ This guide puts imPress into real classrooms: one backend server, and one S3 + C
 
 ### Host and process
 ```bash
-git clone … imPress && cd imPress/backend
-python3.12 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env    # then edit, see below
-.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers
+git clone … imPress && cd imPress
+scripts/install.sh      # Python >= 3.12: backend/.venv, dependencies, backend/.env with generated secrets
+scripts/start.sh        # uvicorn on 127.0.0.1:8000, one worker (IMPRESS_HOST / IMPRESS_PORT to change)
 ```
+`install.sh` (#42) is safe to re-run, for example after `git pull`:
+- **Dependencies:** on Linux x86_64 it installs the **hash-locked** set that CI tests (`requirements-lock.txt`, `--require-hashes`); elsewhere it installs `requirements.txt`.
+- **Configuration:** it creates `backend/.env` from `.env.example`. An empty `IMPRESS_JWT_SECRET` or `IMPRESS_DEVICE_API_KEY` gets a random value; it never writes the public defaults and keeps every value already set. The file is `chmod 600`.
+- **Check:** it confirms that the app imports.
+
+CI runs exactly this path on a fresh runner, followed by `scripts/smoke_test.py`. Run that yourself after an install to check a live server:
+```bash
+scripts/smoke_test.py --base http://127.0.0.1:8000 --password <admin password>
+```
+It checks health and version, login, a course and section, gateway registration and heartbeat, a student join and the inventory, the firmware registry and the web app.
+
+The manual path still works: a venv in `backend/`, `pip install -r requirements.txt`, `cp .env.example .env` (then set the secrets), and `uvicorn app.main:app --workers 1 --proxy-headers` started from `backend/`.
 - **One worker only.** WebSocket rooms live in process memory ([backend scaling](../architecture/backend.md#scaling-and-limits)).
 - Run it under a supervisor (systemd unit below) and start it **from `backend/`**.
 
@@ -103,6 +113,6 @@ Gateways currently speak plain `http://`/`ws://` to `BACKEND_HOST:BACKEND_PORT`.
 ## 5. Upgrading
 
 1. Back up the DB.
-2. `git pull`, then `pip install -r requirements.txt`.
-3. Restart the service. `init_db()` adds new tables and columns automatically; read the release notes for anything that needs a manual migration.
-4. Update firmware: the S3 via [OTA](ota-updates.md); the C6 and students over serial for now.
+2. `git pull`, then `scripts/install.sh`.
+3. Restart the service. The versioned migrations run at startup: they back up the database first and stop the server with instructions if a step can't apply ([database migrations](../engineering/DATABASE_MIGRATIONS.md)). `GET /health` reports `version` and `schema_version`.
+4. Update firmware: the S3 and C6 from the [Firmware page](ota-updates.md); students over serial. Read the [changelog upgrade notes](../reference/changelog-v2.1.md#upgrade-notes) for one-time serial flashes.
