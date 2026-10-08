@@ -1007,6 +1007,8 @@ CONFIG_BACKEND_HOST="192.168.137.1"
 CONFIG_BACKEND_PORT=8000
 # default:
 CONFIG_DEVICE_API_KEY="impress-device-key-2024"
+# default:
+# CONFIG_BACKEND_TLS is not set
 # end of Backend Server (OTA)
 
 #

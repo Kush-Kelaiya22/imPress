@@ -30,7 +30,7 @@ menu "imPress C6 Gateway Configuration"
                 IP or hostname of the FastAPI backend.
 
         config BACKEND_PORT
-            int "Backend HTTP port"
+            int "Backend port (HTTP, or HTTPS with BACKEND_TLS)"
             default 8000
             help
                 HTTP port of the FastAPI backend.
@@ -39,7 +39,8 @@ menu "imPress C6 Gateway Configuration"
             string "Device API key"
             default "impress-device-key-2024"
             help
-                Shared secret sent in X-API-Key header and WS ?api_key= param.
+                The site's shared provisioning key, sent as X-API-Key until
+                the device is issued its own key at registration (#66).
                 Must match IMPRESS_DEVICE_API_KEY on the backend.
 
         config CLASS_SESSION_ID
@@ -49,6 +50,33 @@ menu "imPress C6 Gateway Configuration"
                 Set to 0 to have the backend assign the class on first connect.
                 Set a positive integer to pin this gateway to a specific class.
 
+        config BACKEND_TLS
+            bool "Use HTTPS / WSS to reach the backend"
+            default n
+            help
+                Encrypt device traffic and authenticate the server (#66).
+                Point BACKEND_HOST at the name in the server's certificate
+                and BACKEND_PORT at its TLS port (usually 443).
+
+        choice BACKEND_TLS_TRUST
+            prompt "Trust the server's certificate through"
+            depends on BACKEND_TLS
+            default BACKEND_TLS_CRT_BUNDLE
+
+            config BACKEND_TLS_CRT_BUNDLE
+                bool "Public certificate authorities (ESP-IDF bundle)"
+                select MBEDTLS_CERTIFICATE_BUNDLE
+                help
+                    For a server certificate from a public CA such as Let's Encrypt.
+
+            config BACKEND_TLS_CA_FILE
+                bool "certs/backend_ca.pem in this project"
+                help
+                    Trust only this CA: a private CA, or the server's own
+                    self-signed certificate. Put the PEM at
+                    firmware/<project>/certs/backend_ca.pem before building;
+                    it is embedded in the image.
+        endchoice
     endmenu
 
     menu "Timing"

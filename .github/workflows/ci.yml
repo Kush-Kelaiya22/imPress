@@ -164,9 +164,9 @@ jobs:
   firmware-signed:
     # The signed-app profile (#66) with a throwaway key made for this run:
     # it builds, and the backend's verifier accepts the result and names the key.
-    name: ESP-IDF v6.1 signed build (class_c6)
+    name: ESP-IDF v6.1 signed and TLS builds
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     container: espressif/idf:v6.1@sha256:81893c71bb5e570088901f21def8684c25cd2a9020281bd01b843a7655edb18c
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -179,6 +179,21 @@ jobs:
           python3 scripts/verify_firmware.py firmware/class_c6/build/signed/impress_class_c6.bin \
             --key "$RUNNER_TEMP/key/signing_key.pub"
           grep -q '^CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT=y' firmware/class_c6/build/signed/sdkconfig
+      - name: Backend over TLS (#66) - C6 with public CAs, S3 with an embedded CA
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh" >/dev/null
+          variant() {   # the committed sdkconfig plus TLS options, in build/tls
+            p=$1; shift; d=firmware/$p/build/tls; mkdir -p "$d"
+            grep -Ev '^(# )?CONFIG_BACKEND_TLS' "firmware/$p/sdkconfig" > "$d/sdkconfig"
+            printf '%s\n' "$@" >> "$d/sdkconfig"
+            (cd "firmware/$p" && idf.py -B build/tls -D SDKCONFIG=build/tls/sdkconfig build)
+          }
+          variant class_c6 CONFIG_BACKEND_TLS=y CONFIG_BACKEND_TLS_CRT_BUNDLE=y
+          mkdir -p firmware/class_s3/certs
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=ci-ca" \
+            -keyout "$RUNNER_TEMP/ca.key" -out firmware/class_s3/certs/backend_ca.pem 2>/dev/null
+          variant class_s3 CONFIG_BACKEND_TLS=y CONFIG_BACKEND_TLS_CA_FILE=y
 
   frontend:
     name: Frontend build
@@ -243,9 +258,22 @@ jobs:
           cat server.log; exit 1
       - name: HTTP smoke test
         run: python scripts/smoke_test.py --password "$IMPRESS_INITIAL_ADMIN_PASSWORD"
+      - name: HTTPS smoke test (#66, a throwaway CA)
+        run: |
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+            -keyout "$RUNNER_TEMP/tls.key" -out "$RUNNER_TEMP/tls.crt" 2>/dev/null
+          IMPRESS_PORT=8443 IMPRESS_DATABASE_URL="sqlite+aiosqlite:///$RUNNER_TEMP/tls.db" \
+            IMPRESS_SSL_CERTFILE="$RUNNER_TEMP/tls.crt" IMPRESS_SSL_KEYFILE="$RUNNER_TEMP/tls.key" \
+            nohup scripts/start.sh > tls.log 2>&1 &
+          for _ in $(seq 60); do curl -sf --cacert "$RUNNER_TEMP/tls.crt" https://127.0.0.1:8443/health && break; sleep 1; done
+          python scripts/smoke_test.py --base https://127.0.0.1:8443 --password "$IMPRESS_INITIAL_ADMIN_PASSWORD" \
+            --cafile "$RUNNER_TEMP/tls.crt"
+          if python scripts/smoke_test.py --base https://127.0.0.1:8443 --password x 2>/dev/null; then
+            echo "an untrusted certificate was accepted"; exit 1; fi
       - name: Server log
         if: always()
-        run: cat server.log
+        run: cat server.log tls.log 2>/dev/null || true
 
   result:
     name: CI result

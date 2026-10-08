@@ -10,6 +10,7 @@ Exits non-zero at the first failed step.
 
 import argparse
 import json
+import ssl
 import sys
 import urllib.error
 import urllib.request
@@ -17,6 +18,7 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+CONTEXT = None          # an ssl.SSLContext for --cafile (an HTTPS server with a private CA)
 
 
 def call(base, path, body=None, token=None, key=None, raw=None, ctype="application/json"):
@@ -28,7 +30,7 @@ def call(base, path, body=None, token=None, key=None, raw=None, ctype="applicati
     if key:
         req.add_header("x-api-key", key)
     try:
-        with urllib.request.urlopen(req, timeout=15) as r:
+        with urllib.request.urlopen(req, timeout=15, context=CONTEXT) as r:
             text = r.read().decode()
             return r.status, (json.loads(text) if r.headers.get_content_type() == "application/json" else text)
     except urllib.error.HTTPError as e:
@@ -49,7 +51,11 @@ def main():
     ap.add_argument("--username", default="admin")
     ap.add_argument("--password", required=True)
     ap.add_argument("--device-key")
+    ap.add_argument("--cafile", help="CA certificate to trust for an https:// base (#66)")
     a = ap.parse_args()
+    global CONTEXT
+    if a.cafile:
+        CONTEXT = ssl.create_default_context(cafile=a.cafile)
     base, key = a.base.rstrip("/"), a.device_key or env_value("IMPRESS_DEVICE_API_KEY")
     tag = uuid.uuid4().hex[:6].upper()          # re-runnable against the same database
     gw = "48:F6:EE:" + ":".join(tag[i:i + 2] for i in (0, 2, 4))

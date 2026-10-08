@@ -21,6 +21,7 @@
 
 #include "ota.h"
 #include "config.h"
+#include "backend_tls.h"   /* http(s)/ws(s) and the server certificate (#66) */
 #include "spi_master.h"
 #include "mesh_master.h"
 #include "protocol.h"
@@ -151,7 +152,7 @@ static void _ota_finish_without_update(void)
 
 static void _url(char *buf, size_t sz, const char *path)
 {
-    snprintf(buf, sz, "http://%s:%u%s", g_cfg.backend_host,
+    snprintf(buf, sz, BACKEND_HTTP_SCHEME "://%s:%u%s", g_cfg.backend_host,
              g_cfg.backend_port, path);
 }
 
@@ -174,6 +175,7 @@ static int _http_post_body(const char *url, const char *json, char *out, size_t 
         .method     = HTTP_METHOD_POST,
         .timeout_ms = 10000,
     };
+    BACKEND_TLS_APPLY(config);
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) return 0;
 
@@ -242,6 +244,7 @@ static int _firmware_check(const char *mac, const char *cur_version,
         .method     = HTTP_METHOD_POST,
         .timeout_ms = 10000,
     };
+    BACKEND_TLS_APPLY(config);
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) return 0;
 
@@ -325,6 +328,7 @@ static esp_err_t _download_and_apply(const char *mac, const char *version)
         .timeout_ms = 60000,
         .buffer_size = 8192,
     };
+    BACKEND_TLS_APPLY(config);
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) return ESP_FAIL;
     esp_http_client_set_header(client, "X-API-Key", g_cfg.api_key);

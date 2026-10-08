@@ -10,6 +10,7 @@
 
 #include "ws_client.h"
 #include "config.h"
+#include "backend_tls.h"   /* http(s)/ws(s) and the server certificate (#66) */
 
 #include <string.h>
 #include <stdio.h>
@@ -67,10 +68,10 @@ int ws_client_start(int class_id, ws_recv_cb_t callback)
         ws_client_stop();
     }
 
-    /* ws://host:port/ws/class/<id>?role=device — the device key goes in an
+    /* ws(s)://host:port/ws/class/<id>?role=device — the device key goes in an
      * X-API-Key header, not the URL (URLs end up in proxy/access logs). */
     char uri[256];
-    snprintf(uri, sizeof(uri), "ws://%s:%u/ws/class/%d?role=device",
+    snprintf(uri, sizeof(uri), BACKEND_WS_SCHEME "://%s:%u/ws/class/%d?role=device",
              g_cfg.backend_host, g_cfg.backend_port, class_id);
     ESP_LOGI(TAG, "WS connecting: %s", uri);   /* no secret in this string */
 
@@ -83,6 +84,7 @@ int ws_client_start(int class_id, ws_recv_cb_t callback)
         .reconnect_timeout_ms = 5000,
         .network_timeout_ms = 10000,
     };
+    BACKEND_TLS_APPLY(cfg);
     s_ws_client = esp_websocket_client_init(&cfg);
     if (!s_ws_client) {
         ESP_LOGE(TAG, "Failed to init WS client");

@@ -1061,6 +1061,8 @@ CONFIG_BACKEND_PORT=8000
 CONFIG_DEVICE_API_KEY="impress-device-key-2024"
 # default:
 CONFIG_CLASS_SESSION_ID=0
+# default:
+# CONFIG_BACKEND_TLS is not set
 # end of Backend Server
 
 #

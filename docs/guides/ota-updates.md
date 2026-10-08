@@ -136,12 +136,9 @@ Upload `build/signed/impress_<project>.bin` and deploy it as usual. **From the m
 
 ## Transport security
 
-The S3 currently downloads over `http://`. To move to HTTPS:
-1. serve the backend behind TLS;
-2. embed the CA certificate in the S3 firmware and set `esp_http_client_config_t.cert_pem`;
-3. change `_url()` in `ota.c` to `https://`.
+The hub and gateway can reach the backend over HTTPS and WSS (#66): **Backend over TLS** in `idf.py menuconfig` → the project's "Backend Server" menu. Every request then uses it: registration, heartbeats, batches, the WebSocket, firmware checks and downloads. See [deployment: TLS for devices](deployment.md#tls-for-devices).
 
-Signing (above) protects integrity even over plain HTTP; TLS adds confidentiality and protects the API key.
+Signing (above) protects firmware integrity even over plain HTTP. TLS adds confidentiality (answers, enrollment numbers, device keys) and authenticates the server.
 
 ## Troubleshooting OTA
 

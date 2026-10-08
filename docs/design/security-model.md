@@ -61,12 +61,13 @@ flowchart LR
 | T14 | Wrong, corrupt or foreign image offered to devices | Uploads are parsed as ESP-IDF app images (chip, project, semver version, appended SHA-256, slot size) and registered immutably (#35); downloads come from the registry, for the device's own type, with `X-Firmware-SHA256` | ✅ (authenticity: T8) |
 | T12 | Teacher takes over another teacher's class with its join code | Joining by code only adds co-faculty; the primary teacher is never replaced (#19) | ✅ |
 | T13 | Reading other classes' questions, answers and results by enumerating ids | Quiz/poll details and results require class access (#20) | ✅ |
+| T16 | Eavesdropping or tampering with device traffic (answers, enrollment numbers, device keys, firmware downloads) on the network | **Backend over TLS** (#66): every device request and the WebSocket use HTTPS/WSS with the server certificate verified against public CAs or an embedded site CA; never a fallback to plain HTTP | ✅ when enabled (a site setting: certificate, host name and port). Mesh radio traffic is separate (T9) |
 | T15 | Impersonating a device with the shared key (a leaked key, or one read from any device's flash) | Per-device keys (#66): a device registers with the shared key and is issued its own; once used, only that key can act for its MAC, and only for that MAC. Admins can reset one device's key or disable one device without touching the others. `IMPRESS_DEVICE_KEYS_REQUIRED=true` limits the shared key to registration | ✅ (an unclaimed or reset device can still be claimed by whoever holds the shared key first) |
 
 ## Residual risks and recommended hardening
 
 1. ~~Sign OTA images~~: done in #66 (T8): `scripts/firmware_key.sh`, `scripts/build_signed.sh`, `IMPRESS_FIRMWARE_SIGNING_KEY`. See the [OTA guide](../guides/ota-updates.md#signing-images). Hardware Secure Boot V2 (irreversible) remains an option against physical attackers.
-2. **TLS everywhere:** a reverse proxy for the backend, plus `cert_pem` in the firmware HTTP clients.
+2. ~~TLS for devices~~: done in #66 (T16): **Backend over TLS** on the hub and gateway, trusting public CAs or an embedded site CA; the server via a reverse proxy or `scripts/start.sh` with `IMPRESS_SSL_*`. Off by default, because it needs the site's certificate and port.
 3. ~~Per-device API keys~~: done in #66 (T15). Turn on `IMPRESS_DEVICE_KEYS_REQUIRED` once every device runs firmware with per-device keys.
 4. **Message authentication on the mesh** (e.g. a per-class key and HMAC over the frame) if answer spoofing becomes a concern. ESP-NOW also supports encrypted unicast peers, but not encrypted broadcast.
 5. **Purge git history** of the databases committed before v2 and rotate the affected passwords.
