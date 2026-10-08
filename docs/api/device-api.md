@@ -91,9 +91,9 @@ It updates `last_seen`, battery, RSSI and firmware version, plus non-zero `stude
 
 | `type` | Processing |
 |---|---|
-| `heartbeat` | the device with `device_mac` → `last_seen`, battery, RSSI, mark online |
-| `student_join` | known enrollment → `ActivityLog student.connect`; if `class_code` matches a class → create a `StudentEnrollment` if missing; unknown enrollment → ignored |
-| `student_leave` | known enrollment → `ActivityLog student.disconnect` |
+| `heartbeat` | relayed for the sender `device_id` (a student module, or `0` for the S3). The gateway `device_mac` → `last_seen`, mark online; its own battery and RSSI come only from `POST /heartbeat` (#40: a student's 12 % used to overwrite the gateway's). A non-zero `device_id` also updates that module's inventory row: battery, RSSI, connected |
+| `student_join` | **inventory (#40):** upsert the module by `device_id` (by `enrollment_number` when an older firmware omits it): connected, its enrollment, the relaying gateway and that gateway's class. Then, for a known enrollment, `ActivityLog student.connect`, and if `class_code` matches a class, a `StudentEnrollment` if missing |
+| `student_leave` | inventory row → *seen previously*; known enrollment → `ActivityLog student.disconnect` |
 | `quiz_answer` | **stored only if** the student is known, the quiz exists and is `active`, the question exists, `0 ≤ selected_option < len(options)`, all ints, and no answer yet for (quiz, question, student). Otherwise `skipped += 1` |
 | `poll_vote` | stored only if the student is known, the poll is active, the option is in range, and no vote yet for (poll, student) |
 | `ota_result` | `{mac_address (12 hex, as the S3 registered), version, result: applied\|rolled_back\|failed, error, device_mac}` from the S3 via its C6 (#33). Updates the device: `applied` with the pushed version → `ota_status: applied`; another version → `failed`; `rolled_back` clears the pending version; `failed` keeps it. Logged as `module.ota_result`. Unknown MAC or result → `skipped` |
@@ -165,6 +165,16 @@ Returned by `GET /api/classes/{id}/presence` and pushed as the WS `presence` eve
               "student_count": 27, "firmware_version": "1.0.0", "gateway_id": null}]}
 ```
 `devices[0]` is the class gateway; the rest are its relay tree (BFS over `gateway_id`). `online` = `is_connected` and seen within 30 s.
+
+`student_modules` (#40) lists the class's student modules, connected first:
+```json
+{"id": 4, "device_uid": "1A2B3C4D", "enrollment_number": "ABCDE12345", "state": "connected",
+ "gateway_id": 12, "gateway_name": "Room 201", "class_id": 3, "class_code": "PHY101", "class_name": "Physics",
+ "section": "A", "battery_pct": 76, "rssi": -58, "first_seen": "…", "last_seen": "…", "last_seen_ago_s": 4}
+```
+- **`device_uid`:** the firmware's `device_id` (the last four bytes of the module's MAC) in hex, or `""` for older firmware keyed by enrollment.
+- **`state`:** `connected`, or `seen` after a leave or 90 s of silence (three missed 30 s heartbeats; the presence sweep pushes a new snapshot).
+- **History:** one row per module, updated in place; no location history is kept.
 
 ## Changing this contract
 

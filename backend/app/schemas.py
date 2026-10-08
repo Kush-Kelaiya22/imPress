@@ -603,6 +603,7 @@ class ClassDevicesResponse(BaseModel):
     """A class node plus the student devices currently linked to it (R8)."""
     node: Optional[DeviceResponse] = None
     student_devices: list[DeviceResponse] = []
+    student_modules: list[dict] = []     # the mesh inventory (#40); see services/student_modules.py
 
 
 class ModuleLinkDevice(BaseModel):

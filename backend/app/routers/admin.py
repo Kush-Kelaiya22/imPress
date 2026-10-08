@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import commit_or_conflict, get_db
 from ..models import (
-    User, ClassSession, Course, Student, StudentEnrollment, EspDevice, ActivityLog,
+    User, ClassSession, Course, Student, StudentEnrollment, EspDevice, ActivityLog, StudentModule,
 )
 from ..schemas import (
     AdminUserCreate, UserResponse, UserUpdate,
@@ -33,6 +33,8 @@ from ..auth import require_admin, require_teacher_or_admin
 from ..activity import log_activity
 from ..schedule import find_schedule_conflicts
 from ..services.records import delete_class_records, ensure_section_free
+from ..services.presence import class_modules
+from ..services.student_modules import module_to_dict
 from ..services.class_import import TEMPLATE as CLASS_TEMPLATE, apply_class_import, export_rows, plan_class_import
 from ..services.csv_import import read_upload
 
@@ -1092,7 +1094,31 @@ async def admin_class_devices(
     else:
         student_devices = []
 
-    return ClassDevicesResponse(node=node, student_devices=student_devices)
+    return ClassDevicesResponse(node=node, student_devices=student_devices,
+                                student_modules=await class_modules(db, class_id))
+
+
+@router.get("/student-modules")
+async def admin_student_modules(
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    class_id: int | None = Query(None),
+    gateway_id: int | None = Query(None),
+    state: str = Query("", pattern="^(|connected|seen)$"),
+    q: str = Query("", max_length=32, description="device ID (hex) or enrollment number, partial"),
+):
+    """Every student module a gateway has seen (#40). Teachers get their own
+    class's modules through the presence snapshot."""
+    query = select(StudentModule).order_by(StudentModule.last_seen.desc())
+    if class_id is not None:
+        query = query.where(StudentModule.class_session_id == class_id)
+    if gateway_id is not None:
+        query = query.where(StudentModule.gateway_id == gateway_id)
+    now = istnow()
+    mods = [module_to_dict(m, now) for m in (await db.scalars(query)).all()]
+    needle = q.strip().upper()
+    return [m for m in mods if (not state or m["state"] == state)
+            and (not needle or needle in m["device_uid"] or needle in m["enrollment_number"])]
 
 
 @router.get("/modules/{device_id}", response_model=DeviceResponse)

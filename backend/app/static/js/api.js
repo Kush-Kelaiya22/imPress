@@ -277,6 +277,12 @@ const modulesApi = {
 
 // ── Devices (live presence — teacher dashboard) ────────────────────
 
+const studentModulesApi = {
+  async list() {
+    return apiRequest('/admin/student-modules');
+  },
+};
+
 const devicesApi = {
   async live(classId) {
     return apiRequest(`/devices/live?class_id=${classId}`);

@@ -12,9 +12,9 @@ from ..models import EspDevice, ClassSession, Attendance, StudentEnrollment, Stu
 from ..schemas import DeviceRegister, DeviceHeartbeat, DeviceStatusPing, DeviceAttendance, \
     DeviceDataBatch, DeviceFirmwareCheck, DeviceOtaApplied, DeviceOtaStatus, OtaStatusResponse
 from ..config import api_key_ok
-from ..services.presence import mark_online, _push_after_commit
+from ..services.presence import class_id_for_device, mark_online, _push_after_commit
 from ..services.firmware_store import artifact_file, resolve as resolve_firmware
-from ..services import deployments as deployment_engine
+from ..services import deployments as deployment_engine, student_modules
 from ..timeutil import istnow, istnow_aware
 from ..ws.manager import manager
 
@@ -539,6 +539,12 @@ async def _resolve_gateway(db: AsyncSession, mac: str) -> EspDevice | None:
     return res.scalar_one_or_none()
 
 
+async def _observe_module(db: AsyncSession, kind: str, msg: dict, gateway: EspDevice | None) -> None:
+    """Keep the student module inventory current (#40)."""
+    class_id = await class_id_for_device(db, gateway) if gateway is not None else None
+    await student_modules.observe(db, kind, msg, gateway, class_id)
+
+
 @router.post("/batch", dependencies=[Depends(_verify_api_key)])
 async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db)):
     """C6 sends batched data from mesh students."""
@@ -550,21 +556,19 @@ async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db
         msg_type = msg.get("type", "")
 
         if msg_type == "heartbeat":
-            mac = msg.get("device_mac", "")
-            if mac:
-                result = await db.execute(select(EspDevice).where(EspDevice.mac_address == mac))
-                device = result.scalar_one_or_none()
-                if device:
-                    device.last_seen = istnow()
-                    if isinstance(msg.get("battery_pct"), int):
-                        device.battery_pct = msg.get("battery_pct", 100)
-                    if isinstance(msg.get("rssi"), int):
-                        device.rssi = msg.get("rssi", 0)
-                    # Bring the relayed node back online (idempotent, logs
-                    # the offline → online transition exactly once).
-                    await mark_online(db, device)
-                    touched_device_ids.append(device.id)
-                    processed += 1
+            # device_mac is the relaying gateway; device_id is the sender (a
+            # student module, or 0 for the S3). The battery and RSSI are the
+            # sender's, never the gateway's: those come from its own
+            # /heartbeat (#40).
+            device = await _resolve_gateway(db, msg.get("device_mac"))
+            if device:
+                device.last_seen = istnow()
+                # Bring the relaying node back online (idempotent, logs
+                # the offline → online transition exactly once).
+                await mark_online(db, device)
+                await _observe_module(db, "heartbeat", msg, device)
+                touched_device_ids.append(device.id)
+                processed += 1
 
         elif msg_type == "student_join":
             # A classroom node reports a student module that appeared on its mesh
@@ -573,6 +577,7 @@ async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db
             roll = (msg.get("enrollment_number") or "").strip().upper()
             if not roll:
                 continue
+            await _observe_module(db, "join", msg, await _resolve_gateway(db, msg.get("device_mac")))
 
             stud_result = await db.execute(
                 select(Student).where(Student.roll_number == roll)
@@ -631,6 +636,7 @@ async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db
             roll = (msg.get("enrollment_number") or "").strip().upper()
             if not roll:
                 continue
+            await _observe_module(db, "leave", msg, await _resolve_gateway(db, msg.get("device_mac")))
 
             stud_result = await db.execute(
                 select(Student).where(Student.roll_number == roll)
