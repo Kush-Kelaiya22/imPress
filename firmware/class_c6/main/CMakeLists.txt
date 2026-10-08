@@ -6,3 +6,8 @@ idf_component_register(
         esp_timer esp_system efuse esp_adc heap
         esp_driver_gpio esp_driver_spi
 )
+
+# Backend over TLS with a site CA (#66): embed certs/backend_ca.pem
+if(CONFIG_BACKEND_TLS_CA_FILE)
+    target_add_binary_data(${COMPONENT_LIB} "${PROJECT_DIR}/certs/backend_ca.pem" TEXT)
+endif()

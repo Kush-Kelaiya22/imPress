@@ -74,7 +74,26 @@ server {
     }
 }
 ```
-Gateways currently speak plain `http://`/`ws://` to `BACKEND_HOST:BACKEND_PORT`. Either expose an internal HTTP listener on the classroom VLAN, or add TLS to the firmware HTTP clients first ([security model](../design/security-model.md#residual-risks-and-recommended-hardening)).
+### TLS for devices
+
+Gateways and hubs speak plain `http://` and `ws://` unless they are built with **Backend over TLS** (#66). To turn it on:
+
+1. **Serve TLS.** Use the nginx proxy above, or uvicorn directly:
+   ```bash
+   IMPRESS_SSL_CERTFILE=/etc/impress/server.crt IMPRESS_SSL_KEYFILE=/etc/impress/server.key \
+     IMPRESS_HOST=0.0.0.0 IMPRESS_PORT=443 scripts/start.sh
+   ```
+   `start.sh` refuses to start if only one of the two is set or a file is unreadable. Check the server with `scripts/smoke_test.py --base https://<host>:<port> --password … [--cafile ca.pem]`.
+2. **Configure each board** (`class_c6` and `class_s3`): in `idf.py menuconfig` → *Backend Server*, enable **Use HTTPS / WSS to reach the backend**, and set `BACKEND_HOST` to the name in the certificate and `BACKEND_PORT` to the TLS port. Then choose how to trust the server:
+
+   | Choice | When | What you provide |
+   |---|---|---|
+   | **Public certificate authorities** | the server's certificate comes from a public CA (e.g. Let's Encrypt) | nothing: ESP-IDF's certificate bundle is built in |
+   | **`certs/backend_ca.pem`** | a private CA, or a self-signed server certificate | the CA certificate (PEM) at `firmware/<project>/certs/backend_ca.pem` before building. It is embedded in the image; `.pem` files are git-ignored |
+
+3. **Build and deploy.** TLS lives in the app, so a fleet switches with one OTA update (signed, if you use signing). **Deploy it only after the server serves TLS** on the configured port: a device that can't reach the backend fails its health check and rolls back (the gateway's 120 s watchdog), which is safe but noisy.
+
+The device checks the server's certificate against the chosen trust and the host name; a mismatch is a connection error (logged, retried), never a fallback to HTTP.
 
 ### Backups
 - `impress.db` is a single SQLite file: back it up with `sqlite3 impress.db ".backup '/backups/impress-$(date +%F).db'"` (safe while running).

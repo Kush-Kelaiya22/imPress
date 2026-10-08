@@ -136,6 +136,7 @@ Run a single test directly with pytest when iterating: `pytest backend/tests/tes
 | `test_deployments.py` | `services/deployments.py`, deployment routes | selection and exclusions, stages, concurrency, retries, timeouts, pause/resume/cancel, forward-only device states, durability across restarts (#38) |
 | `test_student_modules.py` | `services/student_modules.py`, presence | the inventory: one row per module, sweep, filters, access, deletes (#40) |
 | `test_device_keys.py` | `device_auth.py` | per-device keys (#66): enrolment, hash-only storage, a lost response is recoverable, shared key locked out once used, own MAC only, 401 vs 403, reset, disable, required mode, WebSocket, direct votes |
+| `firmware/tests/test_device_tls.py` (structural) | `backend_tls.h`, device clients | every backend client gets the TLS settings; no hard-coded `http://`/`ws://`; both boards offer the same choice and embed the site CA; TLS off in default builds (#66) |
 | `test_firmware_signing.py` | `services/firmware_signing.py` | signed images (#66) against real `espsecure.py` fixtures: RSA-PSS verification, key digest equals espsecure's, tampering (padding, CRC, forged signature, foreign key, digest, version, trailing data), site key enforcement at upload, unsigned images excluded from deployments |
 | `test_health.py` | `services/health.py`, heartbeat | every health rule (table-driven) and its precedence; diagnostics stored; older firmware still accepted (#39) |
 | **`test_e2e_quiz.py`** | the whole answer path | **end to end (#43):** class → CSV questions → a simulated gateway registers by room code → modules join → quiz frames on the device socket → answers relayed in batches (one duplicated by the mesh) → live counts on the teacher socket → results; a late press is not counted |
@@ -243,7 +244,7 @@ flowchart LR
     T --> S["Firmware structural"]
     T --> H["Firmware host (gcc + ASan/UBSan)"]
     T --> I["ESP-IDF v6.1 build ×3<br/>size report · images · SHA256SUMS"]
-    T --> Q["ESP-IDF signed build<br/>throwaway key · verify"]
+    T --> Q["ESP-IDF signed + TLS builds<br/>throwaway key and CA"]
     T --> F["Frontend build<br/>npm ci"]
     T --> K["Clean install + smoke test<br/>install.sh · start.sh · smoke_test.py"]
     T --> U["Browser UI checks<br/>Playwright + Chromium"]
@@ -258,10 +259,10 @@ flowchart LR
 | Firmware structural | `run_tests.py --suite firmware-static` | – |
 | Firmware host | `run_tests.py --suite host` (gcc) | – |
 | ESP-IDF v6.1 build | `idf.py build` + `idf.py size` for `class_c6`, `class_s3`, `student`; `sha256sum` of every image | `.bin` images + `SHA256SUMS` (7 days) |
-| ESP-IDF v6.1 signed build | `scripts/firmware_key.sh` (a throwaway key for the run), `scripts/build_signed.sh class_c6`, `scripts/verify_firmware.py --key` (#66) | – |
+| ESP-IDF v6.1 signed and TLS builds | `scripts/firmware_key.sh` (a throwaway key), `scripts/build_signed.sh class_c6`, `scripts/verify_firmware.py --key`; then the C6 with **Backend over TLS** trusting public CAs and the S3 trusting an embedded throwaway CA (#66) | – |
 | Frontend build | `run_tests.py --suite frontend`: `npm ci` + `vite build` (Node 20) | – |
 | Browser UI checks | `playwright install --with-deps chromium`; `run_tests.py --suite ui` | screenshots + JUnit XML |
-| Clean install + smoke test | `scripts/install.sh` into a fresh venv, `scripts/start.sh`, then `scripts/smoke_test.py` over HTTP (#42) | server log in the job output |
+| Clean install + smoke test | `scripts/install.sh` into a fresh venv, `scripts/start.sh`, then `scripts/smoke_test.py` over HTTP (#42), and again over **HTTPS** with a throwaway CA, checking that an untrusted certificate is refused (#66) | server logs in the job output |
 | **CI result** | fails unless every job above succeeded | – |
 
 Pipeline properties:

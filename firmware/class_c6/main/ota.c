@@ -5,6 +5,7 @@
 #include "ota.h"
 #include "ota_logic.h"
 #include "config.h"
+#include "backend_tls.h"   /* http(s)/ws(s) and the server certificate (#66) */
 #include "wifi_client.h"
 
 #include <stdio.h>
@@ -72,6 +73,7 @@ static esp_err_t download(const ota_offer_t *o, const esp_partition_t *part,
     snprintf(path, sizeof(path), "/api/device/firmware/download?mac_address=%s&version=%s", s_mac, o->version);
     http_api_url(url, sizeof(url), path);
     esp_http_client_config_t cfg = { .url = url, .method = HTTP_METHOD_GET, .timeout_ms = 30000, .buffer_size = 4096 };
+    BACKEND_TLS_APPLY(cfg);
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     if (!client) return ESP_ERR_NO_MEM;
     esp_http_client_set_header(client, "X-API-Key", g_cfg.api_key);

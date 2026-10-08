@@ -35,7 +35,7 @@ A review of the v2.1 changes against the brief's checklist: access control, file
 | Compatibility checks | ✅ an image is registered for exactly one target (chip and project from the image) and offered only to devices of that type; the device's `esp_ota_end` rejects a foreign chip |
 | Integrity | ✅ the SHA-256 is checked at upload and given to the device with the offer; the gateway compares it before installing (#34) and the bootloader checks the appended hash |
 | **Authenticity** | ✅ (#66) signed images: devices on the signed profile verify every update in `esp_ota_end()`; the backend verifies the RSA-PSS signature at upload against `IMPRESS_FIRMWARE_SIGNING_KEY` and never deploys other images. Verified against real `espsecure` output (`test_firmware_signing.py`, 18 tests) and in CI (`firmware-signed`). Opt-in, because the key is each site's own |
-| Transport | ⚠️ device traffic is plain HTTP; TLS is recommended at the reverse proxy for browsers, and for devices in [#66](https://github.com/Kush-Kelaiya22/imPress/issues/66) |
+| Transport | ✅ (#66) devices support HTTPS/WSS with server certificate verification (public CAs or an embedded site CA); every backend client goes through one setting (`test_device_tls.py`); the server serves TLS through a proxy or `start.sh`, smoke-tested over HTTPS in CI. Off by default: it needs the site's certificate |
 | Replay and stale offers | ✅ a device is offered only its deployment's version; the state machine is forward-only, so a replayed or out-of-order report is ignored (`test_progress_is_forward_only_and_duplicates_are_harmless`); success needs the expected version |
 | Downgrade policy | ✅ refused unless the operator confirms (`allow_downgrade`); recorded as a rollback deployment |
 | Audit log | ✅ uploads, approvals, deprecations, deployments, prompts and device results are written to the activity log and shown in the image's history |
@@ -45,7 +45,7 @@ A review of the v2.1 changes against the brief's checklist: access control, file
 
 | # | Finding | Severity | Status |
 |---|---|---|---|
-| S1 | Firmware images are not signed; device traffic is unencrypted; one shared device key | high for production | [#66](https://github.com/Kush-Kelaiya22/imPress/issues/66), open |
+| S1 | Firmware images are not signed; device traffic is unencrypted; one shared device key | high for production | **resolved in [#66](https://github.com/Kush-Kelaiya22/imPress/issues/66)**: per-device keys (#69), signed images (#70), device TLS (#71). Signing and TLS are opt-in site settings; turn them on before production |
 | S2 | A database error on commit escaped as a 500 with a stack trace in the log | low | fixed in #64 (503, nothing saved) |
 | S3 | Databases with user and session data were committed to git history before `v2` | high if the repository is published | documented in the [go-live checklist](../guides/deployment.md#4-go-live-checklist); purging history needs a force-push, which only the owners may do |
 

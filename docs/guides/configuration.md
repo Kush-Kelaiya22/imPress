@@ -20,6 +20,7 @@ Environment variables with prefix **`IMPRESS_`**, or a `.env` file in the workin
 | `IMPRESS_DEVICE_KEYS_REQUIRED` | `false` | `true`: the shared key works for registration only, so every device must use its own key. Firmware older than v2.1 per-device keys then stops working. |
 | `IMPRESS_INITIAL_ADMIN_PASSWORD` | empty | First-run admin password; empty = random, logged once. |
 | `IMPRESS_FIRMWARE_DIR` | `./firmware_bins` | OTA image store. |
+| `IMPRESS_SSL_CERTFILE`, `IMPRESS_SSL_KEYFILE` | empty | read by `scripts/start.sh`, not the app: both set → uvicorn serves HTTPS/WSS itself (#66). Alternatively terminate TLS at a reverse proxy. |
 | `IMPRESS_FIRMWARE_SIGNING_KEY` | empty | Path to the site's firmware **public** key (PEM, from `scripts/firmware_key.sh`). Set: uploads must be signed with it and other images are never deployed (#66). Empty: signatures are recorded but not required. |
 | `IMPRESS_WS_REQUIRE_AUTH` | `true` | Disable only for isolated debugging. |
 | `IMPRESS_CORS_ORIGINS` | `["http://localhost:5173","http://localhost:3000"]` | Allowed browser origins. |
@@ -42,6 +43,7 @@ Fixed internal timings (code constants): presence sweep 15 s, offline after 30 s
 | `BACKEND_HOST` | `192.168.137.1` | `backend_h` (≤ 127) | IP or hostname |
 | `BACKEND_PORT` | 8000 | `backend_p` (u16, 0 ignored) | |
 | `DEVICE_API_KEY` | `impress-device-key-2024` | `api_key` (≤ 127) | the shared provisioning key: sent as `X-API-Key` until the device is issued its own |
+| `BACKEND_TLS` | off | — | `https://` and `wss://` to the backend (#66); with `BACKEND_TLS_CRT_BUNDLE` (public CAs, default) or `BACKEND_TLS_CA_FILE` (`certs/backend_ca.pem` embedded). Same options on the S3 |
 | — | — | `dev_key` | the device's own key from `/register` (#66); once present it is sent instead of `api_key`. Erased when the backend answers 401 (an admin reset it) |
 | `CLASS_SESSION_ID` | 0 (= auto) | `class_id` (i32) | updated from register / WS assignment |
 | `HEARTBEAT_INTERVAL_S` | 15 | – | 5–300 |

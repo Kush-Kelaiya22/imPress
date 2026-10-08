@@ -8,6 +8,7 @@
 
 #include "wifi_client.h"
 #include "config.h"
+#include "backend_tls.h"   /* http(s)/ws(s) and the server certificate (#66) */
 #include "protocol.h"     /* json_get_string */
 #include "esp_adc/adc_oneshot.h"
 
@@ -122,7 +123,7 @@ const char *wifi_client_get_ip(void)
 
 static void _url(char *buf, size_t sz, const char *path)
 {
-    snprintf(buf, sz, "http://%s:%u%s", g_cfg.backend_host, g_cfg.backend_port, path);
+    snprintf(buf, sz, BACKEND_HTTP_SCHEME "://%s:%u%s", g_cfg.backend_host, g_cfg.backend_port, path);
 }
 
 /* ── Real telemetry ────────────────────────────────────────────────── */
@@ -194,6 +195,8 @@ static int _http_post_body(const char *url, const char *json,
         .method = HTTP_METHOD_POST,
         .timeout_ms = 10000,
     };
+
+    BACKEND_TLS_APPLY(config);
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) return 0;
