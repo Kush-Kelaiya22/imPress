@@ -9,9 +9,12 @@ CONFIG_SPI_MASTER_IN_IRAM=y
 # Logging
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 
-# PSRAM for large student routing table
+# PSRAM is optional (#30): no code needs it (the routing table is a static
+# array); when present it backs large mallocs. Without IGNORE_NOTFOUND the
+# image refuses to boot on modules that have no PSRAM.
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y
 
 # OTA safety: a new image must reach app_main mark-valid or the bootloader reverts
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y

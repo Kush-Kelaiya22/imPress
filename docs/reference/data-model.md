@@ -24,6 +24,8 @@ erDiagram
     polls ||--o{ poll_votes : has
     students ||--o{ poll_votes : votes
     esp_devices ||--o{ esp_devices : "relays (gateway_id)"
+    esp_devices ||--o{ student_modules : "last relayed by (gateway_id)"
+    class_sessions ||--o{ student_modules : "seen in"
 ```
 
 ## Tables
@@ -87,6 +89,7 @@ erDiagram
 | student_enrollment_id, device_id | | legacy / diagnostics |
 | firmware_version, pending_version, ota_status, ota_requested_at, verified_at | | OTA state: `idle` \| `downloading` \| `applied` \| `failed` |
 | student_count, free_heap, total_flash | int | gateway telemetry |
+| uptime_s, reset_reason, boot_count, min_free_heap, s3_link_ok, s3_uptime_s, diag_at | int / str / bool / datetime, nullable | latest gateway diagnostics (#39, migration step 5); NULL = not reported by the firmware. Health states are computed from them, not stored |
 
 ### `students`
 `id, roll_number (32, unique; API enforces 10 alphanumerics, upper-cased), student_name, email, phone, program, enrollment_year, graduation_year, device_mac, is_active (soft delete), registered_at, registered_by`
@@ -123,6 +126,9 @@ One uploaded firmware image (#35). `id, sha256 (unique), size, target (c6|s3|stu
 
 ### `firmware_deployments` / `deployment_targets`
 A rollout of one image (#38) and its devices. `firmware_deployments`: `id, artifact_id, kind (update|rollback), state (running|paused|completed|cancelled), strategy JSON, note, idempotency_key (unique), requested_by, created_at, started_at, finished_at`. `deployment_targets`: `id, deployment_id, device_id, stage (0 = canary), state, attempts, from_version, final_version, error_code, error, started_at, updated_at, finished_at`, unique `(deployment_id, device_id)`. The target's state is mirrored onto `esp_devices.ota_status` / `pending_version`. See the [OTA architecture](../firmware/OTA_ARCHITECTURE.md).
+
+### `student_modules`
+The student module inventory (#40): one row per module a gateway has seen, updated in place, with no history. `id, device_uid` (the firmware `device_id`, unique; NULL for older firmware, which is keyed by `enrollment_number`), `enrollment_number, gateway_id → esp_devices, class_session_id → class_sessions, is_connected, battery_pct, rssi, first_seen, last_seen`. Deleting a class clears `class_session_id`. Erasing a student blanks `enrollment_number`.
 
 ### `schema_migrations`
 `version` (PK), `name`, `applied_at`: one row per applied migration step. `GET /health` reports the highest version as `schema_version`.

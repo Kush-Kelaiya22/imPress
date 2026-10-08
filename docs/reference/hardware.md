@@ -5,10 +5,12 @@
 | Role | SoC | Flash / partition table | Notes |
 |---|---|---|---|
 | Gateway (`class_c6`) | ESP32-C6, single-core RISC-V @ 160 MHz, Wi-Fi 6 2.4 GHz | 8 MB: `nvs` 24 K @0x9000 · `otadata` @0xF000 · `phy_init` @0x11000 · `ota_0` 3.875 MB @0x20000 · `ota_1` 3.875 MB @0x400000 | console on UART GPIO16/17 |
-| Hub (`class_s3`) | ESP32-S3, dual-core Xtensa | 32 MB: `ota_0` 4 MB @0x20000 · `ota_1` 4 MB @0x420000 | app rollback enabled |
+| Hub (`class_s3`) | ESP32-S3, dual-core Xtensa | 32 MB **octal** flash: `ota_0` 4 MB @0x20000 · `ota_1` 4 MB @0x420000 | app rollback enabled; PSRAM optional (#30). Quad-flash modules need the [reduced-flash profile](../hardware/CLASSROOM_NODE_REQUIREMENTS.md#reduced-flash-hub-profile-built-not-booted) |
 | Student (`student`) | ESP32 (classic), target `esp32` | 4 MB: `ota_0` 1.75 MB @0x20000 · `ota_1` 1.75 MB @0x1E0000 | brownout level 0, power management on |
 
 All boards: brownout detector enabled, FreeRTOS stack canary checks enabled, debug-level compiler optimisation (`-Og`).
+
+Minimum and recommended hardware: [classroom node requirements](../hardware/CLASSROOM_NODE_REQUIREMENTS.md).
 
 ## S3 ↔ C6 wiring
 
