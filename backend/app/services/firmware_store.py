@@ -1,71 +1,141 @@
-"""Firmware artifact store for ESP OTA.
+"""Firmware artifact store (#35).
 
-Filenames: <device_type>-<version>.bin  (e.g. c6-1.0.0.bin, s3-1.0.0.bin)
-- Admin uploads a .bin; the version + device_type is parsed from the payload it
-  provides in the multipart form (version field) and the model name.
-- Devices download the .bin by their device_type + the pending version the
-  server has set on their EspDevice row.
+Uploads are validated as ESP-IDF app images (firmware_image.parse_image) and
+registered in `firmware_artifacts`; the bytes are stored as
+<FIRMWARE_DIR>/<sha256>.bin, a name derived from the content, never from user
+input. A (target, version) pair can only ever name one set of bytes.
+Files from the pre-v2.1 store (<type>-<version>.bin) are adopted at startup
+when they are valid images, and ignored otherwise.
 """
 
+import logging
 import re
-import shutil
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
+from ..models import FirmwareArtifact
+from .csv_import import read_upload
+from .firmware_image import MAX_IMAGE_BYTES, ImageError, parse_image
+
+log = logging.getLogger(__name__)
 
 _VERSION_RE = re.compile(r"^v?\d+\.\d+\.\d+$")
+_SHA_RE = re.compile(r"^[0-9a-f]{64}$")
+_LEGACY_RE = re.compile(r"^(c6|s3|student)-(\d+\.\d+\.\d+)\.bin$")
 
 
-def firmware_path(device_type: str, version: str) -> Path:
-    """Where a firmware binary for a device_type+version is stored."""
-    return Path(settings.FIRMWARE_DIR) / f"{device_type}-{version}.bin"
+def normalize_version(version: str) -> str:
+    v = (version or "").strip().lower()
+    if not v:
+        raise HTTPException(400, "version is required")
+    if not _VERSION_RE.match(v):
+        raise HTTPException(400, "version must be semver like 1.0.0")
+    return v.removeprefix("v")
 
 
-def ensure_dir() -> Path:
+def store_dir() -> Path:
     d = Path(settings.FIRMWARE_DIR)
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
-def normalize_version(version: str) -> str:
-    v = (version or "").strip()
-    if not v:
-        raise HTTPException(400, "version is required")
-    v = v.lower()
-    if v.startswith("v"):
-        v = v[1:]
-    if not _VERSION_RE.match(v):
-        raise HTTPException(400, "version must be semver like 1.0.0")
-    return v
+def artifact_path(sha256: str) -> Path:
+    if not _SHA_RE.match(sha256 or ""):
+        raise ValueError("artifact paths are built from a SHA-256 only")
+    return Path(settings.FIRMWARE_DIR) / f"{sha256}.bin"
 
 
-async def save_firmware(file: UploadFile, device_type: str, version: str) -> Path:
-    """Persist an uploaded firmware binary. Returns the stored path."""
-    dt = (device_type or "").strip().lower()
-    if dt not in ("c6", "s3", "student"):
-        raise HTTPException(400, f"unsupported device_type '{device_type}'")
-    ver = normalize_version(version)
+def artifact_file(artifact: FirmwareArtifact) -> Path:
+    path = artifact_path(artifact.sha256)
+    if not path.is_file():
+        raise HTTPException(410, f"firmware {artifact.target} {artifact.version} is registered but its file is missing")
+    return path
 
-    ensure_dir()
-    dest = firmware_path(dt, ver)
-    tmp = dest.with_suffix(".bin.part")
+
+def _write(sha256: str, data: bytes) -> None:
+    dest = artifact_path(sha256)
+    if dest.is_file():
+        return
+    tmp = dest.with_suffix(".part")
+    tmp.write_bytes(data)
+    tmp.replace(dest)                    # atomic: a reader never sees half a file
+
+
+async def resolve(db: AsyncSession, target: str, version: str, *, include_deprecated=False):
+    q = select(FirmwareArtifact).where(FirmwareArtifact.target == target, FirmwareArtifact.version == version)
+    if not include_deprecated:
+        q = q.where(FirmwareArtifact.status != "deprecated")
+    return (await db.execute(q)).scalar_one_or_none()
+
+
+async def store_upload(db: AsyncSession, file: UploadFile, user_id: int | None, *,
+                       device_type: str | None = None, version: str | None = None,
+                       channel: str = "stable", release_notes: str = "") -> tuple[FirmwareArtifact, bool]:
+    """Validate and register an upload. Returns (artifact, created). Not committed."""
+    data = await read_upload(file, MAX_IMAGE_BYTES)
     try:
-        with tmp.open("wb") as out:
-            while chunk := await file.read(1024 * 256):
-                out.write(chunk)
-    except OSError as e:
-        raise HTTPException(500, f"failed to store firmware: {e}")
-    shutil.move(str(tmp), str(dest))
-    return dest
+        info = parse_image(data)
+    except ImageError as e:
+        raise HTTPException(422, str(e))
+    if device_type and device_type.strip().lower() != info.target:
+        raise HTTPException(422, f"this file is a {info.target} image ({info.project}), not {device_type}")
+    if version and normalize_version(version) != info.version:
+        raise HTTPException(422, f"this file is version {info.version}, not {normalize_version(version)}")
+    if channel not in ("stable", "beta"):
+        raise HTTPException(422, "channel must be stable or beta")
+
+    same = (await db.execute(select(FirmwareArtifact).where(FirmwareArtifact.sha256 == info.sha256))).scalar_one_or_none()
+    if same is not None:
+        return same, False                                   # identical bytes: idempotent
+    clash = await resolve(db, info.target, info.version, include_deprecated=True)
+    if clash is not None:
+        raise HTTPException(409, f"{info.target} {info.version} already exists with different contents "
+                                 f"(sha256 {clash.sha256[:12]}…); bump firmware/<project>/version.txt and rebuild")
+    store_dir()
+    _write(info.sha256, data)
+    artifact = FirmwareArtifact(
+        sha256=info.sha256, size=info.size, target=info.target, chip=info.chip, project=info.project,
+        version=info.version, idf_version=info.idf_version, build_date=info.build_date,
+        elf_sha256=info.elf_sha256, channel=channel, release_notes=release_notes[:5000], uploaded_by=user_id)
+    db.add(artifact)
+    await db.flush()
+    return artifact, True
 
 
-def get_firmware_path(device_type: str, version: str) -> Path:
-    """Resolve a stored firmware file for download (404 if absent)."""
-    dt = (device_type or "").strip().lower()
-    ver = normalize_version(version)
-    p = firmware_path(dt, ver)
-    if not p.is_file():
-        raise HTTPException(404, f"firmware {dt}-{ver}.bin not found")
-    return p
+async def adopt_legacy_files(db: AsyncSession) -> tuple[int, int]:
+    """Register valid <type>-<version>.bin files from the old store (once)."""
+    d = Path(settings.FIRMWARE_DIR)
+    if not d.is_dir():
+        return 0, 0
+    adopted = rejected = 0
+    for f in sorted(d.iterdir()):
+        m = _LEGACY_RE.match(f.name)
+        if not m:
+            continue
+        data = f.read_bytes()
+        try:
+            info = parse_image(data)
+        except ImageError as e:
+            rejected += 1
+            log.warning("Not adopting %s: %s (it can no longer be downloaded)", f.name, e)
+            continue
+        if (info.target, info.version) != (m.group(1), m.group(2)):
+            rejected += 1
+            log.warning("Not adopting %s: the image is %s %s", f.name, info.target, info.version)
+            continue
+        known = await db.scalar(select(FirmwareArtifact.id).where(FirmwareArtifact.sha256 == info.sha256))
+        if known or await resolve(db, info.target, info.version, include_deprecated=True):
+            continue
+        _write(info.sha256, data)
+        db.add(FirmwareArtifact(sha256=info.sha256, size=info.size, target=info.target, chip=info.chip,
+                                project=info.project, version=info.version, idf_version=info.idf_version,
+                                build_date=info.build_date, elf_sha256=info.elf_sha256, legacy=True))
+        adopted += 1
+    if adopted:
+        await db.flush()
+        log.warning("Adopted %d firmware file(s) from the old store into the registry", adopted)
+    return adopted, rejected

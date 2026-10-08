@@ -1,13 +1,10 @@
 """#33: OTA outcomes are recorded only from what the device really runs, and a
 push needs an uploaded image."""
 
-import os
-from pathlib import Path
-
 import pytest
 from sqlalchemy import select
 
-from conftest import DEVICE, auth, login
+from conftest import DEVICE, auth, login, upload_firmware
 
 S3_MAC = "a1b2c3d4e5f6"          # the S3 registers its MAC as 12 hex digits
 C6_MAC = "48:F6:EE:00:00:01"
@@ -19,9 +16,7 @@ def hub(client):
     r = client.post("/api/device/register", headers=DEVICE,
                     json={"mac_address": S3_MAC, "device_type": "s3", "device_name": "hub"})
     assert r.status_code == 200, r.text
-    fw = Path(os.environ["IMPRESS_FIRMWARE_DIR"])
-    fw.mkdir(parents=True, exist_ok=True)
-    (fw / "s3-2.1.0.bin").write_bytes(b"\xe9image")
+    upload_firmware(client, h, "impress_class_s3", "2.1.0")
     return h, r.json()["device_id"]
 
 

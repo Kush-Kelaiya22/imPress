@@ -59,6 +59,7 @@ def _legacy_db(path):
     Base.metadata.create_all(eng)
     eng.dispose()
     with sqlite3.connect(path) as c:
+        c.execute("DROP TABLE firmware_artifacts")         # new in v2.1
         for name in [r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE name LIKE 'uq_%'")]:
             c.execute(f"DROP INDEX {name}")
         c.execute("ALTER TABLE esp_devices DROP COLUMN total_flash")
@@ -129,7 +130,8 @@ def test_duplicate_sections_stop_the_upgrade_with_instructions(tmp_path):
     assert "class_sessions" in str(e.value) and "section" in str(e.value)
     # steps 1-2 committed, step 3 left no trace: no index, no record, both classes kept
     assert [r[0] for r in _q(db, "SELECT version FROM schema_migrations ORDER BY version")] == [1, 2]
-    assert _indexes(db) == set()
+    from app.migrations import UNIQUE_INDEXES
+    assert not _indexes(db) & {name for name, *_ in UNIQUE_INDEXES}      # step 3 created none of its indexes
     assert _q(db, "SELECT COUNT(*) FROM class_sessions") == [(2,)]
     # once resolved, the next start completes
     with sqlite3.connect(db) as c:

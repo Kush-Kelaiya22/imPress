@@ -137,6 +137,38 @@ class EspDevice(Base):
     relayed_by = relationship("EspDevice", remote_side=[id], foreign_keys=[gateway_id])
 
 
+# ── Firmware artifacts (#35) ─────────────────────────────────────────
+
+class FirmwareArtifact(Base):
+    """One uploaded firmware image. Facts come from the image itself
+    (services/firmware_image.py); the binary is stored as <sha256>.bin and is
+    immutable: a (target, version) pair names exactly one set of bytes."""
+    __tablename__ = "firmware_artifacts"
+    __table_args__ = (
+        Index("uq_firmware_artifacts_target_version", "target", "version", unique=True),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sha256 = Column(String(64), unique=True, nullable=False)        # of the whole file
+    size = Column(Integer, nullable=False)
+    target = Column(String(16), nullable=False)                     # c6 | s3 | student
+    chip = Column(String(16), nullable=False)                       # esp32c6 | esp32s3 | esp32
+    project = Column(String(32), nullable=False)
+    version = Column(String(32), nullable=False)                    # X.Y.Z from esp_app_desc_t
+    idf_version = Column(String(32), default="")
+    build_date = Column(String(32), default="")
+    elf_sha256 = Column(String(64), default="")
+    status = Column(String(16), default="uploaded")                 # uploaded | approved | deprecated
+    channel = Column(String(16), default="stable")                  # stable | beta
+    release_notes = Column(Text, default="")
+    legacy = Column(Boolean, default=False)                         # adopted from the pre-v2.1 file store
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    uploaded_at = Column(DateTime, default=istnow)
+    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    deprecated_at = Column(DateTime, nullable=True)
+
+
 # ── Class Faculty Association (many-to-many) ───────────────────────────
 
 class_faculty = Table(

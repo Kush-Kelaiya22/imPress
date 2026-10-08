@@ -566,6 +566,31 @@ class ModuleAccessUpdate(BaseModel):
     is_active: bool
 
 
+class FirmwareArtifactResponse(BaseModel):
+    id: int
+    sha256: str
+    size: int
+    target: str
+    chip: str
+    project: str
+    version: str
+    idf_version: str = ""
+    build_date: str = ""
+    elf_sha256: str = ""
+    status: str
+    channel: str
+    release_notes: str = ""
+    legacy: bool = False
+    uploaded_by: Optional[int] = None
+    uploaded_at: Optional[datetime] = None
+    approved_by: Optional[int] = None
+    approved_at: Optional[datetime] = None
+    deprecated_at: Optional[datetime] = None
+    created: Optional[bool] = None     # upload response: false = these bytes were already registered
+
+    model_config = {"from_attributes": True}
+
+
 class ModuleOtaRequest(BaseModel):
     version: str = Field(min_length=1, max_length=32)
 

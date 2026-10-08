@@ -37,6 +37,10 @@ async def lifespan(app: FastAPI):
                        insecure_settings(settings))
     await init_db()
     logger.info("Database tables created")
+    async with async_session() as db:      # pre-v2.1 <type>-<version>.bin files → registry
+        from .services.firmware_store import adopt_legacy_files
+        await adopt_legacy_files(db)
+        await db.commit()
 
     # ESP device presence monitor: logs classroom ESP online/offline.
     presence_task = asyncio.create_task(presence_sweep_loop())

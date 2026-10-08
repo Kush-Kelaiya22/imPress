@@ -125,3 +125,13 @@ def make_student(client, headers, roll="ABCDE12345", name="Asha Rao", **extra):
     r = client.post("/api/students/", headers=headers, json={"roll_number": roll, "student_name": name, **extra})
     assert r.status_code == 201, r.text
     return r.json()["id"]
+
+
+def upload_firmware(client, headers, project="impress_class_s3", version="2.1.0", **kw):
+    """Register a structurally valid image through the admin API; returns its bytes."""
+    from firmware_images import make_image
+    image = make_image(project, version, **kw)
+    r = client.post("/api/admin/firmware", headers=headers,
+                    files={"file": ("fw.bin", image, "application/octet-stream")})
+    assert r.status_code == 200, r.text
+    return image

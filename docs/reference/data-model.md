@@ -118,6 +118,9 @@ One per (class, student): unique index `uq_student_enrollments_class_student`.
 
 Common `action` values: `auth.login`, `auth.change_password`, `user.create|update|deactivate|reset_password`, `class.create|activate|deactivate|delete|device_auto_linked|status_update`, `quiz.create|start|stop`, `poll.create|start|end`, `student.connect|disconnect|csv_import`, `esp_device.online|offline`, `module.ota`, `module.ota.prompt`, `firmware.upload`.
 
+### `firmware_artifacts`
+One uploaded firmware image (#35). `id, sha256 (unique), size, target (c6|s3|student), chip, project, version, idf_version, build_date, elf_sha256, status (uploaded|approved|deprecated), channel (stable|beta), release_notes, legacy, uploaded_by, uploaded_at, approved_by, approved_at, deprecated_at`. Unique `(target, version)` (`uq_firmware_artifacts_target_version`): one set of bytes per version. Every fact except notes and channel is read from the image itself. The file is `<FIRMWARE_DIR>/<sha256>.bin`.
+
 ### `schema_migrations`
 `version` (PK), `name`, `applied_at`: one row per applied migration step. `GET /health` reports the highest version as `schema_version`.
 

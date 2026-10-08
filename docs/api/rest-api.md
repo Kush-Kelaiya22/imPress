@@ -302,9 +302,25 @@ stateDiagram-v2
 | `POST /api/admin/modules/{id}/access` | admin | `{is_active}` enable/disable a module |
 | `POST /api/admin/modules/{id}/verify` | admin | stamps `verified_at` |
 | `POST /api/admin/modules/{node_id}/link-device` · `POST /api/admin/modules/{id}/unlink` | admin | set/clear `gateway_id` relations |
-| `POST /api/admin/firmware/upload` | admin | *multipart* `device_type ∈ c6|s3|student`, `version` (semver, optional `v`), `file` → stored as `<type>-<version>.bin` |
-| `POST /api/admin/modules/{id}/ota` | admin | `{version}` → `pending_version`; for an S3 with a gateway, sends `device_command ota_update` to the gateway's class room |
+| `POST /api/admin/firmware` | admin | *multipart* `file`, optional `channel` (`stable`/`beta`), `release_notes`. The file must be a valid imPress ESP-IDF app image. **Target, chip and version are read from the image** (see below). Returns `FirmwareArtifactResponse` with `created`: identical bytes → `created: false`; a different image for an existing target+version → **409**; invalid → **422** with the reason; > 4 MB → 413 |
+| `POST /api/admin/firmware/upload` | admin | pre-v2.1 form: `device_type`, `version`, `file`. Same validation; the form values must match the image (422 otherwise) |
+| `GET /api/admin/firmware?target=` | admin | registered images `[{id, sha256, size, target, chip, project, version, idf_version, build_date, elf_sha256, status, channel, release_notes, legacy, uploaded_by, uploaded_at, …}]` |
+| `POST /api/admin/modules/{id}/ota` | admin | `{version}` → `pending_version`. **404** unless a registered, non-deprecated image exists for the device's type and version (#33/#35). For an S3 with a gateway, sends `device_command ota_update` to the gateway's class room |
 | `GET /api/admin/activity` | admin | activity log |
+
+**What makes an upload valid** (`services/firmware_image.py`, #35):
+
+| Check | Rejects |
+|---|---|
+| magic byte `0xE9`, plausible segment count, ≥ header + descriptor + hash | random bytes, other files |
+| chip id ∈ {0 esp32, 9 esp32s3, 13 esp32c6} | images for other chips |
+| app descriptor magic `0xABCD5432` | bootloader / partition-table binaries |
+| `project_name` ∈ {`impress_class_c6`, `impress_class_s3`, `impress_student`}, built for its chip | other applications; a C6 project built for the S3 |
+| `version` is `X.Y.Z` | images built without `version.txt` (version `"1"`) |
+| appended SHA-256 present and correct | corrupted or truncated uploads |
+| size ≤ the target's OTA slot (`partitions.csv`) | images that can't be installed |
+
+Images are stored as `<FIRMWARE_DIR>/<sha256>.bin`, a name derived from the content and never from user input. A target+version names exactly one set of bytes (immutable). At startup, valid `<type>-<version>.bin` files from the pre-v2.1 store are adopted (`legacy: true`); invalid ones are logged and no longer served.
 
 ## Misc
 
