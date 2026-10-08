@@ -60,11 +60,39 @@ flowchart TB
 `POST /api/device/heartbeat`
 ```json
 {"mac_address": "48:F6:EE:FF:FE:C7", "battery_pct": 100, "rssi": -61, "firmware_version": "1.0.0",
- "student_count": 27, "free_heap": 180000, "total_flash": 8388608}
+ "student_count": 27, "free_heap": 180000, "total_flash": 8388608,
+ "uptime_s": 3600, "reset_reason": "poweron", "boot_count": 12, "min_free_heap": 151000,
+ "s3_link_ok": true, "s3_uptime_s": 3590}
 ```
 → `{"status":"ok","server_time":"2026-10-07T21:35:16.319+05:30"}` · unknown MAC → `404`.
 
 It updates `last_seen`, battery, RSSI and firmware version, plus non-zero `student_count` / `free_heap` / `total_flash`, then pushes presence to teachers.
+
+**Diagnostics (#39), optional.** Firmware before v2.1 omits them and keeps working; they are then shown as *not reported*. An out-of-range value is a `422`.
+
+| Field | Meaning |
+|---|---|
+| `uptime_s` | seconds since this boot |
+| `reset_reason` | why the chip last reset (`esp_reset_reason()`): `poweron`, `external`, `software` (`esp_restart`, e.g. after an OTA update), `panic`, `int_wdt`, `task_wdt`, `wdt`, `deepsleep`, `brownout`, `other`; ≤ 16 characters |
+| `boot_count` | boots since the first flash, from NVS (a rising count with short uptimes means a reset loop) |
+| `min_free_heap` | lowest free heap since boot, in bytes |
+| `s3_link_ok` | the S3's own heartbeat arrived over SPI within 15 s (3 × its default 5 s interval) |
+| `s3_uptime_s` | uptime the S3 last reported (`0` when the link is down) |
+
+### Health states
+
+Computed from the latest values on every read (`services/health.py`); the first rule that matches wins:
+
+| State | When |
+|---|---|
+| `UNKNOWN` | never seen |
+| `OFFLINE` | silent for more than 30 s |
+| `UPDATING` | an OTA update is in progress (the device's deployment target is active) |
+| `ERROR` | the last OTA update failed (`failed`, `rolled_back`, `timed_out`, `unreachable`), or a `panic`, `int_wdt`, `task_wdt`, `wdt` or `brownout` reset in the last 10 minutes |
+| `DEGRADED` | `s3_link_ok` is false, Wi-Fi RSSI below −80 dBm, or `min_free_heap` below 20 KB |
+| `ONLINE` | otherwise |
+
+`DeviceResponse` (`GET /api/admin/modules`, `/modules/{id}`) carries `health`, `health_reasons` (why, in words) and every field above, plus `diag_at` (when they were reported). The diagnostics are read-only: they add no remote control over devices.
 
 ## Status ping
 

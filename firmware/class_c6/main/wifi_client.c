@@ -21,6 +21,7 @@
 #include "esp_http_client.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
+#include "esp_system.h"
 #if CONFIG_BATTERY_ADC_EN
 #include "esp_adc/adc_oneshot.h"
 #endif
@@ -254,11 +255,28 @@ int http_register_device(const char *mac_address, const char *device_type)
     return status;
 }
 
-int http_send_heartbeat(const char *mac, int student_count)
+/* esp_reset_reason() as the backend's health rules name it (#39). */
+static const char *_reset_reason(void)
+{
+    switch (esp_reset_reason()) {
+    case ESP_RST_POWERON:   return "poweron";
+    case ESP_RST_EXT:       return "external";
+    case ESP_RST_SW:        return "software";      /* esp_restart(): OTA, config change */
+    case ESP_RST_PANIC:     return "panic";
+    case ESP_RST_INT_WDT:   return "int_wdt";
+    case ESP_RST_TASK_WDT:  return "task_wdt";
+    case ESP_RST_WDT:       return "wdt";
+    case ESP_RST_DEEPSLEEP: return "deepsleep";
+    case ESP_RST_BROWNOUT:  return "brownout";
+    default:                return "other";
+    }
+}
+
+int http_send_heartbeat(const char *mac, int student_count, bool s3_link_ok, uint32_t s3_uptime_s)
 {
     char url[256];
     _url(url, sizeof(url), "/api/device/heartbeat");
-    char json[320];
+    char json[512];
     /* Real telemetry: RSSI from WiFi, free heap, total flash, battery ADC. */
     int rssi = 0;
     wifi_ap_record_t ap;
@@ -269,12 +287,20 @@ int http_send_heartbeat(const char *mac, int student_count)
     size_t total_heap = heap_caps_get_total_size(MALLOC_CAP_8BIT);
     int battery = _battery_pct();
 
+    /* Diagnostics (#39) */
+    uint32_t uptime_s = (uint32_t)(esp_timer_get_time() / 1000000ULL);
+    size_t min_free = heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
+
     snprintf(json, sizeof(json),
              "{\"mac_address\":\"%s\",\"battery_pct\":%d,\"rssi\":%d,"
              "\"firmware_version\":\"%s\",\"student_count\":%d,"
-             "\"free_heap\":%u,\"total_flash\":%u}",
+             "\"free_heap\":%u,\"total_flash\":%u,"
+             "\"uptime_s\":%u,\"reset_reason\":\"%s\",\"boot_count\":%u,"
+             "\"min_free_heap\":%u,\"s3_link_ok\":%s,\"s3_uptime_s\":%u}",
              mac, battery, rssi, FIRMWARE_VERSION, student_count,
-             (unsigned)free_heap, (unsigned)total_heap);
+             (unsigned)free_heap, (unsigned)total_heap,
+             (unsigned)uptime_s, _reset_reason(), (unsigned)g_cfg.boot_count,
+             (unsigned)min_free, s3_link_ok ? "true" : "false", (unsigned)s3_uptime_s);
     return _http_post(url, json);
 }
 

@@ -498,6 +498,13 @@ class DeviceHeartbeat(BaseModel):
     student_count: int = 0
     free_heap: int = 0
     total_flash: int = 0
+    # Diagnostics (#39). Optional: older firmware omits them.
+    uptime_s: Optional[int] = Field(None, ge=0)
+    reset_reason: Optional[str] = Field(None, max_length=16)
+    boot_count: Optional[int] = Field(None, ge=0)
+    min_free_heap: Optional[int] = Field(None, ge=0)
+    s3_link_ok: Optional[bool] = None
+    s3_uptime_s: Optional[int] = Field(None, ge=0)
 
 
 class DeviceStatusPing(BaseModel):
@@ -557,6 +564,16 @@ class DeviceResponse(BaseModel):
     # Telemetry from classroom node
     student_count: int = 0
     free_heap: int = 0
+    # Health (#39): state + why, and the diagnostics behind it
+    health: str = "UNKNOWN"
+    health_reasons: list[str] = []
+    uptime_s: Optional[int] = None
+    reset_reason: Optional[str] = None
+    boot_count: Optional[int] = None
+    min_free_heap: Optional[int] = None
+    s3_link_ok: Optional[bool] = None
+    s3_uptime_s: Optional[int] = None
+    diag_at: Optional[datetime] = None
     total_flash: int = 0
 
     model_config = {"from_attributes": True}

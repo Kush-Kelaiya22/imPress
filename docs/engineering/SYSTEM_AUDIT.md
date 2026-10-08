@@ -150,7 +150,7 @@ Not verifiable without hardware: radio delivery, the SPI link, OTA flashing and 
 | A11 | inventory | Mesh-joined students are not visible as connected modules. **Fixed in #40** (student module inventory). | smoke step 7 |
 | A12 | DB | No versioned migrations; constraint gaps listed in §3 | §3 |
 | A13 | hardware cost | S3 build requires 32 MB flash and octal PSRAM, which it doesn't use | §2 |
-| A14 | diagnostics | Reset reason, uptime, restart count and heap are not reported (except heap on the C6) | firmware grep |
+| A14 | diagnostics | Reset reason, uptime, restart count and heap are not reported (except heap on the C6). **Fixed in #39** for the C6 (health states plus diagnostics); the S3's reset reason is not yet relayed. | firmware grep |
 
 ---
 

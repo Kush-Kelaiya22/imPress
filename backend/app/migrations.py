@@ -65,13 +65,30 @@ async def _columns(conn: AsyncConnection, table: str) -> dict[str, dict]:
     return {r[1]: {"notnull": bool(r[3]), "pk": bool(r[5])} for r in rows}
 
 
-async def add_v2_columns(conn: AsyncConnection) -> None:
-    """Columns older databases lack (the pre-migration-framework ALTERs)."""
-    for table, cols in _V2_COLUMNS.items():
+async def _add_columns(conn: AsyncConnection, columns: dict[str, dict[str, str]]) -> None:
+    for table, cols in columns.items():
         existing = await _columns(conn, table)
         for name, ddl in cols.items():
             if existing and name not in existing:
                 await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+
+
+async def add_v2_columns(conn: AsyncConnection) -> None:
+    """Columns older databases lack (the pre-migration-framework ALTERs)."""
+    await _add_columns(conn, _V2_COLUMNS)
+
+
+# Latest gateway diagnostics from the heartbeat (#39). All nullable: older
+# firmware doesn't send them.
+_DIAGNOSTICS_COLUMNS = {
+    "esp_devices": {"uptime_s": "INTEGER", "reset_reason": "VARCHAR(16)", "boot_count": "INTEGER",
+                    "min_free_heap": "INTEGER", "s3_link_ok": "BOOLEAN", "s3_uptime_s": "INTEGER",
+                    "diag_at": "DATETIME"},
+}
+
+
+async def add_diagnostics_columns(conn: AsyncConnection) -> None:
+    await _add_columns(conn, _DIAGNOSTICS_COLUMNS)
 
 
 async def repair_dangling_references(conn: AsyncConnection) -> None:
@@ -166,6 +183,7 @@ MIGRATIONS: list[tuple[int, str, Step]] = [
     (2, "repair_dangling_references", repair_dangling_references),
     (3, "add_unique_constraints", add_unique_constraints),
     (4, "unique_question_order", unique_question_order),
+    (5, "add_diagnostics_columns", add_diagnostics_columns),
 ]
 
 LATEST = MIGRATIONS[-1][0]

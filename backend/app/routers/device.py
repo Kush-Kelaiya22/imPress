@@ -136,6 +136,12 @@ async def heartbeat(body: DeviceHeartbeat, db: AsyncSession = Depends(get_db)):
         device.free_heap = body.free_heap
     if body.total_flash:
         device.total_flash = body.total_flash
+    diag = body.model_dump(include={"uptime_s", "reset_reason", "boot_count", "min_free_heap",
+                                    "s3_link_ok", "s3_uptime_s"}, exclude_none=True)
+    if diag:                       # #39; older firmware sends none and keeps NULLs
+        for k, v in diag.items():
+            setattr(device, k, v)
+        device.diag_at = device.last_seen
     await db.commit()
     # Fire-and-forget presence push to teachers (new session to avoid holding request DB)
     asyncio.create_task(_push_after_commit(device.id))

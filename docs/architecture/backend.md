@@ -72,7 +72,9 @@ flowchart TB
 | `routers/*.py` | HTTP endpoints. See [REST API](../api/rest-api.md) and [device API](../api/device-api.md). |
 | `ws/handler.py` | `/ws/class/{id}`: authenticates teacher (session token) or device (API key), registers the socket with its role, handles `ping`, `broadcast_command`, `device_data`, and refreshes device presence on any device message. |
 | `ws/manager.py` | `ConnectionManager`: `class_id → {socket: role}`, `broadcast_to_class`, `broadcast_to_role`, dead-socket pruning. |
-| `services/presence.py` | Online/offline transitions (logged once per transition), 15 s offline sweep, presence snapshot (gateway tree BFS), teacher push. |
+| `services/presence.py` | Online/offline transitions (logged once per transition), 15 s offline sweep, presence snapshot (gateway tree BFS), teacher push. The sweep also marks student modules silent for 90 s as *seen* (#40). |
+| `services/student_modules.py` | Student module inventory (#40): upserts from batch join/leave/heartbeat, keyed on the firmware `device_id`; no history. |
+| `services/health.py` | Device health states (#39): `UNKNOWN` / `OFFLINE` / `UPDATING` / `ERROR` / `DEGRADED` / `ONLINE` from the latest heartbeat diagnostics; rules in [device API](../api/device-api.md#health-states). |
 | `services/sessions.py` | 5-minute cleanup of hard-expired, idle-expired and revoked sessions. |
 | `services/firmware_store.py` | Firmware upload storage `<type>-<version>.bin` with strict semver validation (no path traversal). |
 | `services/mesh_bridge.py` | Helpers that broadcast device commands (`device_command`, e.g. `ota_update`) and data to class rooms. |

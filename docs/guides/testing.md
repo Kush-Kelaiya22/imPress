@@ -172,7 +172,7 @@ Each suite compiles **real firmware sources** with `-Wall -Wextra -Werror -fsani
 | `class_c6/test_host/run_student_set.sh` | `student_set.c` | join/leave counts, heartbeats don't count students, S3 reboot clears the set, capacity, non-terminated radio input (#29) |
 | `class_c6/test_host/run_ota_logic.sh` | `ota_logic.c` + vendored cJSON | firmware/check offers parsed; unverifiable offers refused (no/short hash, non-semver, zero size); SHA-256 comparison; prompts routed to this C6, the S3, or ignored (#34) |
 | `class_c6/test_host/run_ws_command.sh` | `ws_command.c` + vendored cJSON | the backend contract fixture → frames → student structs; malformed and edge inputs |
-| `class_c6/test_host/run_config.sh` | `config.c` + NVS fake | Kconfig defaults, NVS overlay, bad overrides fall back (#18), class id persistence, NVS recovery |
+| `class_c6/test_host/run_config.sh` | `config.c` + NVS fake | Kconfig defaults, NVS overlay, bad overrides fall back (#18), class id persistence, NVS recovery, boot counter persists across boots (#39) |
 | `student/test_host/run.sh` | `config.c` + NVS fake | identity format, placeholder, set-once, reboot persistence, clear/re-provision, profile push rules, NVS recovery |
 
 ### Adding a host test

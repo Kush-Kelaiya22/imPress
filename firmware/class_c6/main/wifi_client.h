@@ -53,7 +53,7 @@ int http_register_device(const char *mac_address, const char *device_type);
  * @param student_count Number of mesh students currently linked
  * @return HTTP status code
  */
-int http_send_heartbeat(const char *mac, int student_count);
+int http_send_heartbeat(const char *mac, int student_count, bool s3_link_ok, uint32_t s3_uptime_s);
 
 /**
  * @brief Send the 2-minute classroom status ping (student count, class_id,

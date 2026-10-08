@@ -35,6 +35,7 @@ from ..schedule import find_schedule_conflicts
 from ..services.records import delete_class_records, ensure_section_free
 from ..services.presence import class_modules
 from ..services.student_modules import module_to_dict
+from ..services.health import health
 from ..services.class_import import TEMPLATE as CLASS_TEMPLATE, apply_class_import, export_rows, plan_class_import
 from ..services.csv_import import read_upload
 
@@ -1024,6 +1025,7 @@ def _device_response(dev: EspDevice) -> DeviceResponse:
         class_id = dev.class_session.id
         class_code = dev.class_session.code or ""
         class_name = dev.class_session.name or ""
+    state, reasons = health(dev, istnow())
     return DeviceResponse(
         id=dev.id,
         mac_address=dev.mac_address,
@@ -1047,6 +1049,15 @@ def _device_response(dev: EspDevice) -> DeviceResponse:
         student_count=dev.student_count or 0,
         free_heap=dev.free_heap or 0,
         total_flash=dev.total_flash or 0,
+        health=state,
+        health_reasons=reasons,
+        uptime_s=dev.uptime_s,
+        reset_reason=dev.reset_reason,
+        boot_count=dev.boot_count,
+        min_free_heap=dev.min_free_heap,
+        s3_link_ok=dev.s3_link_ok,
+        s3_uptime_s=dev.s3_uptime_s,
+        diag_at=dev.diag_at,
     )
 
 

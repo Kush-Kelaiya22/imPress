@@ -50,6 +50,15 @@ static volatile int64_t s_boot_time_us = 0;
  * read only the mirrored count. */
 static student_set_t s_students;
 static volatile int s_student_count = 0;
+
+/* The S3's link to us (#39): when its own heartbeat (sender 0) last arrived,
+ * and the uptime it reported. Written by the SPI task, read by heartbeats. */
+static volatile TickType_t s_s3_seen_tick;
+static volatile bool s_s3_seen;
+static volatile uint32_t s_s3_uptime_s;
+/* 3 × the S3's default 5 s heartbeat (class_s3 CONFIG_HEARTBEAT_INTERVAL_MS):
+ * raise this if the S3 is configured to beat less often. */
+#define S3_LINK_TIMEOUT_MS 15000
 static TaskHandle_t s_spi2http_task;
 
 /* heartbeat_task → spi2http: "append the C6's own heartbeat to the batch".
@@ -180,6 +189,11 @@ static cJSON *msg_to_json(msg_type_t type, const uint8_t *payload, uint16_t len,
         cJSON_AddNumberToObject(j, "rssi", p->rssi);
         /* The S3's own heartbeat (sender 0): if its uptime went backwards it
          * rebooted without sending LEAVEs, so the online set is stale. */
+        if (sender_device_id == 0) {
+            s_s3_uptime_s = p->uptime_s;
+            s_s3_seen_tick = xTaskGetTickCount();
+            s_s3_seen = true;
+        }
         if (sender_device_id == 0 && student_set_root_uptime(&s_students, p->uptime_s)) {
             ESP_LOGW(TAG, "S3 rebooted: online-student set cleared");
             s_student_count = 0;
@@ -390,7 +404,9 @@ static void heartbeat_task(void *arg)
         if (!wifi_client_is_connected()) continue;
 
         /* Send heartbeat to backend with real telemetry */
-        http_send_heartbeat(s_mac_str, s_student_count);
+        bool s3_ok = s_s3_seen &&
+            (xTaskGetTickCount() - s_s3_seen_tick) < pdMS_TO_TICKS(S3_LINK_TIMEOUT_MS);
+        http_send_heartbeat(s_mac_str, s_student_count, s3_ok, s3_ok ? s_s3_uptime_s : 0);
 
         /* C6's own status goes in the next batch; spi2http owns s_batch. */
         s_hb_item_pending = true;

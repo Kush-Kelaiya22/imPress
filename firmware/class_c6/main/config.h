@@ -28,6 +28,7 @@
 #define NVS_KEY_BACKEND_P   "backend_p"   /* u16 */
 #define NVS_KEY_API_KEY     "api_key"     /* str 128 */
 #define NVS_KEY_CLASS_ID    "class_id"    /* i32 */
+#define NVS_KEY_BOOT_COUNT  "boot_count"  /* i32: boots since first flash (#39) */
 #define NVS_KEY_SSID_LEN    33
 #define NVS_KEY_PASS_LEN    65
 #define NVS_KEY_HOST_LEN    128
@@ -76,6 +77,7 @@ typedef struct {
     uint16_t backend_port;
     char     api_key[NVS_KEY_KEY_LEN];
     int32_t  class_id;
+    uint32_t boot_count;     /* this boot's number, from NVS (#39) */
     /* Timing (seconds, from Kconfig — no NVS override needed) */
     uint32_t hb_interval_s;
     uint32_t ws_ping_s;

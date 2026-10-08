@@ -83,6 +83,13 @@ void init_nvs_config(void)
         g_cfg.class_id = cid;
     }
 
+    /* Diagnostics (#39): a rising count with short uptimes means a reset loop. */
+    int32_t boots = 0;
+    nvs_get_i32(h, NVS_KEY_BOOT_COUNT, &boots);
+    g_cfg.boot_count = (uint32_t)boots + 1;
+    nvs_set_i32(h, NVS_KEY_BOOT_COUNT, (int32_t)g_cfg.boot_count);
+    nvs_commit(h);
+
     nvs_close(h);
 
     ESP_LOGI(TAG, "WiFi: %s  backend: %s:%u  class_id: %ld",
