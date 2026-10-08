@@ -129,7 +129,7 @@ None of these have been measured. Record them here with the board, firmware vers
 | Power draw | USB meter on each role: idle, during a quiz, during OTA | pending |
 | OTA duration | deployment timeline (precheck → success) for each role on the room's Wi-Fi | pending |
 
-The full bench checklist will live in `docs/testing/HARDWARE_VALIDATION.md` (#43).
+The full bench checklist is in [hardware validation](../testing/HARDWARE_VALIDATION.md).
 
 ## Related
 

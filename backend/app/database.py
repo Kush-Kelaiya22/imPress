@@ -4,7 +4,7 @@ import logging
 
 from fastapi import HTTPException
 from sqlalchemy import event
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
@@ -45,6 +45,12 @@ async def commit_or_conflict(db: AsyncSession, detail: str, status: int = 409) -
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status, detail)
+    except OperationalError as e:
+        # "database is locked", disk I/O: nothing was saved. 503 tells the
+        # caller to retry (the gateway keeps a batch on any 5xx). Found by
+        # fault injection (#43): this used to be an unhandled 500.
+        await db.rollback()
+        raise HTTPException(503, f"Database unavailable ({e.orig}); nothing was saved, retry") from e
 
 
 async def _scrub_raw_session_tokens() -> int:

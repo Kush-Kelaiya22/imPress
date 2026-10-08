@@ -125,6 +125,20 @@ Run a single test directly with pytest when iterating: `pytest backend/tests/tes
 | `test_secure_defaults.py` | `config.py`, `main.py` | DEBUG off; refuses default secrets; random first admin password; CORS allow-list; device key header |
 | `test_session_token_storage.py` | `auth.py`, `database.py` | raw tokens never stored; legacy rows revoked; no DB files tracked by git |
 | `test_core_utils.py` | `timeutil.py`, `schedule.py`, `firmware_store.py`, `ws/manager.py` | IST maths; time parsing and overlap (incl. overnight, symmetric); academic-window rules; semver/path safety; role routing and dead-socket pruning |
+| `test_db_integrity.py` | `database.py`, `services/records.py` | foreign keys enforced; class and student deletes clean up their references (#41); unique indexes behind the "already exists?" checks (answers, votes, enrollments, sections); a unique violation becomes 409, not 500 (#27) |
+| `test_migrations.py` | `migrations.py` | fresh install records every step without a backup; a legacy v2 database is backed up, repaired and constrained; duplicate sections stop the upgrade with instructions; a failing step rolls back its DDL; duplicate question positions are renumbered; `/health` reports the schema version (#26) |
+| `test_question_import.py` | `services/question_import.py`, quiz routes | CSV parsing and validation, aliases, BOM, limits, duplicates, dry run vs all-or-nothing commit, a failed commit imports nothing (#31) |
+| `test_class_import.py` | `services/class_import.py`, admin routes | course and section CSV; dry run by default; per-row errors and in-file conflicts; existing records never silently overwritten; idempotent re-import; update mode; all-or-nothing, including on a database failure; export round-trip with formula escaping (#32) |
+| `test_device_limits.py` | quiz/poll/answer limits | backend limits match the firmware frame; at most four options (four buttons); long text accepted with truncation warnings; options beyond D rejected (#49) |
+| `test_ota_results.py` | batch `ota_result` | results are recorded only from what the device really runs; a push needs an uploaded image (#33) |
+| `test_firmware_registry.py` | `services/firmware_image.py`, `firmware_store.py` | image validation (magic, chip, project, version, appended hash, slot size), content-addressed immutable store, legacy adoption; constants checked against the firmware sources (#35) |
+| `test_firmware_manager.py` | firmware routes | approve, deprecate, delete rules, detail and history (#36) |
+| `test_deployments.py` | `services/deployments.py`, deployment routes | selection and exclusions, stages, concurrency, retries, timeouts, pause/resume/cancel, forward-only device states, durability across restarts (#38) |
+| `test_student_modules.py` | `services/student_modules.py`, presence | the inventory: one row per module, sweep, filters, access, deletes (#40) |
+| `test_health.py` | `services/health.py`, heartbeat | every health rule (table-driven) and its precedence; diagnostics stored; older firmware still accepted (#39) |
+| **`test_e2e_quiz.py`** | the whole answer path | **end to end (#43):** class → CSV questions → a simulated gateway registers by room code → modules join → quiz frames on the device socket → answers relayed in batches (one duplicated by the mesh) → live counts on the teacher socket → results; a late press is not counted |
+| **`test_e2e_ota.py`** | the whole update path | **end to end (#43):** a staged rollout to three rooms through simulated gateways; corrupt download refused, then retried; power loss mid-install times out, then is retried; an unhealthy image rolls back and pauses the rollout |
+| **`test_fault_injection.py`** | batch ingestion | **faults (#43):** a failed commit stores nothing and returns 503 so the gateway retries; a lost response's resend is harmless; answers buffered while offline count only while the quiz is open; two racing copies store one answer; a malformed chunk gets a 4xx |
 
 ### How the backend fixtures work (`backend/tests/conftest.py`)
 
@@ -133,6 +147,7 @@ Run a single test directly with pytest when iterating: `pytest backend/tests/tes
 - `client`: deletes the temp database file and recreates the schema (deleting the file sidesteps the `class_sessions`/`esp_devices`/`student_enrollments` foreign-key cycle that `drop_all` can't order), then starts the app with `TestClient` (lifespan runs, so the admin is seeded). At teardown it **drains the app's fire-and-forget DB tasks**, so no SQLite connection leaks into the next test.
 - `db(fn)`: runs an async ORM function in the app's event loop and commits. Use it for setup the API doesn't offer (e.g. ageing a session).
 - Helpers: `login()`, `auth()`, `make_user()`, `make_class(…, activate=True)`, `make_student()`, `DEVICE` (device-key headers).
+- `gateway_sim.Gateway` (#43): a simulated C6 that registers, heartbeats, buffers mesh messages and flushes them with the firmware's retry rules, and runs the OTA client's steps (with `corrupt`, `stop_after` and `healthy=False` faults). Message builders: `join`, `leave`, `answer`, `vote`.
 
 ### Writing a backend test
 
@@ -271,6 +286,8 @@ Mark **CI result** as the required status check in branch protection.
 | The IDF image | `docker buildx imagetools inspect espressif/idf:<tag>` gives the index digest. Update `ci.yml` and `IDF_IMAGE` in `run_tests.py` together (a repository test checks they match). |
 
 ## What is *not* automatically tested
+
+The layers and their limits are in the [test strategy](../testing/TEST_STRATEGY.md); bench checks and their status are in [hardware validation](../testing/HARDWARE_VALIDATION.md).
 
 - On-device behaviour (radio, SPI timing, real flash): needs a hardware soak (see [troubleshooting](troubleshooting.md)).
 - The React dev UI beyond "it builds". The vanilla SPA is covered by `ui_tests/` for the flows listed there.
