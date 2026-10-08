@@ -64,8 +64,8 @@ export default function PollLive() {
   }
 
   const addOption = () => {
-    if (options.length >= 6) {
-      showToast('Maximum 6 options')
+    if (options.length >= 4) {
+      showToast('Maximum 4 options (student modules have 4 buttons)')
       return
     }
     setOptions((prev) => [...prev, ''])

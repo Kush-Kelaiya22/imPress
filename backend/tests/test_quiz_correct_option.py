@@ -18,13 +18,13 @@ def _create(client, ctx, options, correct):
                        "questions": [{"question_text": "q", "options": options, "correct_option": correct}]})
 
 
-@pytest.mark.parametrize("options,correct", [(["a", "b"], 2), (["a", "b"], 9), (["a", "b", "c", "d", "e", "f"], 6)])
+@pytest.mark.parametrize("options,correct", [(["a", "b"], 2), (["a", "b"], 9), (["a", "b", "c", "d"], 4)])   # 4 = the most a module shows (#49)
 def test_out_of_range_rejected(client, ctx, options, correct):
     r = _create(client, ctx, options, correct)
     assert r.status_code == 422 and "correct_option" in r.text
 
 
-@pytest.mark.parametrize("options,correct", [(["a", "b"], 0), (["a", "b"], 1), (["a", "b", "c", "d", "e", "f"], 5)])
+@pytest.mark.parametrize("options,correct", [(["a", "b"], 0), (["a", "b"], 1), (["a", "b", "c", "d"], 3)])
 def test_boundaries_accepted(client, ctx, options, correct):
     assert _create(client, ctx, options, correct).status_code == 201
 
