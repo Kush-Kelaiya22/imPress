@@ -1,22 +1,24 @@
 """Admin router: user management, class (classroom) management & enrollment, activity logs."""
 
 import csv
+import hashlib
 import io
 import re
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi.responses import Response
 from sqlalchemy import select, func
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..database import get_db
+from ..database import commit_or_conflict, get_db
 from ..models import (
-    User, ClassSession, Student, StudentEnrollment, EspDevice, ActivityLog,
+    User, ClassSession, Course, Student, StudentEnrollment, EspDevice, ActivityLog,
 )
 from ..schemas import (
     AdminUserCreate, UserResponse, UserUpdate,
     PasswordReset,
-    ClassCreate, ClassUpdate, ClassAssignTeacher, ClassResponse,
+    ClassCreate, ClassUpdate, ClassAssignTeacher, ClassResponse, ClassImportReport,
     ClassFacultyUpdate,
     StudentRegister, StudentResponse, BulkStudentRegister, StudentEnroll,
     ActivityLogResponse,
@@ -31,6 +33,8 @@ from ..auth import require_admin, require_teacher_or_admin
 from ..activity import log_activity
 from ..schedule import find_schedule_conflicts
 from ..services.records import delete_class_records, ensure_section_free
+from ..services.class_import import TEMPLATE as CLASS_TEMPLATE, apply_class_import, export_rows, plan_class_import
+from ..services.csv_import import read_upload
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -335,6 +339,67 @@ async def delete_user(
 
 
 # ── Class Management ────────────────────────────────────────────────
+
+# ── Courses + sections from CSV (#32) ───────────────────────────────
+
+@router.get("/classes/import-template.csv")
+async def class_import_template():
+    """Example file with every column. Public: it contains no data."""
+    return Response(CLASS_TEMPLATE, media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="impress-classes-template.csv"'})
+
+
+@router.post("/classes/import", response_model=ClassImportReport)
+async def import_classes_csv(
+    file: UploadFile = File(...),
+    mode: str = Query("create", pattern="^(create|update)$",
+                      description="create: new sections only; update: also change existing ones"),
+    dry_run: bool = Query(True, description="validate only; pass false to store"),
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create courses and their sections from a CSV. All-or-nothing: any
+    invalid row means nothing is stored (422 with the report). Existing
+    sections are skipped in create mode and only updated in update mode."""
+    raw = await read_upload(file)
+    report = await plan_class_import(db, raw, mode)
+    if dry_run:
+        return report
+    if report.invalid:
+        raise HTTPException(422, {"message": f"{report.invalid} invalid row(s); nothing was imported",
+                                  "report": report.model_dump()})
+    await apply_class_import(db, report, user)
+    await log_activity(db, "class.csv_import", user.id, "class", None, {
+        "mode": mode, "created": report.create, "updated": report.update,
+        "new_courses": report.new_courses, "skipped": report.duplicate,
+        "file_sha256": hashlib.sha256(raw).hexdigest(), "filename": file.filename or "",
+    })
+    try:
+        await commit_or_conflict(db, "The classes changed while importing; check again and retry")
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(503, "Database error; nothing was imported")
+    report.imported = report.create + report.update
+    report.skipped = report.total - report.imported
+    report.committed = True
+    return report
+
+
+@router.get("/classes/export.csv")
+async def export_classes_csv(
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Every course section in the import layout. Cells that would start a
+    spreadsheet formula are prefixed with ' (formula injection)."""
+    courses = {c.id: c for c in (await db.execute(select(Course))).scalars()}
+    classes = list((await db.execute(select(ClassSession))).scalars())
+    usernames = {u.id: u.username for u in (await db.execute(select(User))).scalars()}
+    body, omitted = export_rows(courses, classes, usernames)
+    return Response(body, media_type="text/csv; charset=utf-8", headers={
+        "Content-Disposition": 'attachment; filename="impress-classes.csv"',
+        "X-Omitted-Classes": str(omitted)})
+
 
 @router.post("/classes", response_model=ClassResponse, status_code=201)
 async def admin_create_class(

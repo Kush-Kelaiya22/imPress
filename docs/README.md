@@ -24,7 +24,7 @@ This folder is the long-form documentation for imPress. The [project README](../
 | ↳ [Development setup](guides/development-setup.md) | run the backend, UIs and firmware builds locally |
 | ↳ [Configuration](guides/configuration.md) | look up any backend setting or device Kconfig/NVS key |
 | ↳ [Deployment](guides/deployment.md) | put imPress in a real classroom |
-| ↳ [CSV imports](guides/csv-imports.md) | bulk-create quiz questions from a spreadsheet |
+| ↳ [CSV imports](guides/csv-imports.md) | bulk-create quiz questions, courses and sections from a spreadsheet; export sections |
 | ↳ [OTA updates](guides/ota-updates.md) | ship firmware to deployed hubs |
 | ↳ [Testing](guides/testing.md) | run, read or write tests; understand CI |
 | ↳ [Troubleshooting](guides/troubleshooting.md) | diagnose resets, connectivity and data problems |
