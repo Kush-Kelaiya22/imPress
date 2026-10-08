@@ -76,7 +76,9 @@ flowchart TB
 | `services/student_modules.py` | Student module inventory (#40): upserts from batch join/leave/heartbeat, keyed on the firmware `device_id`; no history. |
 | `services/health.py` | Device health states (#39): `UNKNOWN` / `OFFLINE` / `UPDATING` / `ERROR` / `DEGRADED` / `ONLINE` from the latest heartbeat diagnostics; rules in [device API](../api/device-api.md#health-states). |
 | `services/sessions.py` | 5-minute cleanup of hard-expired, idle-expired and revoked sessions. |
-| `services/firmware_store.py` | Firmware upload storage `<type>-<version>.bin` with strict semver validation (no path traversal). |
+| `services/firmware_store.py`, `firmware_image.py`, `firmware_signing.py` | The firmware registry: images are parsed and validated (#35), signatures verified (#66), and stored as `<sha256>.bin` (content-addressed, immutable). |
+| `services/deployments.py` | The OTA deployment engine (#38): per-device state machine, stages, retries, timeouts; `deployments_loop` every 5 s. |
+| `device_auth.py` | Device authentication (#66): the shared provisioning key and per-device keys. |
 | `services/mesh_bridge.py` | Helpers that broadcast device commands (`device_command`, e.g. `ota_update`) and data to class rooms. |
 | `services/participation.py` | Helpers for broadcasting a question and aggregating results (used by legacy paths). |
 | `schedule.py` | Timetable clash detection, returned as *warnings*, never hard errors. |
@@ -147,7 +149,7 @@ Every frame carries `type` (read by the vanilla UI); device-relevant frames also
 ## Persistence and migrations
 
 - **SQLite via aiosqlite**, file path from `IMPRESS_DATABASE_URL`, relative to the working directory.
-- `Base.metadata.create_all` creates missing tables. `_migrate_columns()` adds new columns to existing tables (a hand-maintained dict in `database.py`). **There is no Alembic**: renames, drops and constraint changes need a manual migration script (see `backend/migrate_utc_to_ist.py` for the pattern).
+- Versioned, transactional migrations (`migrations.py`, recorded in `schema_migrations`, a backup before the first pending step). See [database migrations](../engineering/DATABASE_MIGRATIONS.md). Foreign keys are enforced on every connection.
 - All `DateTime` columns store **naive IST** (`timeutil.istnow()`). `ist_epoch_ms()` converts without depending on the host's timezone.
 
 ## Scaling and limits

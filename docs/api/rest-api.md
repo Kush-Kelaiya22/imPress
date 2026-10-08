@@ -347,6 +347,6 @@ Images are stored as `<FIRMWARE_DIR>/<sha256>.bin`, a name derived from the cont
 
 | Method & path | Guard | Notes |
 |---|---|---|
-| `GET /health` · `GET /api/health` | public | `{"status":"healthy","version":"2.1.0","schema_version":5}`: the release (the repository's `VERSION` file, #42) and the applied database migration |
+| `GET /health` · `GET /api/health` | public | `{"status":"healthy","version":"2.1.0","schema_version":7}`: the release (the repository's `VERSION` file, #42) and the applied database migration |
 | `GET /{any other path}` | public | the SPA (`templates/index.html`) |
 | `GET /static/*` | public | SPA assets |
