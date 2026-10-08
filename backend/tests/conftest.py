@@ -127,11 +127,14 @@ def make_student(client, headers, roll="ABCDE12345", name="Asha Rao", **extra):
     return r.json()["id"]
 
 
-def upload_firmware(client, headers, project="impress_class_s3", version="2.1.0", **kw):
-    """Register a structurally valid image through the admin API; returns its bytes."""
+def upload_firmware(client, headers, project="impress_class_s3", version="2.1.0", approve=True, **kw):
+    """Register (and by default approve, so it can be pushed) a structurally
+    valid image through the admin API; returns its bytes."""
     from firmware_images import make_image
     image = make_image(project, version, **kw)
     r = client.post("/api/admin/firmware", headers=headers,
                     files={"file": ("fw.bin", image, "application/octet-stream")})
     assert r.status_code == 200, r.text
+    if approve:
+        assert client.post(f"/api/admin/firmware/{r.json()['id']}/approve", headers=headers).status_code == 200
     return image
