@@ -122,17 +122,17 @@ Further reading: [system overview](docs/architecture/overview.md), [data flows](
 
 ```bash
 git clone https://github.com/Kush-Kelaiya22/imPress.git
-cd imPress/backend
-python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-export IMPRESS_DEBUG=true IMPRESS_INITIAL_ADMIN_PASSWORD=dev-admin
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+cd imPress
+scripts/install.sh                                      # venv, dependencies, backend/.env with generated secrets
+IMPRESS_INITIAL_ADMIN_PASSWORD=dev-admin scripts/start.sh
 ```
+
+On Windows, or to run it by hand, use `cd backend`, `python -m venv .venv`, `pip install -r requirements.txt`, `cp .env.example .env`, then `IMPRESS_DEBUG=true uvicorn app.main:app --reload`.
 
 Open <http://localhost:8000> and sign in as `admin` / `dev-admin`. Interactive API documentation is served at <http://localhost:8000/docs>.
 
 > [!IMPORTANT]
-> `IMPRESS_DEBUG=true` is for local development only. In production the server **refuses to start** with the published default secrets; set `IMPRESS_JWT_SECRET` and `IMPRESS_DEVICE_API_KEY` as described in [`backend/.env.example`](backend/.env.example) and the [deployment guide](docs/guides/deployment.md).
+> The server **refuses to start** with the published default secrets. `scripts/install.sh` generates `IMPRESS_JWT_SECRET` and `IMPRESS_DEVICE_API_KEY`; the device key must also be set on every gateway. `IMPRESS_DEBUG=true` (which allows the defaults) is for local development only. See the [deployment guide](docs/guides/deployment.md).
 
 ### 2. Build the firmware
 

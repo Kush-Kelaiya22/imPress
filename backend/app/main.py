@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
-from .config import settings, check_secure, insecure_settings
+from .config import APP_VERSION, settings, check_secure, insecure_settings
 from .database import init_db, async_session
 from .timeutil import istnow
 from .routers import auth, classes, quizzes, polls, device, admin, courses, students, firmware, deployments
@@ -92,7 +92,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="imPress Backend",
     description="ESP32 Classroom Participation System",
-    version="1.0.0",
+    version=APP_VERSION,
     lifespan=lifespan,
 )
 
@@ -186,10 +186,11 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 # ── Health Check ─────────────────────────────────────────────────────
 
 @app.get("/health")
+@app.get("/api/health")
 async def health():
     from .database import engine
     from .migrations import schema_version
-    return {"status": "healthy", "schema_version": await schema_version(engine)}
+    return {"status": "healthy", "version": APP_VERSION, "schema_version": await schema_version(engine)}
 
 
 # ── Frontend (catch-all SPA route — must be last) ────────────────────

@@ -4,8 +4,12 @@ from conftest import DEVICE, auth, login
 
 
 def test_health(client):
+    from pathlib import Path
     from app.migrations import LATEST
-    assert client.get("/health").json() == {"status": "healthy", "schema_version": LATEST}
+    version = (Path(__file__).resolve().parents[2] / "VERSION").read_text().strip()     # #42
+    for path in ("/health", "/api/health"):
+        assert client.get(path).json() == {"status": "healthy", "version": version, "schema_version": LATEST}
+    assert client.get("/openapi.json").json()["info"]["version"] == version
 
 
 def test_seeded_super_admin_can_log_in(client):
