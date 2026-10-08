@@ -18,7 +18,7 @@ import run_tests
 
 def test_discovery_lists_core_and_optional_suites():
     names = [s.name for s in run_tests.discover()]
-    for required in ("backend", "firmware-static", "repo", "frontend",
+    for required in ("backend", "firmware-static", "repo", "frontend", "ui",
                      "idf:class_c6", "idf:class_s3", "idf:student"):
         assert required in names
     assert any(n.startswith("host:protocol") for n in names)
@@ -34,6 +34,8 @@ def test_selection_rules():
     assert [s.name for s in run_tests.select(suites, ["backend"], False, False)] == ["backend"]
     with_idf = run_tests.select(suites, [], True, False)
     assert sum(s.name.startswith("idf:") for s in with_idf) == 3
+    assert "ui" not in {s.name for s in default}
+    assert "ui" in {s.name for s in run_tests.select(suites, [], False, False, with_ui=True)}
 
 
 def test_parse_junit(tmp_path):

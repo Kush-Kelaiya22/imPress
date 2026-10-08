@@ -70,6 +70,15 @@ def test_every_default_runner_suite_runs_in_ci(workflow):
         assert re.search(rf"run_tests\.py --suite {re.escape(group)}\b", ci), f"suite '{group}' not run in CI"
 
 
+def test_browser_ui_checks_run_in_ci(workflow):
+    job = workflow["jobs"]["ui"]
+    text = _steps_text(job)
+    assert "run_tests.py --suite ui" in text and "playwright install --with-deps chromium" in text
+    assert "ui_tests/requirements.txt" in text          # the pinned Playwright version comes from there
+    upload = next(s for s in job["steps"] if "upload-artifact" in str(s.get("uses")))
+    assert "ui_tests/screenshots/" in upload["with"]["path"] and upload["if"] == "always()"
+
+
 def test_every_firmware_project_is_built(workflow):
     projects = sorted(p.parent.parent.name for p in (ROOT / "firmware").glob("*/main/CMakeLists.txt"))
     matrix = workflow["jobs"]["firmware-build"]["strategy"]["matrix"]["project"]

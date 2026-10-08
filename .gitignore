@@ -49,6 +49,7 @@ htmlcov/
 coverage.xml
 *.gcda
 *.gcno
+ui_tests/screenshots/
 
 # ── Node / frontend ─────────────────────────────────────────────────────────
 node_modules/

@@ -5,6 +5,7 @@
     python run_tests.py --list           # show suites and exit
     python run_tests.py -s backend -s host   # only matching suites (prefix match)
     python run_tests.py --with-idf --with-frontend   # also firmware builds + frontend build
+    python run_tests.py --with-ui        # also browser UI checks (Playwright)
     python run_tests.py --json report.json --junit-dir reports
 
 Default suites
@@ -14,7 +15,8 @@ Default suites
   host:<suite>       firmware/*/test_host/run*.sh (real firmware C + ASan/UBSan)
 Optional suites
   idf:<project>      idf.py build (native ESP-IDF, else Docker espressif/idf:v6.1)
-  frontend           npm install && npm run build
+  frontend           npm ci && npm run build
+  ui                 pytest ui_tests (Playwright browser checks against a real server)
 
 Exit status: 0 when nothing failed (skipped suites are reported, not failures).
 Only the Python standard library is used, so the runner works before deps exist.
@@ -116,6 +118,10 @@ def discover() -> list[Suite]:
     for project in IDF_PROJECTS:
         suites.append(Suite(f"idf:{project}", "cmd", f"ESP-IDF v6.1 build: {project}",
                             [], optional=True))
+    ui = _pytest_suite("ui", "ui_tests", "Browser UI checks (Playwright, real server)",
+                       pip_requires="ui_tests/requirements.txt")
+    ui.optional = True
+    suites.append(ui)
     # npm ci installs exactly the committed lockfile and never rewrites it
     install = ("npm ci --no-audit --no-fund --loglevel=error" if (ROOT / "frontend/package-lock.json").exists()
                else "npm install --no-audit --no-fund --no-package-lock --loglevel=error")
@@ -456,13 +462,15 @@ def markdown_report(results: list[SuiteResult], wall: float) -> str:
 # ── CLI ─────────────────────────────────────────────────────────────────────
 
 
-def select(suites: list[Suite], patterns: list[str], with_idf: bool, with_frontend: bool) -> list[Suite]:
+def select(suites: list[Suite], patterns: list[str], with_idf: bool, with_frontend: bool,
+           with_ui: bool = False) -> list[Suite]:
     chosen = []
     for s in suites:
         if patterns:
             if any(s.name == p or s.name.startswith(p.rstrip(":") + ":") or s.name.startswith(p) for p in patterns):
                 chosen.append(s)
-        elif not s.optional or (with_idf and s.name.startswith("idf:")) or (with_frontend and s.name == "frontend"):
+        elif (not s.optional or (with_idf and s.name.startswith("idf:"))
+              or (with_frontend and s.name == "frontend") or (with_ui and s.name == "ui")):
             chosen.append(s)
     return chosen
 
@@ -473,6 +481,7 @@ def main(argv=None) -> int:
     ap.add_argument("--list", action="store_true", help="list suites and exit")
     ap.add_argument("--with-idf", action="store_true", help="also build all firmware with ESP-IDF v6.1")
     ap.add_argument("--with-frontend", action="store_true", help="also build the React frontend")
+    ap.add_argument("--with-ui", action="store_true", help="also run the browser UI checks (Playwright)")
     ap.add_argument("-x", "--fail-fast", action="store_true", help="stop after the first failing suite")
     ap.add_argument("-v", "--verbose", action="store_true", help="stream each suite's full output")
     ap.add_argument("--timeout", type=float, default=0, metavar="SECONDS",
@@ -491,7 +500,7 @@ def main(argv=None) -> int:
         for s in all_suites:
             print(f"{s.name:<28} {'(optional) ' if s.optional else ''}{s.description}")
         return 0
-    suites = select(all_suites, args.suite, args.with_idf, args.with_frontend)
+    suites = select(all_suites, args.suite, args.with_idf, args.with_frontend, args.with_ui)
     if not suites:
         print(f"no suite matches {args.suite}; use --list", file=sys.stderr)
         return 2
