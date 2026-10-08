@@ -2213,6 +2213,19 @@ window._showDiagnostics = async (id) => {
   await load();
 };
 
+// #66: who signed an image, and whether it is the key this server requires
+function signatureBadge(a) {
+  if (!a.signer) {
+    return a.signed_by_site_key === false
+      ? '<span class="badge badge-sm badge-danger" title="This server requires signed images; this one is never deployed">unsigned</span>'
+      : '<span class="badge badge-sm badge-outline" title="No signature">unsigned</span>';
+  }
+  const key = escHtml(a.signer.slice(0, 16));
+  if (a.signed_by_site_key === true) return `<span class="badge badge-sm badge-success" title="Signed with the site key ${key}…">signed ✓</span>`;
+  if (a.signed_by_site_key === false) return `<span class="badge badge-sm badge-danger" title="Signed with key ${key}…, not the site key: never deployed">other key</span>`;
+  return `<span class="badge badge-sm badge-outline" title="Signed with key ${key}…">signed</span>`;
+}
+
 // ── Firmware manager (#35/#36) ─────────────────────────────────
 
 async function renderAdminFirmware(app) {
@@ -2261,7 +2274,8 @@ async function renderAdminFirmware(app) {
                   <br><span class="text-muted text-sm" title="${escHtml(a.sha256)}">${formatBytes(a.size)} · ${escHtml(a.sha256.slice(0, 12))}…</span></td>
                 <td><span class="badge ${badge[a.status]}">${escHtml(a.status)}</span>
                   ${a.channel !== 'stable' ? `<span class="badge badge-sm badge-outline">${escHtml(a.channel)}</span>` : ''}
-                  ${a.legacy ? '<span class="badge badge-sm badge-outline" title="Adopted from the pre-v2.1 store">legacy</span>' : ''}</td>
+                  ${a.legacy ? '<span class="badge badge-sm badge-outline" title="Adopted from the pre-v2.1 store">legacy</span>' : ''}
+                  <br>${signatureBadge(a)}</td>
                 <td class="text-sm">${a.devices_running} running${a.devices_pending ? `<br>${a.devices_pending} pending` : ''}</td>
                 <td class="text-sm">${escHtml(a.build_date)}<br><span class="text-muted">IDF ${escHtml(a.idf_version)}</span></td>
                 <td class="text-sm">${escHtml(a.release_notes || '—')}</td>

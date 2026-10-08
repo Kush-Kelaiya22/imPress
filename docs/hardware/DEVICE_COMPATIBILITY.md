@@ -32,6 +32,7 @@ An OTA update replaces **only the app** in the inactive slot. Everything else on
 | Change | Over the air? |
 |---|---|
 | Application code, its version, Kconfig options compiled into the app | yes |
+| Requiring signed updates (the signed-app profile, #66) | **yes**: it lives in the app, not the bootloader. The first signed-profile image is installed without a check; every later one must be signed with the site key |
 | Bootloader, including enabling app rollback (#34 on the C6) | **no**: serial |
 | Partition table (slot sizes, adding partitions) | **no**: serial |
 | Flash mode or size in the header (for example the [reduced-flash hub profile](CLASSROOM_NODE_REQUIREMENTS.md#reduced-flash-hub-profile-built-not-booted)) | **no**: serial, and every later image must be built the same way |

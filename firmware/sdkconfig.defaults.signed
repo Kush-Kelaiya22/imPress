@@ -1,0 +1,12 @@
+# Signed-app profile (#66), applied by scripts/build_signed.sh on top of a
+# project's sdkconfig.defaults. Hub and gateway only.
+#
+# The running app verifies every OTA image's RSA-3072 signature (Secure Boot
+# V2 scheme) in esp_ota_end() and refuses unsigned or foreign ones. No
+# hardware Secure Boot and no eFuses: the bootloader is unchanged, so this
+# reaches a fleet with one ordinary OTA update and is undone the same way.
+CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT=y
+CONFIG_SECURE_SIGNED_APPS_RSA_SCHEME=y
+CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT=y
+CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y
+# CONFIG_SECURE_BOOT_SIGNING_KEY is set by the script (the key stays outside the repository)

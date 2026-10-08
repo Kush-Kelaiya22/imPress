@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     # older than per-device keys then stops working).
     DEVICE_KEYS_REQUIRED: bool = False
 
+    # Signed firmware (#66): path to the site's RSA-3072 public key (PEM, from
+    # scripts/firmware_key.sh). Set: uploads must be signed with it, and images
+    # that aren't are never deployed. Empty: signatures are recorded, not required.
+    FIRMWARE_SIGNING_KEY: str = ""
+
     # ── First-run super admin ──
     # Empty → a random password is generated and logged ONCE at first start.
     INITIAL_ADMIN_PASSWORD: str = ""

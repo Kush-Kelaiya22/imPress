@@ -610,6 +610,8 @@ class FirmwareArtifactResponse(BaseModel):
     devices_running: int = 0           # devices whose firmware_version is this
     devices_pending: int = 0           # devices about to install it
     latest_approved: bool = False      # highest approved version for its target
+    signer: str = ""                   # key digest of its signature, "" unsigned (#66)
+    signed_by_site_key: Optional[bool] = None   # None when no site key is configured
 
     model_config = {"from_attributes": True}
 

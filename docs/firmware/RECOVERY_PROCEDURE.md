@@ -24,7 +24,7 @@ The error health state clears after the next successful update.
 
 | Target state | Meaning | Action |
 |---|---|---|
-| `failed` | the device reported an error (HTTP, size, SHA-256, `esp_ota_end`) and nothing was installed | if attempts remain it is retried automatically; otherwise check the error, then resume or cancel |
+| `failed` | the device reported an error (HTTP, size, SHA-256, `esp_ota_end`) and nothing was installed. On a device running the signed profile (#66), `esp_ota_end` also fails for an image that isn't signed with the key the device trusts. Check the image with `scripts/verify_firmware.py --key` | if attempts remain it is retried automatically; otherwise check the error, then resume or cancel |
 | `timed_out` | it started but didn't finish within `timeout_s` (for example power loss) | retried while attempts remain; check the device is powered and online |
 | `unreachable` | it never answered the offer | check the device's health (offline?) and that its gateway is connected |
 
@@ -61,7 +61,16 @@ Use this when a device doesn't boot either image, is stuck in a reset loop (boot
 
 **It worked when:** the device registers, the Modules page shows the expected version, and its health is *online*.
 
-## 5. Undo a backend upgrade
+## 5. The firmware signing key is lost
+
+Devices on the signed profile accept only images signed with that key, so they can no longer be updated over the air.
+1. Create a new key (`scripts/firmware_key.sh`, into a new directory).
+2. Point `IMPRESS_FIRMWARE_SIGNING_KEY` at its public key.
+3. Reflash each device over serial with a `scripts/build_signed.sh` image ([§4](#4-a-device-cant-update-at-all-reflash-over-serial)).
+
+Prevent this: keep the private key backed up in two places, offline.
+
+## 6. Undo a backend upgrade
 
 1. Stop the service.
 2. **Restore the database.** Before migrating, the backend copied it next to the original as `<db>.bak-<from>-to-<to>-<timestamp>`. Copy that file back over the database. Anything written after the upgrade is lost.

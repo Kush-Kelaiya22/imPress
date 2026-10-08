@@ -176,6 +176,7 @@ class FirmwareArtifact(Base):
     channel = Column(String(16), default="stable")                  # stable | beta
     release_notes = Column(Text, default="")
     legacy = Column(Boolean, default=False)                         # adopted from the pre-v2.1 file store
+    signer = Column(String(64), default="")                         # key digest of its signature, "" unsigned (#66)
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     uploaded_at = Column(DateTime, default=istnow)
     approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)

@@ -20,6 +20,7 @@ from ..config import settings
 from ..models import FirmwareArtifact
 from .csv_import import read_upload
 from .firmware_image import MAX_IMAGE_BYTES, ImageError, parse_image
+from .firmware_signing import site_key_digest
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +73,12 @@ async def resolve(db: AsyncSession, target: str, version: str, *, include_deprec
     return (await db.execute(q)).scalar_one_or_none()
 
 
+def _signer(info) -> str:
+    """The site key if it signed the image, else its first signer, else ""."""
+    site = site_key_digest()
+    return site if site in info.signers else (info.signers[0] if info.signers else "")
+
+
 async def store_upload(db: AsyncSession, file: UploadFile, user_id: int | None, *,
                        device_type: str | None = None, version: str | None = None,
                        channel: str = "stable", release_notes: str = "") -> tuple[FirmwareArtifact, bool]:
@@ -87,6 +94,12 @@ async def store_upload(db: AsyncSession, file: UploadFile, user_id: int | None, 
         raise HTTPException(422, f"this file is version {info.version}, not {normalize_version(version)}")
     if channel not in ("stable", "beta"):
         raise HTTPException(422, "channel must be stable or beta")
+    site = site_key_digest()
+    if site and site not in info.signers:
+        raise HTTPException(422, ("the image is not signed" if not info.signers else
+                                  "the image is not signed with this server's firmware key")
+                            + f" (IMPRESS_FIRMWARE_SIGNING_KEY, key {site[:16]}…); build it with "
+                              "scripts/build_signed.sh or sign it with espsecure.py sign_data --version 2")
 
     same = (await db.execute(select(FirmwareArtifact).where(FirmwareArtifact.sha256 == info.sha256))).scalar_one_or_none()
     if same is not None:
@@ -100,7 +113,8 @@ async def store_upload(db: AsyncSession, file: UploadFile, user_id: int | None, 
     artifact = FirmwareArtifact(
         sha256=info.sha256, size=info.size, target=info.target, chip=info.chip, project=info.project,
         version=info.version, idf_version=info.idf_version, build_date=info.build_date,
-        elf_sha256=info.elf_sha256, channel=channel, release_notes=release_notes[:5000], uploaded_by=user_id)
+        elf_sha256=info.elf_sha256, channel=channel, release_notes=release_notes[:5000], uploaded_by=user_id,
+        signer=_signer(info))
     db.add(artifact)
     await db.flush()
     return artifact, True

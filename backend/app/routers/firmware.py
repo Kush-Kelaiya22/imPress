@@ -19,6 +19,8 @@ from ..schemas import FirmwareArtifactResponse
 from ..services.firmware_store import artifact_path, store_upload
 from ..timeutil import istnow
 
+from ..services.firmware_signing import site_key_digest
+
 router = APIRouter(prefix="/api/admin/firmware", tags=["firmware"])
 
 
@@ -48,6 +50,8 @@ def _response(a: FirmwareArtifact, usage: dict, latest: dict[str, int]) -> Firmw
     u = usage.get((a.target, a.version), {})
     r.devices_running, r.devices_pending = u.get("running", 0), u.get("pending", 0)
     r.latest_approved = latest.get(a.target) == a.id
+    site = site_key_digest()
+    r.signed_by_site_key = None if site is None else a.signer == site
     return r
 
 
@@ -75,6 +79,8 @@ async def _register_upload(db, user, file, **kw) -> FirmwareArtifactResponse:
     await commit_or_conflict(db, "This version was registered by a concurrent upload; reload")
     resp = FirmwareArtifactResponse.model_validate(artifact)
     resp.created = created
+    site = site_key_digest()
+    resp.signed_by_site_key = None if site is None else artifact.signer == site
     return resp
 
 

@@ -20,6 +20,7 @@ Environment variables with prefix **`IMPRESS_`**, or a `.env` file in the workin
 | `IMPRESS_DEVICE_KEYS_REQUIRED` | `false` | `true`: the shared key works for registration only, so every device must use its own key. Firmware older than v2.1 per-device keys then stops working. |
 | `IMPRESS_INITIAL_ADMIN_PASSWORD` | empty | First-run admin password; empty = random, logged once. |
 | `IMPRESS_FIRMWARE_DIR` | `./firmware_bins` | OTA image store. |
+| `IMPRESS_FIRMWARE_SIGNING_KEY` | empty | Path to the site's firmware **public** key (PEM, from `scripts/firmware_key.sh`). Set: uploads must be signed with it and other images are never deployed (#66). Empty: signatures are recorded but not required. |
 | `IMPRESS_WS_REQUIRE_AUTH` | `true` | Disable only for isolated debugging. |
 | `IMPRESS_CORS_ORIGINS` | `["http://localhost:5173","http://localhost:3000"]` | Allowed browser origins. |
 
