@@ -127,6 +127,15 @@ class EspDevice(Base):
     ota_requested_at = Column(DateTime, nullable=True)
     verified_at = Column(DateTime, nullable=True)      # admin "verify" stamp
 
+    # Latest diagnostics from the gateway heartbeat (#39); NULL = not reported
+    uptime_s = Column(Integer, nullable=True)
+    reset_reason = Column(String(16), nullable=True)   # esp_reset_reason(): poweron, panic, task_wdt, brownout…
+    boot_count = Column(Integer, nullable=True)
+    min_free_heap = Column(Integer, nullable=True)
+    s3_link_ok = Column(Boolean, nullable=True)
+    s3_uptime_s = Column(Integer, nullable=True)
+    diag_at = Column(DateTime, nullable=True)           # when the diagnostics above were reported
+
     # Telemetry from classroom node heartbeat
     student_count = Column(Integer, default=0)
     free_heap = Column(Integer, nullable=True)

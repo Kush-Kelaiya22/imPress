@@ -65,6 +65,18 @@ static void test_backend_assigned_class_id_survives_reboot(void)
     CHECK(nvs_open_handles() == 0);
 }
 
+static void test_boot_count_increments_once_per_boot(void)
+{
+    init_nvs_config();
+    CHECK(g_cfg.boot_count == 1);
+    for (int i = 0; i < 2; i++) {
+        memset(&g_cfg, 0, sizeof g_cfg);
+        init_nvs_config();
+    }
+    CHECK(g_cfg.boot_count == 3);                        /* persisted, so it survives reboots (#39) */
+    CHECK(nvs_open_handles() == 0);
+}
+
 static void test_nvs_layout_change_is_recovered(void)
 {
     nvs_fail_next_init(ESP_ERR_NVS_NO_FREE_PAGES);
@@ -78,6 +90,7 @@ int main(void)
     RUN(test_nvs_values_override_kconfig_on_later_boots);
     RUN(test_bad_overrides_fall_back_to_defaults);
     RUN(test_backend_assigned_class_id_survives_reboot);
+    RUN(test_boot_count_increments_once_per_boot);
     RUN(test_nvs_layout_change_is_recovered);
     puts("PASS test_c6_config");
     return 0;

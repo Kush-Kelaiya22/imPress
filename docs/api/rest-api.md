@@ -298,7 +298,7 @@ stateDiagram-v2
 
 | Method & path | Guard | Notes |
 |---|---|---|
-| `GET /api/admin/modules` · `GET /api/admin/modules/{id}` | admin | `DeviceResponse` (identity, presence, telemetry, OTA state, linked class) |
+| `GET /api/admin/modules` · `GET /api/admin/modules/{id}` | admin | `DeviceResponse` (identity, presence, telemetry, OTA state, linked class, and since #39 `health`, `health_reasons` and the latest diagnostics; see [health states](device-api.md#health-states)) |
 | `POST /api/admin/modules/{id}/access` | admin | `{is_active}` enable/disable a module |
 | `POST /api/admin/modules/{id}/verify` | admin | stamps `verified_at` |
 | `POST /api/admin/modules/{node_id}/link-device` · `POST /api/admin/modules/{id}/unlink` | admin | set/clear `gateway_id` relations |

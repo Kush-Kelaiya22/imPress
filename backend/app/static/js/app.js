@@ -2015,7 +2015,8 @@ async function renderAdminModules(app) {
   const [devices, mods] = await Promise.all([modulesApi.list(), studentModulesApi.list()]);
 
   const connected = devices.filter(d => d.is_connected).length;
-  const otaPending = devices.filter(d => d.ota_status === 'downloading').length;
+  const attention = devices.filter(d => d.health === 'ERROR' || d.health === 'DEGRADED').length;
+  const otaPending = devices.filter(d => d.pending_version).length;   // any engine state, not just 'downloading'
 
   app.innerHTML = `
     ${renderNavbar(user, '#/admin/modules')}
@@ -2029,6 +2030,7 @@ async function renderAdminModules(app) {
         <div class="card stat-card"><span class="stat-icon">📟</span><div class="stat-value">${devices.length}</div><div class="stat-label">Total devices</div></div>
         <div class="card stat-card"><span class="stat-icon">🟢</span><div class="stat-value">${connected}</div><div class="stat-label">Connected</div></div>
         <div class="card stat-card"><span class="stat-icon">🔄</span><div class="stat-value">${otaPending}</div><div class="stat-label">OTA pending</div></div>
+        <div class="card stat-card"><span class="stat-icon">⚠️</span><div class="stat-value">${attention}</div><div class="stat-label">Need attention</div></div>
       </div>
 
       <div class="card">
@@ -2039,7 +2041,7 @@ async function renderAdminModules(app) {
         <div class="table-responsive">
           <table class="table">
             <thead><tr>
-              <th>Device</th><th>Type</th><th>Connected</th><th>Firmware</th><th>OTA</th><th>Assigned class</th>
+              <th>Device</th><th>Type</th><th>Health</th><th>Firmware</th><th>OTA</th><th>Assigned class</th>
               <th>Students (C6)</th><th>RAM free</th><th>Flash total</th><th>Actions</th>
             </tr></thead>
             <tbody>
@@ -2051,8 +2053,9 @@ async function renderAdminModules(app) {
                   </td>
                   <td><span class="badge badge-outline">${escHtml(d.device_type)}</span></td>
                   <td>
-                    <span class="badge ${d.is_connected ? 'badge-success' : ''}">${d.is_connected ? 'connected' : 'offline'}</span>
+                    ${healthBadge(d)}
                     ${d.is_active ? '' : '<span class="badge badge-danger">disabled</span>'}
+                    ${d.health_reasons && d.health_reasons.length ? `<br><span class="text-muted text-sm">${escHtml(d.health_reasons.join('; '))}</span>` : ''}
                   </td>
                   <td class="text-sm">
                     v${escHtml(d.firmware_version || '0.0.0')}
@@ -2066,6 +2069,7 @@ async function renderAdminModules(app) {
                   <td class="text-sm text-center">${d.free_heap ? formatBytes(d.free_heap) : '—'}</td>
                   <td class="text-sm text-center">${d.total_flash ? formatBytes(d.total_flash) : '—'}</td>
                   <td class="nowrap">
+                    <button class="btn btn-xs btn-outline" onclick="window._showDiagnostics(${d.id})">Diagnostics</button>
                     <button class="btn btn-xs btn-outline" onclick="window._pushOta(${d.id}, '${escHtml(d.device_name || d.mac_address).replace(/'/g, "\\'")}', '${escHtml(d.device_type)}', '${escHtml(d.firmware_version || '')}')">Push OTA</button>
                     ${d.is_active && !d.verified_at ? `<button class="btn btn-xs btn-outline" onclick="window._verifyModule(${d.id})">Verify</button>` : ''}
                   </td>
@@ -2121,6 +2125,77 @@ async function renderAdminModules(app) {
   ['#sm-q', '#sm-state', '#sm-class'].forEach(sel => $(sel).addEventListener('input', draw));
   draw();
 }
+
+// ── Device health and diagnostics (#39) ──────────────────────
+// Rules: backend/app/services/health.py
+
+const HEALTH_BADGE = { ONLINE: 'badge-success', DEGRADED: 'badge-warning', ERROR: 'badge-danger',
+                       UPDATING: 'badge-primary', OFFLINE: '', UNKNOWN: 'badge-outline' };
+
+function healthBadge(d) {
+  const h = d.health || 'UNKNOWN';
+  return `<span class="badge ${HEALTH_BADGE[h] ?? ''}" title="${escHtml((d.health_reasons || []).join('; '))}">${h.toLowerCase()}</span>`;
+}
+
+function formatUptime(s) {
+  if (s == null) return '—';
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m ${s % 60}s`;
+}
+
+function _diagnosticsBody(d) {
+  const na = '<span class="text-muted">not reported</span>';
+  const v = (x, fmt = String) => x == null ? na : escHtml(fmt(x));
+  const rows = [
+    ['Health', `${healthBadge(d)} ${escHtml((d.health_reasons || []).join('; '))}`],
+    ['Last seen', v(d.last_seen, x => new Date(x).toLocaleString())],
+    ['Firmware', `v${escHtml(d.firmware_version || '0.0.0')}`],
+    ['Uptime', v(d.uptime_s, formatUptime)],
+    ['Last reset', v(d.reset_reason)],
+    ['Boots', v(d.boot_count)],
+    ['Wi-Fi signal', d.rssi ? `${d.rssi} dBm` : na],
+    ['Free heap (now / lowest)', `${d.free_heap ? formatBytes(d.free_heap) : '—'} / ${v(d.min_free_heap, formatBytes)}`],
+    ['S3 link', d.s3_link_ok == null ? na : d.s3_link_ok
+      ? `<span class="badge badge-success">up</span> S3 uptime ${escHtml(formatUptime(d.s3_uptime_s))}`
+      : '<span class="badge badge-danger">down</span>'],
+    ['Reported', v(d.diag_at, x => new Date(x).toLocaleString())],
+  ];
+  return `<table class="table"><tbody>${rows.map(([k, val]) =>
+    `<tr><th style="width:40%">${k}</th><td>${val}</td></tr>`).join('')}</tbody></table>`;
+}
+
+window._showDiagnostics = async (id) => {
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = `
+    <div class="modal-backdrop"></div>
+    <div class="modal-content card" style="max-width:560px" role="dialog" aria-labelledby="diag-title">
+      <h2 id="diag-title" style="margin-top:0">Diagnostics</h2>
+      <div id="diag-body" aria-live="polite"><p class="text-muted">Loading…</p></div>
+      <p class="form-hint">Read-only: the latest values the device reported in its heartbeat. Devices whose
+        firmware predates v2.1 don't report the diagnostics.</p>
+      <div class="flex gap-1 mt-1">
+        <button class="btn btn-outline" id="diag-refresh">Refresh</button>
+        <button class="btn btn-primary" id="diag-close">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelector('.modal-backdrop').onclick = close;
+  modal.querySelector('#diag-close').onclick = close;
+  const load = async () => {
+    const body = modal.querySelector('#diag-body');
+    try {
+      const d = await modulesApi.get(id);
+      modal.querySelector('#diag-title').textContent = `Diagnostics · ${d.device_name || d.mac_address}`;
+      body.innerHTML = _diagnosticsBody(d);
+    } catch (err) {
+      body.innerHTML = `<p class="text-danger">${escHtml(err.message)}</p>`;
+    }
+  };
+  modal.querySelector('#diag-refresh').onclick = load;
+  await load();
+};
 
 // ── Firmware manager (#35/#36) ─────────────────────────────────
 
