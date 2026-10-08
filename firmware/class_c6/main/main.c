@@ -34,6 +34,8 @@
 #include "ws_client.h"
 #include "ws_command.h"
 #include "student_set.h"
+#include "ota.h"
+#include "ota_logic.h"
 #include "esp_efuse.h"
 #include "esp_mac.h"
 
@@ -472,11 +474,20 @@ static void on_ws_command(const char *json)
         if (cmd && cJSON_IsString(cmd)) {
             ESP_LOGI(TAG, "Device command: %s", cmd->valuestring);
 
+            /* An update for this gateway itself (#34): install it here. */
+            if (strcmp(cmd->valuestring, "ota_update") == 0 &&
+                ota_prompt_target(pld, s_mac_str) == OTA_PROMPT_SELF) {
+                ESP_LOGI(TAG, "OTA prompt for this gateway");
+                ota_c6_start();
+                cJSON_Delete(msg);
+                return;
+            }
             /* OTA prompt for the S3 hub: translate to MSG_OTA_PROMPT → SPI.
              * The S3 then temporarily attaches to WiFi, applies the update,
-             * and returns to mesh duty. */
+             * and returns to mesh duty. Prompts for other devices are ignored
+             * (every prompt used to be relayed, sending the S3 on a Wi-Fi hop). */
             if (strcmp(cmd->valuestring, "ota_update") == 0 &&
-                pld && cJSON_IsObject(pld)) {
+                ota_prompt_target(pld, s_mac_str) == OTA_PROMPT_S3) {
                 const cJSON *version = cJSON_GetObjectItem(pld, "version");
                 if (version && cJSON_IsString(version)) {
                     payload_ota_prompt_t prompt = {0};
@@ -562,6 +573,7 @@ void app_main(void)
     snprintf(s_mac_str, sizeof(s_mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     ESP_LOGI(TAG, "MAC: %s  class_id: %ld", s_mac_str, (long)g_cfg.class_id);
+    ota_c6_set_mac(s_mac_str);
 
     /* 3. SPI slave — S3 can begin sending immediately */
     ESP_ERROR_CHECK(spi_slave_init());
@@ -573,15 +585,24 @@ void app_main(void)
     }
 
     /* 5. Register with backend + open WebSocket (if WiFi is up) */
+    bool registered = false;
     if (wifi_client_is_connected()) {
         ESP_LOGI(TAG, "Registering with backend...");
-        http_register_device(s_mac_str, DEVICE_TYPE);
+        registered = http_register_device(s_mac_str, DEVICE_TYPE) == 200;
         s_gateway_ready = true;
 
         if (g_cfg.class_id > 0) {
             ESP_LOGI(TAG, "Connecting WS to class %ld", (long)g_cfg.class_id);
             ws_client_start(g_cfg.class_id, on_ws_command);
         }
+    }
+
+    /* OTA (#34): confirm a freshly installed image (SPI up + Wi-Fi + backend
+     * reached) or report a rollback; then pick up an update we may have missed
+     * while offline. Without Wi-Fi a new image gets a health watchdog. */
+    ota_c6_boot_check(registered);
+    if (registered) {
+        ota_c6_start();
     }
 
     /* 6. Start persistent tasks — larger stacks to avoid canary overflow with cJSON+HTTP */
@@ -610,7 +631,9 @@ void app_main(void)
                 ESP_LOGI(TAG, "WiFi reconnected");
                 wifi_delay_ms = 2000;
                 s_gateway_ready = true;
-                http_register_device(s_mac_str, DEVICE_TYPE);
+                if (http_register_device(s_mac_str, DEVICE_TYPE) == 200) {
+                    ota_c6_boot_check(true);   /* confirms an image still pending verification */
+                }
             } else {
                 wifi_delay_ms = (wifi_delay_ms * 3) / 2;
                 if (wifi_delay_ms > max_wifi_delay) wifi_delay_ms = max_wifi_delay;
