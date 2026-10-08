@@ -8,7 +8,7 @@ import pytest
 
 from conftest import ROOT
 
-DOCS = [ROOT / name for name in ("README.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "Version.md")]
+DOCS = [ROOT / name for name in ("README.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md")]
 DOCS += sorted((ROOT / "docs").rglob("*.md"))
 
 
@@ -111,8 +111,9 @@ def test_readme_links_to_governance_documents_without_a_contributing_section():
     text = (ROOT / "README.md").read_text()
     headings = re.findall(r"^#{2,3}\s+(.+)$", text, re.M)
     assert not any(h.strip().lower() == "contributing" for h in headings)
-    for path in ("CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "Version.md"):
+    for path in ("CONTRIBUTING.md", "CODE_OF_CONDUCT.md"):
         assert f"]({path})" in text
+    assert "[Version policy and history](CONTRIBUTING.md#14-version-policy-and-change-history)" in text
 
 
 def test_readme_badges_reflect_real_data():
