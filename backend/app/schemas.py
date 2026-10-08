@@ -247,9 +247,30 @@ class ClassResponse(BaseModel):
 
 # ── Quizzes ──────────────────────────────────────────────────────────
 
+# What a student module can show (firmware/protocol/protocol.h): four answer
+# buttons; payload_quiz_question_t.question_text[140] and options[4][15];
+# payload_poll_start_t.title[64]. Sizes are bytes of UTF-8 including the NUL.
+# test_device_limits.py keeps these in step with the header.
+DEVICE_MAX_OPTIONS = 4
+DEVICE_TEXT_BYTES = {"question": 139, "option": 14, "poll_title": 63}
+
+
+def device_text_warnings(label: str, text: str, kind: str) -> list[str]:
+    """Text longer than the device field is truncated on the module's display."""
+    n, limit = len(text.encode()), DEVICE_TEXT_BYTES[kind]
+    return [f"{label} is {n} bytes; student modules show the first {limit}"] if n > limit else []
+
+
+def question_warnings(number: int, question_text: str, options: list[str]) -> list[str]:
+    out = device_text_warnings(f"Question {number}", question_text, "question")
+    for j, opt in enumerate(options):
+        out += device_text_warnings(f"Question {number} option {'ABCD'[j]}", opt, "option")
+    return out
+
+
 class QuizQuestionCreate(BaseModel):
     question_text: str = Field(min_length=1)
-    options: list[str] = Field(min_length=2, max_length=6)
+    options: list[str] = Field(min_length=2, max_length=DEVICE_MAX_OPTIONS)
     correct_option: int = Field(ge=0)
 
     @model_validator(mode="after")
@@ -284,13 +305,14 @@ class QuizResponse(BaseModel):
     question_count: int = 0
     created_at: Optional[datetime] = None
     started_at: Optional[datetime] = None
+    warnings: list[str] = []   # text a student module will truncate
 
     model_config = {"from_attributes": True}
 
 
 class QuizAnswerSubmit(BaseModel):
     device_id: int
-    selected_option: int = Field(ge=0, le=5)
+    selected_option: int = Field(ge=0, le=DEVICE_MAX_OPTIONS - 1)
     response_time_ms: int = 0
 
 
@@ -299,7 +321,7 @@ class QuizAnswerSubmit(BaseModel):
 class PollCreate(BaseModel):
     class_session_id: int
     title: str = Field(min_length=1, max_length=256)
-    options: list[str] = Field(min_length=2, max_length=6)
+    options: list[str] = Field(min_length=2, max_length=DEVICE_MAX_OPTIONS)
     poll_mode: str = "live"  # "planned" | "live"
 
 
@@ -313,13 +335,14 @@ class PollResponse(BaseModel):
     is_live: bool = False
     total_votes: int = 0
     created_at: Optional[datetime] = None
+    warnings: list[str] = []   # text a student module will truncate
 
     model_config = {"from_attributes": True}
 
 
 class PollVoteSubmit(BaseModel):
     device_id: int
-    selected_option: int = Field(ge=0, le=5)
+    selected_option: int = Field(ge=0, le=DEVICE_MAX_OPTIONS - 1)
 
 
 # ── Students (universal registry) ────────────────────────────────────

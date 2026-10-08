@@ -186,7 +186,7 @@ stateDiagram-v2
 
 | Method & path | Guard | Notes |
 |---|---|---|
-| `POST /api/quizzes/` | class access | `{class_session_id, title, questions: [{question_text, options (2-6), correct_option}], quiz_mode: planned|impromptu, timing_mode: per_question|total|manual, question_time_limit, total_time_limit}`; ≥ 1 question; `correct_option` must be `< len(options)` (422, #22) |
+| `POST /api/quizzes/` | class access | `{class_session_id, title, questions: [{question_text, options (2-4), correct_option}], quiz_mode: planned|impromptu, timing_mode: per_question|total|manual, question_time_limit, total_time_limit}`; ≥ 1 question; `correct_option` must be `< len(options)` (422, #22). At most **4 options** (student modules have four buttons, #49). The response has `warnings`: text longer than a module can show (question 139, option 14 bytes of UTF-8) is accepted but truncated on the device. |
 | `GET /api/quizzes/class/{class_id}` | class access | newest first |
 | `GET /api/quizzes/{id}` | class access (#20) | `QuizResponse {id, class_session_id, title, status, quiz_mode, timing_mode, question_time_limit, total_time_limit, current_question, is_live, question_count, created_at, started_at}` |
 | `POST /api/quizzes/{id}/start` | class access | already active → 400; broadcasts `quiz_question` (q 0) |
@@ -204,7 +204,7 @@ stateDiagram-v2
 
 | Method & path | Guard | Notes |
 |---|---|---|
-| `POST /api/polls/` | class access | `{class_session_id, title (1-256), options (2-6), poll_mode: live|planned}`; `live` → active immediately + `poll_start` broadcast |
+| `POST /api/polls/` | class access | `{class_session_id, title (1-256), options (2-4), poll_mode: live|planned}`; `live` → active immediately + `poll_start` broadcast. `warnings` as for quizzes (poll title 63 bytes, option 14). |
 | `GET /api/polls/class/{class_id}` | class access | |
 | `GET /api/polls/{id}` | class access (#20) | `PollResponse {id, class_session_id, title, options, poll_mode, status, is_live, total_votes, created_at}` |
 | `POST /api/polls/{id}/start` | class access | draft → active; already active → 400; broadcasts `poll_start` |
