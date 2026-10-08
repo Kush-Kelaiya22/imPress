@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import commit_or_conflict, get_db
 from ..models import User, ClassSession, Poll, PollVote, EspDevice
-from ..schemas import PollCreate, PollResponse, PollVoteSubmit
+from ..schemas import PollCreate, PollResponse, PollVoteSubmit, device_text_warnings
 from ..auth import get_current_user, require_teacher_or_admin
 from ..ws.manager import manager
 from ..activity import log_activity
@@ -91,7 +91,11 @@ async def create_poll(
             "options": poll.options,
         })
 
-    return await _poll_response(poll, db)
+    resp = await _poll_response(poll, db)
+    resp.warnings = device_text_warnings("Poll title", poll.title, "poll_title") + [
+        w for j, opt in enumerate(poll.options)
+        for w in device_text_warnings(f"Option {'ABCD'[j]}", opt, "option")]
+    return resp
 
 
 # ── List Polls ──────────────────────────────────────────────────────

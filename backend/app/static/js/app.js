@@ -2652,7 +2652,7 @@ async function renderQuizCreate(app, params) {
                   <input type="text" class="q-text" placeholder="What is 2+2?" required />
                 </div>
                 <div class="form-group">
-                  <label>Options (one per line, prefix correct with *)</label>
+                  <label>Options (2–4, one per line; prefix the correct one with *)</label>
                   <textarea class="q-options" rows="4" placeholder="*4&#10;3&#10;5&#10;2+2" required></textarea>
                 </div>
               </div>
@@ -2689,8 +2689,8 @@ async function renderQuizCreate(app, params) {
     for (const card of cards) {
       const text = card.querySelector('.q-text').value.trim();
       const raw = card.querySelector('.q-options').value.trim().split('\n').map(l => l.trim()).filter(Boolean);
-      if (!text || raw.length < 2) {
-        showToast('Each question needs text and 2+ options', 'error');
+      if (!text || raw.length < 2 || raw.length > 4) {
+        showToast('Each question needs text and 2–4 options (student modules have 4 buttons)', 'error');
         return;
       }
       let correctIdx = 0;
@@ -2717,8 +2717,9 @@ async function renderQuizCreate(app, params) {
         question_time_limit: timingMode === 'per_question' ? parseInt(document.getElementById('question-time').value) || 30 : 0,
         total_time_limit: timingMode === 'total' ? parseInt(document.getElementById('total-time').value) || 300 : 0,
       };
-      await quizzesApi.create(data);
+      const quiz = await quizzesApi.create(data);
       showToast('Quiz created!', 'success');
+      (quiz.warnings || []).forEach(w => showToast(w, 'info'));   // text the modules will truncate
       navigate(`#/class?id=${classId}`);
     } catch (err) {
       showToast(err.message, 'error');
@@ -2743,7 +2744,7 @@ window.addQuizQuestion = function () {
       <input type="text" class="q-text" placeholder="Question..." required />
     </div>
     <div class="form-group">
-      <label>Options (one per line, prefix correct with *)</label>
+      <label>Options (2–4, one per line; prefix the correct one with *)</label>
       <textarea class="q-options" rows="4" placeholder="*Correct&#10;Wrong 1&#10;Wrong 2&#10;Wrong 3" required></textarea>
     </div>
   `;
@@ -2779,7 +2780,7 @@ async function renderPollCreate(app, params) {
           </div>
 
           <div class="form-group">
-            <label>Options (one per line)</label>
+            <label>Options (2–4, one per line)</label>
             <textarea id="poll-options" rows="4" placeholder="Option 1&#10;Option 2&#10;Option 3&#10;Option 4" required></textarea>
           </div>
 
@@ -2797,19 +2798,20 @@ async function renderPollCreate(app, params) {
     const title = document.getElementById('poll-question').value.trim();
     const lines = document.getElementById('poll-options').value.trim().split('\n').map(l => l.trim()).filter(Boolean);
 
-    if (lines.length < 2 || lines.length > 6) {
-      showToast('Provide 2–6 options', 'error');
+    if (lines.length < 2 || lines.length > 4) {
+      showToast('Provide 2–4 options (student modules have 4 buttons)', 'error');
       return;
     }
 
     try {
-      await pollsApi.create({
+      const poll = await pollsApi.create({
         class_session_id: parseInt(classId),
         title,
         options: lines,
         poll_mode: document.getElementById('poll-mode').value,
       });
       showToast('Poll created!', 'success');
+      (poll.warnings || []).forEach(w => showToast(w, 'info'));
       navigate(`#/class?id=${classId}`);
     } catch (err) {
       showToast(err.message, 'error');

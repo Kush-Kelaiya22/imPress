@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import commit_or_conflict, get_db
 from ..models import User, ClassSession, Quiz, QuizQuestion, QuizAnswer, EspDevice
-from ..schemas import QuizCreate, QuizResponse, QuizAnswerSubmit
+from ..schemas import QuizCreate, QuizResponse, QuizAnswerSubmit, question_warnings
 from ..auth import get_current_user, require_teacher_or_admin
 from ..ws.manager import manager
 from ..activity import log_activity
@@ -102,7 +102,10 @@ async def create_quiz(
     if quiz.is_live:
         await _broadcast_question(quiz, cls.id)
 
-    return _quiz_response(quiz)
+    resp = _quiz_response(quiz)
+    for i, q in enumerate(body.questions, start=1):
+        resp.warnings += question_warnings(i, q.question_text, q.options)
+    return resp
 
 
 # ── List Quizzes ────────────────────────────────────────────────────
