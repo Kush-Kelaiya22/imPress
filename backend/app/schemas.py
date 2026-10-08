@@ -168,6 +168,41 @@ class ClassCreate(BaseModel):
         return v
 
 
+class ClassImportRow(BaseModel):
+    line: int
+    status: str            # create | update | duplicate | unchanged | invalid
+    course_code: str
+    course_name: str
+    section: str
+    class_code: str
+    teacher_username: str
+    class_name: str
+    classroom_code: Optional[str] = None
+    term: str = ""
+    year: Optional[int] = None
+    capacity: Optional[int] = None
+    location: str = ""
+    new_course: bool = False   # this row creates the course
+    changes: list[str] = []    # update mode: fields that change
+    note: Optional[str] = None
+    errors: list[str] = []
+
+
+class ClassImportReport(BaseModel):
+    """All-or-nothing: any invalid row means nothing is imported."""
+    mode: str              # create | update
+    total: int
+    create: int
+    update: int
+    duplicate: int         # already present (and unchanged in update mode): skipped
+    invalid: int
+    new_courses: int
+    imported: int
+    skipped: int
+    committed: bool = False
+    rows: list[ClassImportRow]
+
+
 class ClassUpdate(BaseModel):
     """Editable scheduling fields for an existing class (hybrid scheduling)."""
     name: Optional[str] = Field(default=None, min_length=1, max_length=128)

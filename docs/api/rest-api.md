@@ -122,6 +122,47 @@ CSV import response (used by both user and student imports):
 - `term ∈ {"", Monsoon, Winter, Summer}`; `code` unique (1-32); `classroom_code` unique.
 - `warnings`: `[{"type":"teacher"|"room","message","class_id","class_name","day","start","end"}]`. A clash is reported only if the windows overlap: same term+year, else overlapping date ranges, else unknown → flagged. Back-to-back slots don't clash; overnight slots are clamped to 23:59.
 
+### Importing and exporting courses and sections (#32)
+
+| Method & path | Guard | Notes |
+|---|---|---|
+| `GET /api/admin/classes/import-template.csv` | public | example file |
+| `POST /api/admin/classes/import?mode=create\|update&dry_run=true\|false` | admin | *multipart* `file`; `dry_run` defaults to **true** (plan only). With `dry_run=false`: **all-or-nothing**. Any invalid row returns 422 `{"message", "report"}` and nothing is stored. |
+| `GET /api/admin/classes/export.csv` | admin | every course section in the import layout; `X-Omitted-Classes` counts classrooms without a course (not exportable: `course_code` is required). Cells starting with `= + - @` are prefixed with `'` (formula injection). |
+
+One row per **section** (`ClassSession`). Courses are created when the code is new and matched by code otherwise.
+
+| Column | Required | Notes |
+|---|---|---|
+| `course_code` | yes | ≤ 16, upper-cased |
+| `course_name` | yes | ≤ 128; must equal the existing course's name (a rename is a conflict, never silent) |
+| `section` | yes | ≤ 16; unique per course |
+| `class_code` | yes | ≤ 32; the class join code, unique |
+| `teacher_username` | yes | an active **teacher**; becomes primary teacher and faculty |
+| `class_name` | no | default `"<course_code> <section>"` |
+| `classroom_code` | no | physical room label, unique |
+| `term`, `year`, `capacity`, `location` | no | `Monsoon`/`Winter`/`Summer`; 2000–2100; 0–5000 |
+
+The layout from the v2.1 brief is also accepted: `classroom_code, classroom_name, section_code, section_name` (= course code, course name, section, class name). The physical room is then given as `room`.
+
+**Row statuses**
+
+| Status | Meaning | Mode |
+|---|---|---|
+| `create` | a new section (and, if needed, its course) | both |
+| `duplicate` | the class already exists; skipped | create |
+| `update` | the class exists and `changes` lists the fields that will change (empty cells change nothing) | update |
+| `unchanged` | the class exists and already matches | update |
+| `invalid` | `errors` explain why | both |
+
+Conflicts reported as errors:
+- a course code with a different name;
+- a section that exists under another class code;
+- a class code used by another course or section;
+- a room assigned to another class;
+- duplicates within the file;
+- an unknown teacher, or invalid term, year or capacity.
+
 ### Teacher routes: `/api/classes`
 
 | Method & path | Guard | Notes |

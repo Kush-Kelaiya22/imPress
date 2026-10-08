@@ -114,6 +114,28 @@ const authApi = {
 // ── Admin ───────────────────────────────────────────────────────
 
 const adminApi = {
+  classTemplateUrl: `${API_BASE}/admin/classes/import-template.csv`,
+
+  /** Plan (dry_run) or run a course/section CSV import. */
+  importClassesCsv(file, { mode = 'create', dryRun = true } = {}, onProgress) {
+    return uploadFile(`/admin/classes/import?mode=${mode}&dry_run=${dryRun}`, file, onProgress);
+  },
+
+  /** Download every course section as CSV (authenticated, so via a blob). */
+  async exportClassesCsv() {
+    const res = await fetch(`${API_BASE}/admin/classes/export.csv`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    if (!res.ok) throw new Error(`Export failed (${res.status})`);
+    const url = URL.createObjectURL(await res.blob());
+    const a = Object.assign(document.createElement('a'), { href: url, download: 'impress-classes.csv' });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    return Number(res.headers.get('X-Omitted-Classes') || 0);
+  },
+
   // Users
   async createUser(data) {
     return apiRequest('/admin/users', { method: 'POST', body: JSON.stringify(data) });

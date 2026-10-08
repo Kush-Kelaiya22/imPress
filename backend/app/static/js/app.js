@@ -1389,7 +1389,40 @@ async function renderAdminClasses(app) {
     <div class="container mt-2">
       <div class="page-header">
         <h1>Classrooms</h1>
-        <a href="#/admin/classes/new" class="btn btn-primary">+ New Classroom</a>
+        <div class="flex gap-1">
+          <button class="btn btn-outline" id="btn-classes-import">Import CSV</button>
+          <button class="btn btn-outline" id="btn-classes-export">Export CSV</button>
+          <a href="#/admin/classes/new" class="btn btn-primary">+ New Classroom</a>
+        </div>
+      </div>
+
+      <div class="card mt-2 hidden" id="classes-import">
+        <div class="card-header flex-between">
+          <h2>Import courses and sections</h2>
+          <a class="btn btn-sm btn-outline" href="${adminApi.classTemplateUrl}" download>Download template</a>
+        </div>
+        <div style="padding:1rem">
+          <p class="form-hint" style="margin-top:0">
+            One row per section: <strong>course_code</strong>, <strong>course_name</strong>, <strong>section</strong>,
+            <strong>class_code</strong> (the join code), <strong>teacher_username</strong>; optional class_name,
+            classroom_code (room), term, year, capacity, location. Courses are created when new and matched by code
+            otherwise. Nothing is stored until you confirm, and a file with any invalid row stores nothing.
+          </p>
+          <div class="form-group">
+            <label for="classes-import-mode">Existing sections</label>
+            <select id="classes-import-mode">
+              <option value="create">Skip them: only create new sections</option>
+              <option value="update">Update them with the values in the file</option>
+            </select>
+          </div>
+          <div class="csv-drop" id="classes-csv-drop" role="button" tabindex="0" aria-label="Choose a CSV file of courses and sections">
+            <p style="margin:0 0 0.5rem">Drop a CSV file here or click to browse</p>
+            <input type="file" id="classes-csv-file" accept=".csv,text/csv" />
+            <button type="button" class="btn btn-sm btn-outline" id="classes-csv-browse">Choose File</button>
+          </div>
+          <progress id="classes-csv-progress" class="hidden" max="100" value="0" style="width:100%;margin-top:0.5rem"></progress>
+          <div id="classes-csv-result" class="mt-1" aria-live="polite"></div>
+        </div>
       </div>
 
       <div class="card mt-2">
@@ -1443,6 +1476,7 @@ async function renderAdminClasses(app) {
       </div>
     </div>
   `;
+  wireClassCsvImport(app);
 }
 
 window.renderScheduleWarnings = function (warnings) {
@@ -1465,6 +1499,105 @@ window.assignTeacherToClass = async function (classId, teacherId) {
 window.editClass = function (classId) {
   navigate(`#/admin/classes/new?id=${classId}`);
 };
+
+// ── Course/section CSV import (Classrooms page, #32) ───────────
+
+function wireClassCsvImport(app) {
+  const card = document.getElementById('classes-import');
+  const drop = document.getElementById('classes-csv-drop');
+  const input = document.getElementById('classes-csv-file');
+  const progress = document.getElementById('classes-csv-progress');
+  const result = document.getElementById('classes-csv-result');
+  const modeSel = document.getElementById('classes-import-mode');
+  let file = null;
+
+  document.getElementById('btn-classes-import').onclick = () => {
+    card.classList.toggle('hidden');
+    if (!card.classList.contains('hidden')) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+  document.getElementById('btn-classes-export').onclick = async () => {
+    try {
+      const omitted = await adminApi.exportClassesCsv();
+      if (omitted) showToast(`${omitted} classroom${omitted === 1 ? '' : 's'} without a course not included`, 'info');
+    } catch (err) { showToast(err.message, 'error'); }
+  };
+  document.getElementById('classes-csv-browse').onclick = (e) => { e.stopPropagation(); input.click(); };
+  drop.onclick = () => input.click();
+  drop.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } };
+  drop.ondragover = (e) => { e.preventDefault(); drop.style.borderColor = 'var(--primary)'; };
+  drop.ondragleave = () => { drop.style.borderColor = ''; };
+  drop.ondrop = (e) => {
+    e.preventDefault();
+    drop.style.borderColor = '';
+    if (e.dataTransfer.files.length) plan(e.dataTransfer.files[0]);
+  };
+  input.onchange = () => { if (input.files[0]) plan(input.files[0]); input.value = ''; };
+  modeSel.onchange = () => { if (file) plan(file); };   // re-plan in the new mode
+
+  async function plan(f) {
+    if (f.size > 1_000_000) { showToast('The file is larger than 1 MB', 'error'); return; }
+    file = f;
+    result.innerHTML = `<p class="text-muted text-sm">Checking ${escHtml(f.name)}…</p>`;
+    progress.value = 0;
+    progress.classList.remove('hidden');
+    try {
+      renderPlan(await adminApi.importClassesCsv(f, { mode: modeSel.value }, (p) => { progress.value = p; }));
+    } catch (err) {
+      result.innerHTML = `<p class="text-danger">${escHtml(err.message)}</p>`;
+    } finally {
+      progress.classList.add('hidden');
+    }
+  }
+
+  function renderPlan(r) {
+    const badge = { create: 'badge-success', update: 'badge-primary', duplicate: 'badge-outline',
+                    unchanged: 'badge-outline', invalid: 'badge-danger' };
+    const n = r.create + r.update;
+    result.innerHTML = `
+      <div class="flex gap-1" style="flex-wrap:wrap;margin-bottom:0.5rem">
+        <span class="badge badge-outline">${r.total} rows</span>
+        <span class="badge badge-success">${r.create} new</span>
+        ${r.mode === 'update' ? `<span class="badge badge-primary">${r.update} to update</span>` : ''}
+        <span class="badge badge-outline">${r.duplicate} already present</span>
+        <span class="badge ${r.invalid ? 'badge-danger' : 'badge-outline'}">${r.invalid} invalid</span>
+        ${r.new_courses ? `<span class="badge badge-outline">${r.new_courses} new course${r.new_courses === 1 ? '' : 's'}</span>` : ''}
+      </div>
+      <div class="table-wrap"><table class="table csv-preview">
+        <thead><tr><th>Line</th><th>Status</th><th>Section and notes</th></tr></thead>
+        <tbody>${r.rows.map(row => `
+          <tr>
+            <td>${row.line}</td>
+            <td><span class="badge badge-sm ${badge[row.status]}">${row.status}</span></td>
+            <td>
+              <div><strong>${escHtml(row.course_code)}</strong> ${escHtml(row.course_name)}${row.new_course ? ' <span class="text-muted">(new course)</span>' : ''}
+                · section <strong>${escHtml(row.section)}</strong> · <code>${escHtml(row.class_code)}</code></div>
+              <div class="csv-options">${escHtml(row.class_name)} · ${escHtml(row.teacher_username)}${row.classroom_code ? ' · room ' + escHtml(row.classroom_code) : ''}${row.term ? ' · ' + escHtml(row.term) + ' ' + (row.year || '') : ''}</div>
+              ${row.errors.length || row.note ? `<div class="csv-notes">${row.errors.map(e => `<div class="text-danger">${escHtml(e)}</div>`).join('')}${row.note ? `<div class="text-muted">${escHtml(row.note)}</div>` : ''}</div>` : ''}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+      <div class="flex gap-1 mt-1">
+        <button type="button" class="btn btn-primary" id="classes-csv-run" ${r.invalid === 0 && n > 0 ? '' : 'disabled'}>
+          ${r.mode === 'update' ? `Create ${r.create}, update ${r.update}` : `Create ${r.create} section${r.create === 1 ? '' : 's'}`}</button>
+        <button type="button" class="btn btn-outline" id="classes-csv-discard">Discard</button>
+      </div>
+      ${r.invalid ? `<p class="text-sm text-danger mt-1">Fix the ${r.invalid} invalid row${r.invalid === 1 ? '' : 's'} and upload the file again; nothing has been changed.</p>` : ''}`;
+    document.getElementById('classes-csv-discard').onclick = () => { result.innerHTML = ''; file = null; };
+    document.getElementById('classes-csv-run').onclick = async (e) => {
+      e.target.disabled = true;
+      try {
+        const done = await adminApi.importClassesCsv(file, { mode: r.mode, dryRun: false });
+        showToast(`Imported: ${done.create} created, ${done.update} updated, ${done.duplicate} already present`, 'success');
+        renderAdminClasses(app);
+      } catch (err) {
+        e.target.disabled = false;
+        if (err.body && err.body.detail && err.body.detail.report) renderPlan(err.body.detail.report);
+        showToast(err.message, 'error');
+      }
+    };
+  }
+}
 
 window.deleteClass = async function (classId, name) {
   if (!confirm(`Delete classroom "${name || classId}"? This also removes its quizzes, polls, attendance and enrollments.`)) return;
