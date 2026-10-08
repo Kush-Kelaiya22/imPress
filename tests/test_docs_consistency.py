@@ -91,3 +91,30 @@ def test_readme_is_professional_plain_text():
     assert emoji == [], f"README contains emoji: {set(emoji)}"
     for section in ("Quick start", "Architecture", "Testing", "Documentation"):
         assert re.search(rf"^##\s+.*{section}", text, re.M | re.I), section
+
+
+# The brief's README structure (#44): every topic has a heading.
+README_SECTIONS = ("Overview", "Key capabilities", "Architecture", "Supported hardware", "Minimum requirements",
+                   "Prerequisites", "Installation", "Configuration", "Application startup", "Classroom management",
+                   "CSV imports", "Device management", "Firmware management", "OTA deployment", "Firmware rollback",
+                   "Development workflow", "Testing", "Troubleshooting", "Release history", "Contributing", "License")
+
+
+def test_readme_has_every_required_section():
+    headings = re.findall(r"^#{2,3}\s+(.+)$", (ROOT / "README.md").read_text(), re.M)
+    missing = [s for s in README_SECTIONS if not any(h.strip().lower() == s.lower() for h in headings)]
+    assert not missing, missing
+
+
+def test_readme_badges_reflect_real_data():
+    text = (ROOT / "README.md").read_text()
+    workflows = {p.name for p in (ROOT / ".github" / "workflows").glob("*.yml")}
+    badges = re.findall(r'src="([^"]+)"', text)
+    for url in badges:
+        m = re.search(r"/actions/workflows/([^/]+)/badge\.svg", url)
+        if m:
+            assert m.group(1) in workflows, url                       # a real workflow file
+        # a hand-written shields badge must not claim a status (passing, coverage, version, license)
+        if "img.shields.io/badge/" in url:
+            assert not re.search(r"(?i)(pass|fail|success|coverage|release|version-|license|tests-)", url), url
+    assert any("branch=varun%2Fv2.1" in b for b in badges)          # the integration branch's CI

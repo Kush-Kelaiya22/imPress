@@ -138,3 +138,5 @@ Rules the code keeps, each with a structural test (`firmware/tests/test_c6_ota.p
 
 - **Verified by automated tests:** image validation against real build output; the whole state machine and rollout logic against simulated devices (`test_deployments.py`, `ui_tests/test_deployments.py`); the S3 client's structure (`firmware/tests/test_ota_versioning.py`); IDF builds.
 - **Not yet verified on hardware:** an actual S3 or C6 update, a rollback after a crashing image, power loss mid-download, the C6 health watchdog. The bench checklist is in PR #55 and will move into the hardware validation matrix (#43).
+
+See also: [firmware versioning](FIRMWARE_VERSIONING.md), [recovery procedure](RECOVERY_PROCEDURE.md).
