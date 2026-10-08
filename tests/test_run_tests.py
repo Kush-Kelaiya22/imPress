@@ -238,3 +238,14 @@ def test_coverage_report_is_parsed_and_shown(tmp_path):
     assert run_tests.parse_coverage(xml) == 87.3
     r = run_tests.SuiteResult("backend", "d", "PASS", 1.0, passed=3, coverage=87.3)
     assert "| `backend` (backend/app) | 87.3% |" in run_tests.markdown_report([r], 1.0)
+
+
+
+@posix_only
+def test_closed_output_pipe_exits_quietly():
+    # `run_tests.py | head -1`: the reader exits after the first line; the
+    # runner must not dump a BrokenPipeError traceback
+    proc = subprocess.run(f"{sys.executable} {ROOT / 'run_tests.py'} --no-color -s host:protocol:mesh_dedup | head -1",
+                          shell=True, capture_output=True, text=True, timeout=120, cwd=ROOT)
+    assert proc.stdout.startswith("▶ host:protocol:mesh_dedup")
+    assert "Traceback" not in proc.stderr and "BrokenPipe" not in proc.stderr, proc.stderr

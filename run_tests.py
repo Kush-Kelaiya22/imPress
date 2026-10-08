@@ -278,6 +278,9 @@ def run_streaming(cmd, cwd, env, verbose=False, live=False, timeout=0.0) -> tupl
     except KeyboardInterrupt:
         aborted = "interrupted"
         _stop(proc)
+    except BaseException:                 # e.g. BrokenPipeError on the status line
+        _stop(proc)                       # never leave the suite running orphaned
+        raise
     finally:
         if live:
             sys.stdout.write("\r" + " " * width + "\r")
@@ -540,4 +543,9 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except BrokenPipeError:
+        # stdout was piped into something that stopped reading (`| head`)
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        sys.exit(1)

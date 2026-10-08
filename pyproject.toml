@@ -8,3 +8,9 @@ extend-exclude = ["firmware/*/managed_components", "frontend/node_modules"]
 # pyflakes (F: undefined names, unused imports/variables, redefinitions) plus
 # syntax/IO errors (E9). Low-noise rules that catch real bugs.
 select = ["F", "E9"]
+
+[tool.coverage.run]
+# SQLAlchemy's async engine runs ORM code in greenlets and TestClient serves
+# the app from a worker thread; without these, Python 3.12's tracer misses
+# most route code (55.6% reported vs 79.1% measured with sys.monitoring).
+concurrency = ["greenlet", "thread"]

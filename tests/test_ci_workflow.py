@@ -138,6 +138,8 @@ def test_backend_coverage_is_reported(workflow):
     text = _steps_text(workflow["jobs"]["backend"])
     assert re.search(r"run_tests\.py --suite backend .*--coverage reports", text)
     assert "pytest-cov" in (ROOT / "backend/requirements-dev.txt").read_text()
+    # async SQLAlchemy (greenlets) + TestClient (thread): otherwise under-reported on 3.12
+    assert re.search(r'concurrency\s*=\s*\[[^\]]*"greenlet"[^\]]*"thread"', (ROOT / "pyproject.toml").read_text())
 
 
 def test_firmware_artifacts_carry_checksums(workflow):
