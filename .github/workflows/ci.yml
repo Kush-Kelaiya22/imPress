@@ -175,10 +175,37 @@ jobs:
       - name: npm ci + vite build
         run: python3 run_tests.py --suite frontend
 
+  ui:
+    name: Browser UI checks (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements-lock.txt
+      - name: Install locked dependencies + Playwright Chromium
+        run: |
+          pip install --require-hashes -r backend/requirements-lock.txt
+          pip install "$(grep '^playwright==' ui_tests/requirements.txt)"
+          python -m playwright install --with-deps chromium
+      - name: Browser UI checks
+        run: python run_tests.py --suite ui --junit-dir reports
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: ui-screenshots
+          path: |
+            ui_tests/screenshots/
+            reports/
+          retention-days: 14
+
   result:
     name: CI result
     if: always()
-    needs: [repo, security, backend, firmware-static, firmware-host, firmware-build, frontend]
+    needs: [repo, security, backend, firmware-static, firmware-host, firmware-build, frontend, ui]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

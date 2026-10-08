@@ -85,8 +85,36 @@ function getParams() {
   return new URLSearchParams(qs);
 }
 
+/* Each navigation renders through its own guarded view of #app. If the user
+ * has moved on before a slow page finished loading, that page's late write
+ * throws StaleRender instead of painting over the newer page (#51). A wrapper
+ * element would also work, but the CSS relies on `#app > .container`. */
+let routeSeq = 0;
+class StaleRender extends Error {}
+
+function viewFor(seq) {
+  const el = document.getElementById('app');
+  return new Proxy(el, {
+    set(target, prop, value) {
+      if (seq !== routeSeq) throw new StaleRender();
+      target[prop] = value;
+      return true;
+    },
+    get(target, prop) {
+      const v = Reflect.get(target, prop);
+      return typeof v === 'function' ? v.bind(target) : v;
+    },
+  });
+}
+
+// A superseded page's in-flight work may still reject with StaleRender.
+window.addEventListener('unhandledrejection', (e) => {
+  if (e.reason instanceof StaleRender) e.preventDefault();
+});
+
 async function router() {
-  const app = document.getElementById('app');
+  const seq = ++routeSeq;
+  const app = viewFor(seq);
   const path = getRoute();
   const handler = routes[path];
 
@@ -110,6 +138,7 @@ async function router() {
   try {
     await handler(app, getParams());
   } catch (err) {
+    if (err instanceof StaleRender || seq !== routeSeq) return;   // superseded navigation
     if (err.message === 'Unauthorized') return;
     app.innerHTML = `<div class="container mt-2"><div class="card"><h1>Error</h1><p>${escHtml(err.message)}</p><a href="#/dashboard" class="btn btn-primary mt-1">Go Home</a></div></div>`;
   }

@@ -66,7 +66,8 @@ With `--with-idf --with-frontend` the same run adds four builds: about 1.5 min p
 | `--list` | show every suite (default and optional) |
 | `-s/--suite NAME` | run matching suites; prefixes work (`-s host`, `-s host:class_c6`), repeatable |
 | `--with-idf` | also `idf.py build` all three projects (native IDF, else Docker `espressif/idf:v6.1`) |
-| `--with-frontend` | also `npm install && npm run build` |
+| `--with-frontend` | also `npm ci && npm run build` |
+| `--with-ui` | also run the browser UI checks (`ui_tests/`, Playwright) |
 | `-x/--fail-fast` | stop after the first failing suite |
 | `-v/--verbose` | stream each suite's full output |
 | `--timeout SECONDS` | stop any suite that runs longer than this (default: no limit) |
@@ -177,6 +178,25 @@ Each suite compiles **real firmware sources** with `-Wall -Wextra -Werror -fsani
 2. Reuse `stubs/` (types and prototypes only) and `firmware/test_support/nvs_fake.c`.
 3. Add `run_<thing>.sh` (copy an existing one). `run_host_tests.sh` picks it up automatically.
 
+## Browser UI checks (`ui_tests/`)
+
+These drive the real SPA in a headless browser against a real backend: `uvicorn` on a temporary database, one per test. They catch what API tests can't: JavaScript errors, wrong rendering, broken flows.
+
+```bash
+pip install -r ui_tests/requirements.txt
+python -m playwright install chromium    # or use a local Google Chrome (picked up automatically)
+python run_tests.py --with-ui            # or: pytest ui_tests
+```
+
+- **Fixtures** (`ui_tests/conftest.py`):
+  - `server`: a fresh backend, giving `(base_url, api)`; `api` is an admin-authenticated JSON client for setting up data.
+  - `page`: a browser page that **fails the test on any uncaught JavaScript error** and saves a full-page screenshot to `ui_tests/screenshots/<test>.png` (git-ignored, uploaded as a CI artifact).
+  - `login()`: logs in through the real login form.
+
+| File | Checks |
+|---|---|
+| `test_navigation.py` | a page the user left before it finished loading never paints over the page they moved to (#51); normal navigation and in-page re-renders still work |
+
 ## Repository and CI checks (`tests/`)
 
 These protect the pipeline and the docs from silently drifting:
@@ -201,7 +221,8 @@ flowchart LR
     T --> H["Firmware host (gcc + ASan/UBSan)"]
     T --> I["ESP-IDF v6.1 build ×3<br/>size report · images · SHA256SUMS"]
     T --> F["Frontend build<br/>npm ci"]
-    R & A & B & S & H & I & F --> G{"CI result<br/>(single required check)"}
+    T --> U["Browser UI checks<br/>Playwright + Chromium"]
+    R & A & B & S & H & I & F & U --> G{"CI result<br/>(single required check)"}
 ```
 
 | Job | Runs | Artifacts |
@@ -213,6 +234,7 @@ flowchart LR
 | Firmware host | `run_tests.py --suite host` (gcc) | – |
 | ESP-IDF v6.1 build | `idf.py build` + `idf.py size` for `class_c6`, `class_s3`, `student`; `sha256sum` of every image | `.bin` images + `SHA256SUMS` (7 days) |
 | Frontend build | `run_tests.py --suite frontend`: `npm ci` + `vite build` (Node 20) | – |
+| Browser UI checks | `playwright install --with-deps chromium`; `run_tests.py --suite ui` | screenshots + JUnit XML |
 | **CI result** | fails unless every job above succeeded | – |
 
 Pipeline properties:
@@ -243,5 +265,5 @@ Mark **CI result** as the required status check in branch protection.
 ## What is *not* automatically tested
 
 - On-device behaviour (radio, SPI timing, real flash): needs a hardware soak (see [troubleshooting](troubleshooting.md)).
-- The vanilla SPA and the React UI beyond "it builds".
+- The React dev UI beyond "it builds". The vanilla SPA is covered by `ui_tests/` for the flows listed there.
 - Firmware `main.c` orchestration on the C6/S3 (covered structurally, not executed).

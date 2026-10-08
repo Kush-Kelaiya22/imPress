@@ -1,0 +1,4 @@
+# Browser UI checks (optional suite: python run_tests.py --with-ui)
+-r ../backend/requirements.txt
+pytest>=8
+playwright==1.63.0
