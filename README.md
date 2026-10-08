@@ -6,16 +6,15 @@
 Live quizzes and polls with one-tap answers, delivered over an ESP-NOW mesh, with no Wi-Fi on student devices.</p>
 
 <p>
-<a href="https://github.com/Kush-Kelaiya22/imPress/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Kush-Kelaiya22/imPress/actions/workflows/ci.yml/badge.svg?branch=v2"></a>
-<img alt="Tests" src="https://img.shields.io/badge/tests-pytest%20%7C%20host%20C%20%7C%20IDF%20builds-2ea44f">
-<a href="docs/README.md"><img alt="Documentation" src="https://img.shields.io/badge/docs-21%20pages-0969da"></a>
-<img alt="Branch" src="https://img.shields.io/badge/branch-v2-8250df">
+<a href="https://github.com/Kush-Kelaiya22/imPress/actions/workflows/ci.yml?query=branch%3Avarun%2Fv2.1"><img alt="CI (varun/v2.1)" src="https://github.com/Kush-Kelaiya22/imPress/actions/workflows/ci.yml/badge.svg?branch=varun%2Fv2.1"></a>
+<a href="https://github.com/Kush-Kelaiya22/imPress/actions/workflows/ci.yml?query=branch%3Av2"><img alt="CI (v2)" src="https://github.com/Kush-Kelaiya22/imPress/actions/workflows/ci.yml/badge.svg?branch=v2"></a>
+<a href="https://github.com/Kush-Kelaiya22/imPress/commits/varun/v2.1"><img alt="Last commit (varun/v2.1)" src="https://img.shields.io/github/last-commit/Kush-Kelaiya22/imPress/varun%2Fv2.1"></a>
+<a href="https://github.com/Kush-Kelaiya22/imPress/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/Kush-Kelaiya22/imPress"></a>
 </p>
 <p>
 <img alt="Python" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white">
 <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white">
 <img alt="SQLite" src="https://img.shields.io/badge/SQLite-aiosqlite-003B57?logo=sqlite&logoColor=white">
-<img alt="React" src="https://img.shields.io/badge/React-Vite-61DAFB?logo=react&logoColor=black">
 <img alt="ESP-IDF" src="https://img.shields.io/badge/ESP--IDF-v6.1-E7352C?logo=espressif&logoColor=white">
 <img alt="Boards" src="https://img.shields.io/badge/boards-ESP32%20%7C%20ESP32--S3%20%7C%20ESP32--C6-B7410E">
 </p>
@@ -24,15 +23,15 @@ Live quizzes and polls with one-tap answers, delivered over an ESP-NOW mesh, wit
 <a href="#overview">Overview</a> &nbsp;|&nbsp;
 <a href="#architecture">Architecture</a> &nbsp;|&nbsp;
 <a href="#quick-start">Quick start</a> &nbsp;|&nbsp;
+<a href="#using-impress">Using imPress</a> &nbsp;|&nbsp;
 <a href="#testing">Testing</a> &nbsp;|&nbsp;
-<a href="#documentation">Documentation</a> &nbsp;|&nbsp;
-<a href="#project-status">Project status</a>
+<a href="#documentation">Documentation</a>
 </p>
 
 </div>
 
 > [!NOTE]
-> You are reading the **`v2`** branch: `main` plus every fix from the October 2026 audit (issues #1–#25), a full test suite, CI and documentation. `main` is unchanged. See the [v2 changelog](docs/reference/changelog-v2.md).
+> This is **v2.1** (`VERSION` 2.1.0), developed on the `varun/v2.1` integration branch from `v2`. It adds CSV imports, a firmware registry with staged OTA deployments and rollback, an OTA client for the gateway, device diagnostics, a student module inventory, versioned database migrations and a tested install path. See the [v2.1 changelog](docs/reference/changelog-v2.1.md). The badges show CI for `varun/v2.1` and `v2` separately.
 
 ---
 
@@ -42,13 +41,16 @@ Every student holds a small ESP32 module with four answer buttons. When a teache
 
 Student modules never join Wi-Fi. They form an **ESP-NOW mesh** and relay each other's messages to a hub in the room. Only one gateway per classroom needs network access, so the system works with school networks that limit clients or credentials.
 
+### Key capabilities
+
 | Capability | Details |
 |---|---|
 | Live participation | Quizzes (planned or impromptu, per-question timing) and polls (live or planned) with per-option results |
 | Mesh networking | Multi-hop ESP-NOW relaying (TTL 5) with de-duplication at the student, hub and server layers: one press is one answer |
-| Classroom management | Courses, classes with timetable clash warnings, CSV import of students and staff, enrollment, attendance, co-faculty |
+| Classroom management | Courses and sections, timetable clash warnings, CSV import of students, staff, **questions, courses and sections**, enrollment, attendance, co-faculty |
 | Access control | `super_admin` > `admin` > `teacher`; server-side sessions with idle and absolute expiry; one class-access rule everywhere |
-| Device fleet | Live presence per class (gateway, hub, modules), an inventory of the student modules each gateway has seen, telemetry, and staged over-the-air updates for the hub and gateway with automatic rollback |
+| Device fleet | Live presence per class, **health states with diagnostics**, an **inventory of student modules** each gateway has seen |
+| Firmware | A validated, immutable **firmware registry**; approval before use; **staged OTA deployments** (canary, batches, retries, timeouts) to hubs and gateways; **automatic rollback** on devices; operator rollback |
 
 ## Architecture
 
@@ -76,7 +78,7 @@ flowchart LR
 | Component | Location | Responsibility |
 |---|---|---|
 | Backend | [`backend/`](backend/) | REST API, per-class WebSocket rooms, authentication and RBAC, persistence, presence tracking, firmware store, teacher web app |
-| Gateway firmware | [`firmware/class_c6/`](firmware/class_c6/) | Bridges the classroom to the backend: batched HTTP uploads, WebSocket commands |
+| Gateway firmware | [`firmware/class_c6/`](firmware/class_c6/) | Bridges the classroom to the backend: batched HTTP uploads, WebSocket commands, its own OTA client, health diagnostics |
 | Hub firmware | [`firmware/class_s3/`](firmware/class_s3/) | ESP-NOW mesh root, de-duplication, SPI master, over-the-air updates |
 | Student firmware | [`firmware/student/`](firmware/student/) | Buttons and optional OLED, mesh node and relay, enrollment-number identity |
 | Shared protocol | [`firmware/protocol/`](firmware/protocol/) | The single implementation of every on-wire format, used by all boards |
@@ -107,6 +109,25 @@ sequenceDiagram
 
 Further reading: [system overview](docs/architecture/overview.md), [data flows](docs/architecture/data-flows.md), [wire protocols](docs/design/protocols.md), [mesh design](docs/design/mesh.md).
 
+## Supported hardware
+
+| Role | Chip | Minimum (shipped images) | Notes |
+|---|---|---|---|
+| Gateway | ESP32-C6 | 8 MB flash | Wi-Fi to the backend; updates over the air |
+| Hub | ESP32-S3 | 32 MB **octal** flash; PSRAM optional | 8 MB quad-flash modules need the [reduced-flash profile](docs/hardware/CLASSROOM_NODE_REQUIREMENTS.md#reduced-flash-hub-profile-built-not-booted) (built, not yet booted) |
+| Student module | ESP32 (classic) | 4 MB flash, four buttons | updated over serial |
+
+Up to 300 student modules per room. Measured footprints, configurations and what an OTA update can change: [classroom node requirements](docs/hardware/CLASSROOM_NODE_REQUIREMENTS.md), [device compatibility](docs/hardware/DEVICE_COMPATIBILITY.md). Wiring and pins: [hardware reference](docs/reference/hardware.md).
+
+## Minimum requirements
+
+| Component | Requirement |
+|---|---|
+| Server | Linux, macOS or Windows; Python 3.12 or newer; one process (single uvicorn worker); SQLite (bundled) |
+| Network | The gateway reaches the server over HTTP and WebSocket on the room's 2.4 GHz Wi-Fi |
+| Browser | a current Chrome, Edge, Firefox or Safari |
+| Per room | one gateway, one hub, one student module per student |
+
 ## Quick start
 
 ### Prerequisites
@@ -118,23 +139,38 @@ Further reading: [system overview](docs/architecture/overview.md), [data flows](
 | ESP-IDF or Docker | IDF v6.1 / any Docker | building and flashing firmware |
 | Node.js | 20 | optional React UI |
 
-### 1. Run the backend and teacher web app
+### Installation
 
 ```bash
 git clone https://github.com/Kush-Kelaiya22/imPress.git
 cd imPress
-scripts/install.sh                                      # venv, dependencies, backend/.env with generated secrets
-IMPRESS_INITIAL_ADMIN_PASSWORD=dev-admin scripts/start.sh
+scripts/install.sh
 ```
 
-On Windows, or to run it by hand, use `cd backend`, `python -m venv .venv`, `pip install -r requirements.txt`, `cp .env.example .env`, then `IMPRESS_DEBUG=true uvicorn app.main:app --reload`.
+`install.sh` creates `backend/.venv`, installs the dependencies (hash-locked on Linux x86_64), and writes `backend/.env` with randomly generated secrets. It never writes the published defaults, and re-running it keeps your values. On Windows, install by hand as in the [deployment guide](docs/guides/deployment.md#1-server).
 
-Open <http://localhost:8000> and sign in as `admin` / `dev-admin`. Interactive API documentation is served at <http://localhost:8000/docs>.
+### Configuration
 
-> [!IMPORTANT]
-> The server **refuses to start** with the published default secrets. `scripts/install.sh` generates `IMPRESS_JWT_SECRET` and `IMPRESS_DEVICE_API_KEY`; the device key must also be set on every gateway. `IMPRESS_DEBUG=true` (which allows the defaults) is for local development only. See the [deployment guide](docs/guides/deployment.md).
+Settings are environment variables with the `IMPRESS_` prefix, read from `backend/.env`:
 
-### 2. Build the firmware
+| Setting | Purpose |
+|---|---|
+| `IMPRESS_JWT_SECRET`, `IMPRESS_DEVICE_API_KEY` | required secrets (generated by `install.sh`). The device key must also be set on every gateway |
+| `IMPRESS_INITIAL_ADMIN_PASSWORD` | the first super admin's password; if empty, a random one is printed once in the log |
+| `IMPRESS_DATABASE_URL`, `IMPRESS_FIRMWARE_DIR` | where data and firmware images live |
+
+All settings and the device-side Kconfig and NVS keys: [configuration guide](docs/guides/configuration.md).
+
+### Application startup
+
+```bash
+IMPRESS_INITIAL_ADMIN_PASSWORD=change-me scripts/start.sh     # http://127.0.0.1:8000
+scripts/smoke_test.py --password change-me                    # optional: check the running server
+```
+
+Sign in as `admin`. The API reference is served at `/docs`, and `GET /health` reports the version and database schema. Production setup (systemd, nginx, TLS): [deployment guide](docs/guides/deployment.md).
+
+### Build and flash the firmware
 
 ```bash
 # No ESP-IDF installation required:
@@ -144,36 +180,98 @@ docker run --rm -v "$PWD/firmware":/project -w /project/class_c6 espressif/idf:v
 cd firmware/class_c6 && idf.py menuconfig && idf.py -p <PORT> flash monitor
 ```
 
-> [!TIP]
-> Repeat for `class_s3` and `student`. Wiring, pins and per-device settings are in the [hardware reference](docs/reference/hardware.md) and the [configuration guide](docs/guides/configuration.md).
+Repeat for `class_s3` and `student`. The first v2.1 flash of each gateway and hub must be over serial; after that they update over the air.
+
+## Using imPress
+
+### Classroom management
+
+Admins create courses and sections (classes), assign faculty and enroll students; teachers run quizzes and polls in their classes. A gateway registering with a section's room code links itself to that class. See the [REST API](docs/api/rest-api.md#classes).
+
+### CSV imports
+
+| Import | Where | Behaviour |
+|---|---|---|
+| Quiz questions | Create-quiz page, or `POST /api/quizzes/{id}/questions/import` | preview first; invalid rows explained; all-or-nothing; duplicates skipped |
+| Courses and sections | Classrooms page | dry run by default; never silently overwrites; export round-trips |
+| Students and staff | Students and Users pages | row-level validation |
+
+File formats and templates: [CSV imports guide](docs/guides/csv-imports.md).
+
+### Device management
+
+The Modules page lists every gateway and hub with its **health** (online, degraded, error, updating, offline, unknown, with the reasons) and a read-only **diagnostics** panel: uptime, last reset reason, boot count, lowest free heap, Wi-Fi signal, S3 link. Below it, the **student module inventory** lists every module a gateway has seen, filterable by class, state and device ID. Rules: [health states](docs/api/device-api.md#health-states).
+
+### Firmware management
+
+Upload the app `.bin` from a firmware build on the Firmware page. The backend reads the target, chip and version from the image itself, checks its integrity, and refuses anything that isn't a valid imPress image. Images are immutable. Approve an image before it can be deployed, and deprecate it to stop new deployments. Versioning rules: [firmware versioning](docs/firmware/FIRMWARE_VERSIONING.md).
+
+### OTA deployment
+
+Deploy an approved image to chosen devices, a class, a type or every compatible device. A deployment starts with a canary and continues in batches, with a concurrency limit, retries, timeouts, and a pause on failure. Every device reports each step, from precheck to health check. Supported over the air: **hubs and gateways**. Student modules update over serial. Guide: [OTA updates](docs/guides/ota-updates.md); design: [OTA architecture](docs/firmware/OTA_ARCHITECTURE.md).
+
+### Firmware rollback
+
+- **Automatic:** a new image must pass its health check after the reboot, or the bootloader reverts to the previous image and the device reports `rolled_back`.
+- **Operator:** deploy an older approved image with the explicit downgrade confirmation.
+- **Manual recovery:** for a device that can't update at all, see the [recovery procedure](docs/firmware/RECOVERY_PROCEDURE.md).
+
+## Development workflow
+
+1. Branch from `varun/v2.1` (`feat/…`, `fix/…`, `docs/…`), one branch per issue.
+2. Change the code and its tests together; run `python run_tests.py`.
+3. Open a pull request into `varun/v2.1`. It merges only when the **CI result** check is green.
+
+Local setup for each part (backend with reload, React UI, firmware): [development setup](docs/guides/development-setup.md).
 
 ## Testing
 
-One command runs every suite and prints a consolidated report with status, counts and duration per suite, the slowest tests, and details for anything that failed:
+One command runs every suite and prints a consolidated report:
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r backend/requirements-dev.txt
-python run_tests.py                       # all default suites (~35 s)
+python run_tests.py                       # default suites
 python run_tests.py --list                # list suites
 python run_tests.py -s backend -s host    # selected suites
-python run_tests.py --with-idf --with-frontend --json report.json
+python run_tests.py --with-ui --with-idf --with-frontend
 ```
 
-| Suite | Scope | Tests |
-|---|---|---|
-| `backend` | Every router and service: auth and sessions, RBAC, classes, students, quizzes and polls, device API, presence, utilities | 198 |
-| `firmware-static` | Structural guards on firmware sources: task ownership, WebSocket lifecycle, OTA safety, configuration order | 14 |
-| `repo` | CI workflow (incl. actionlint), repository hygiene, documentation consistency, the test runner itself | 89 |
-| `host:*` | Real firmware C compiled on the host with AddressSanitizer and UBSan: protocol, mesh de-dup, SPI slave, WebSocket commands, device config, student identity | 6 suites, 25 cases |
-| `idf:*` (optional) | ESP-IDF v6.1 builds of all three firmware projects | 3 builds |
-| `frontend` (optional) | React production build | 1 build |
+| Suite | Scope |
+|---|---|
+| `backend` | every router and service, migrations, end-to-end flows through a simulated gateway, fault injection |
+| `firmware-static` | structural rules in firmware sources (OTA safety, task ownership) and firmware ↔ backend agreement |
+| `host:*` | firmware C compiled on the host with AddressSanitizer and UBSan |
+| `repo` | CI workflow, repository hygiene, documentation consistency, install scripts, the runner itself |
+| `ui` (optional) | Playwright browser checks with screenshots |
+| `idf:*`, `frontend` (optional) | ESP-IDF v6.1 builds of the three firmware projects; the React build |
 
-> [!TIP]
-> Long suites show a live status line (elapsed time and the latest build or test output), and Ctrl-C stops cleanly with a report. If the interpreter is missing a backend package, the runner says which one and prints the exact `pip install` command. See [running the tests](docs/guides/testing.md#running-run_testspy).
+CI runs every suite, the three firmware builds and a clean install on a fresh runner, behind one **CI result** check. GitHub's badges are per workflow, not per job, so the jobs are listed here:
 
-> [!NOTE]
-> GitHub Actions runs the same suites through `run_tests.py`, plus the firmware builds (with size reports and downloadable images), behind a single **CI result** check. See the [testing guide](docs/guides/testing.md).
+| CI job | Covers |
+|---|---|
+| Repository and CI checks | `repo` suite, actionlint, ruff |
+| Dependency audit | pip-audit, npm audit |
+| Backend tests | `backend` suite with coverage (report uploaded as an artifact; no coverage service is connected, so there is no coverage badge) |
+| Firmware structural / host tests | `firmware-static`, `host:*` |
+| ESP-IDF v6.1 build | three firmware images with size reports |
+| Frontend build | `npm ci` + Vite build |
+| Browser UI checks | Playwright |
+| Clean install + smoke test | `scripts/install.sh`, `start.sh`, `smoke_test.py` |
+
+What is tested where, and what still needs a bench: [test strategy](docs/testing/TEST_STRATEGY.md), [hardware validation](docs/testing/HARDWARE_VALIDATION.md).
+
+## Troubleshooting
+
+| Symptom | First check |
+|---|---|
+| Server refuses to start: default secrets | run `scripts/install.sh`, or set `IMPRESS_JWT_SECRET` and `IMPRESS_DEVICE_API_KEY` |
+| Server stops at a migration | the log names the step and what to fix; a backup was written next to the database |
+| Gateway never shows online | device key, backend address and Wi-Fi in its NVS; `GET /health` from the room's network |
+| Gateway shows *degraded* | the reasons on the Modules page: S3 link, weak Wi-Fi, low memory |
+| A deployment paused | the failed device's error on the Firmware page; resume to accept it, or cancel |
+
+More: [troubleshooting guide](docs/guides/troubleshooting.md), [known issues](docs/reference/known-issues.md).
 
 ## Documentation
 
@@ -182,8 +280,12 @@ python run_tests.py --with-idf --with-frontend --json report.json
 | **Architecture** | [System overview](docs/architecture/overview.md) · [Backend](docs/architecture/backend.md) · [Firmware](docs/architecture/firmware.md) · [Data flows](docs/architecture/data-flows.md) |
 | **Design** | [Wire protocols](docs/design/protocols.md) · [Mesh](docs/design/mesh.md) · [Security model](docs/design/security-model.md) · [Design decisions](docs/design/decisions.md) |
 | **API** | [REST](docs/api/rest-api.md) · [WebSocket](docs/api/websocket-api.md) · [Device and gateway](docs/api/device-api.md) |
-| **Guides** | [Development setup](docs/guides/development-setup.md) · [Configuration](docs/guides/configuration.md) · [Deployment](docs/guides/deployment.md) · [OTA updates](docs/guides/ota-updates.md) · [Testing](docs/guides/testing.md) · [Troubleshooting](docs/guides/troubleshooting.md) |
-| **Reference** | [Data model](docs/reference/data-model.md) · [Hardware and wiring](docs/reference/hardware.md) · [Known issues](docs/reference/known-issues.md) · [Changelog v2](docs/reference/changelog-v2.md) |
+| **Guides** | [Development setup](docs/guides/development-setup.md) · [Configuration](docs/guides/configuration.md) · [Deployment](docs/guides/deployment.md) · [CSV imports](docs/guides/csv-imports.md) · [OTA updates](docs/guides/ota-updates.md) · [Testing](docs/guides/testing.md) · [Troubleshooting](docs/guides/troubleshooting.md) |
+| **Firmware** | [OTA architecture](docs/firmware/OTA_ARCHITECTURE.md) · [Versioning](docs/firmware/FIRMWARE_VERSIONING.md) · [Recovery procedure](docs/firmware/RECOVERY_PROCEDURE.md) |
+| **Hardware** | [Classroom node requirements](docs/hardware/CLASSROOM_NODE_REQUIREMENTS.md) · [Device compatibility](docs/hardware/DEVICE_COMPATIBILITY.md) |
+| **Testing** | [Test strategy](docs/testing/TEST_STRATEGY.md) · [Hardware validation](docs/testing/HARDWARE_VALIDATION.md) |
+| **Engineering** | [System audit](docs/engineering/SYSTEM_AUDIT.md) · [v2 / v3 comparison](docs/engineering/V2_V3_COMPARISON.md) · [Database migrations](docs/engineering/DATABASE_MIGRATIONS.md) |
+| **Reference** | [Data model](docs/reference/data-model.md) · [Hardware and wiring](docs/reference/hardware.md) · [Known issues](docs/reference/known-issues.md) |
 
 The [documentation index](docs/README.md) describes when to read each page.
 
@@ -202,30 +304,38 @@ imPress/
 │   ├── tests/              structural firmware checks
 │   └── run_host_tests.sh   runs every host C suite
 ├── frontend/               React and Vite development UI
-├── docs/                   architecture, design, API, guides, reference
+├── docs/                   architecture, design, API, guides, reference, engineering, hardware, firmware, testing
+├── scripts/                install.sh, start.sh, init_env.py, smoke_test.py
 ├── tests/                  repository, CI and documentation checks
+├── ui_tests/               Playwright browser checks
+├── VERSION                 release version (2.1.0)
 ├── run_tests.py            unified test runner
 └── .github/workflows/      continuous integration
 ```
 
-## Project status
+## Release history
 
-| Area | Status |
-|---|---|
-| Audit findings (#1–#25) | All fixed on individual `fix/*` branches and merged into `v2` |
-| Automated verification | Backend, firmware host and structural tests, repository checks, firmware builds, frontend build in CI |
-| Hardware verification | Pending: a classroom soak test on real boards ([procedure](docs/guides/troubleshooting.md)) |
-| Hardening options | OTA image signing, TLS for device traffic, per-device keys ([security model](docs/design/security-model.md)) |
+| Version | Branch | Summary |
+|---|---|---|
+| 2.1.0 | `varun/v2.1` | CSV imports, firmware registry and staged OTA with rollback, gateway OTA client, diagnostics, module inventory, migrations, install path: [changelog](docs/reference/changelog-v2.1.md) |
+| 2.0 | `v2` | the October 2026 audit fixes (#1–#25), test suite, CI and documentation: [changelog](docs/reference/changelog-v2.md) |
+| 1.x | `main` | the original system |
+
+No GitHub release or tag has been published yet, so there is no release badge. The version is in the [`VERSION`](VERSION) file and reported by `GET /health`.
+
+**Hardware status:** every v2.1 feature is verified by automated tests and builds. None has been verified on real boards yet; the bench checks and their status are in [hardware validation](docs/testing/HARDWARE_VALIDATION.md).
 
 > [!WARNING]
 > Databases containing user and session data were committed to git history before `v2`. Purge them and rotate the affected passwords before publishing the repository. See the [deployment checklist](docs/guides/deployment.md#4-go-live-checklist).
 
-Upgrading from `main`: read the [upgrade notes](docs/reference/changelog-v2.md#upgrading-from-main). Firmware for the gateway, hub and student modules must be flashed together.
-
 ## Contributing
 
-1. Branch from `v2` using `fix/<issue>-<summary>` or `feat/<summary>`.
+1. Open or pick an issue, then branch from `varun/v2.1` as `feat/<issue>-<summary>`, `fix/…` or `docs/…`.
 2. Add or update tests next to the code you change, then run `python run_tests.py`.
 3. Keep on-wire formats in `firmware/protocol` and the device contract fixture in sync ([decision D5](docs/design/decisions.md#d5-the-backend--firmware-json-contract-is-a-committed-fixture)).
 4. Update the relevant page in [`docs/`](docs/README.md). Repository checks fail on broken links, undocumented routes or undocumented settings.
-5. Open a pull request; the **CI result** check must pass.
+5. Use conventional commit messages. Open a pull request into `varun/v2.1`; the **CI result** check must pass.
+
+## License
+
+The repository has no license file, so no license has been granted: all rights are reserved by the authors. Adding one (for example MIT or Apache-2.0) is the owners' decision.
