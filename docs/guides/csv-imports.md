@@ -5,6 +5,7 @@ Bulk-create content from a spreadsheet instead of typing it into forms. Every im
 | Import | Where | Who |
 |---|---|---|
 | [Quiz questions](#quiz-questions) | Create Quiz page → *Import questions from CSV* | teachers (for their classes) and admins |
+| [Courses and sections](#courses-and-sections) | Admin → Classrooms → **Import CSV** / **Export CSV** | admins |
 
 Common rules for every import:
 - **UTF-8.** In Excel use *Save As → CSV UTF-8 (Comma delimited)*. A byte-order mark is fine; other encodings are refused with that hint.
@@ -40,3 +41,34 @@ question_text,option_a,option_b,option_c,option_d,correct_option
 ![A valid file: the questions are ready to add](../assets/ui/csv-questions-preview.png)
 
 To add questions to an **existing draft quiz** from a script, use `POST /api/quizzes/{id}/questions/import` ([REST API](../api/rest-api.md#importing-questions-from-csv-31)).
+
+## Courses and sections
+
+1. **Admin → Classrooms → Import CSV.** Download the template if you need an example.
+2. Choose what happens to sections that **already exist**:
+   - **Skip them** (default): only new sections are created. Re-uploading the same file changes nothing.
+   - **Update them**: empty cells keep the current value, and the preview lists exactly which fields change. A new teacher becomes the primary teacher; other co-faculty stay.
+3. Drop the file and read the plan. Each row is **create**, **duplicate** / **unchanged**, **update**, or **invalid** with the reason. Courses that will be created are marked *(new course)*.
+4. Click **Create N sections** (or **Create N, update M**). The list refreshes. Imported classrooms start **inactive**, like classrooms created in the form.
+
+![A plan with an unknown teacher and an invalid term: nothing is changed until fixed](../assets/ui/csv-classes-invalid.png)
+
+| Column | Required | What to put in it |
+|---|---|---|
+| `course_code`, `course_name` | yes | the course (e.g. `CS101`, `Introduction to Computing`); an existing code must keep its exact name |
+| `section` | yes | section label within the course (`A`, `01`, …) |
+| `class_code` | yes | the class's join code; unique |
+| `teacher_username` | yes | an existing, active teacher account |
+| `class_name`, `classroom_code` (room), `term`, `year`, `capacity`, `location` | no | as in the classroom form |
+
+```csv
+course_code,course_name,section,class_code,teacher_username,classroom_code,term,year
+CS101,Introduction to Computing,A,CS101-A-2026,teacher1,RM-201,Monsoon,2026
+CS101,Introduction to Computing,B,CS101-B-2026,teacher2,,Monsoon,2026
+```
+
+**Export CSV** downloads every course section in the same layout. Edit it in a spreadsheet and re-import it in *Update* mode. Classrooms that aren't linked to a course are left out (the toast says how many), because they couldn't be re-imported.
+
+![Update mode on a file that matches: nothing to change](../assets/ui/csv-classes-preview.png)
+
+API: [REST reference](../api/rest-api.md#importing-and-exporting-courses-and-sections-32).
