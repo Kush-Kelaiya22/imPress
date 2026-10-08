@@ -59,7 +59,8 @@ def _legacy_db(path):
     Base.metadata.create_all(eng)
     eng.dispose()
     with sqlite3.connect(path) as c:
-        c.execute("DROP TABLE firmware_artifacts")         # new in v2.1
+        for new_in_v21 in ("deployment_targets", "firmware_deployments", "firmware_artifacts"):
+            c.execute(f"DROP TABLE {new_in_v21}")
         for name in [r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE name LIKE 'uq_%'")]:
             c.execute(f"DROP INDEX {name}")
         c.execute("ALTER TABLE esp_devices DROP COLUMN total_flash")

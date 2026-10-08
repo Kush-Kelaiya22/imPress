@@ -56,7 +56,7 @@ def test_applied_with_the_pushed_version_completes_the_update(client, db, hub):
     r = _report(client, "applied")
     assert r.status_code == 200 and r.json()["processed"] == 1
     d = _device(db)
-    assert (d.firmware_version, d.pending_version, d.ota_status) == ("2.1.0", "", "applied")
+    assert (d.firmware_version, d.pending_version, d.ota_status) == ("2.1.0", "", "success")
     # the loop is gone: the device is no longer offered the same update
     chk = client.post("/api/device/firmware/check", headers=DEVICE,
                       json={"mac_address": S3_MAC, "current_version": "2.1.0"}).json()

@@ -16,7 +16,7 @@ from sqlalchemy import select
 from .config import settings, check_secure, insecure_settings
 from .database import init_db, async_session
 from .timeutil import istnow
-from .routers import auth, classes, quizzes, polls, device, admin, courses, students, firmware
+from .routers import auth, classes, quizzes, polls, device, admin, courses, students, firmware, deployments
 from .routers.classes import live_router as classes_live_router  # GET /api/devices/live
 from .ws.handler import router as ws_router
 from .services.presence import presence_sweep_loop
@@ -48,6 +48,10 @@ async def lifespan(app: FastAPI):
     # Session housekeeping: periodically purge expired/revoked user sessions.
     session_task = asyncio.create_task(session_cleanup_loop())
 
+    # Firmware deployments: durable; resumes whatever was running before a restart.
+    from .services.deployments import deployments_loop
+    deployment_task = asyncio.create_task(deployments_loop())
+
     # Seed default super admin if no users exist
     async with async_session() as db:
         result = await db.execute(select(User).limit(1))
@@ -77,6 +81,7 @@ async def lifespan(app: FastAPI):
             await presence_task
         except asyncio.CancelledError:
             pass
+        deployment_task.cancel()
         session_task.cancel()
         try:
             await session_task
@@ -165,6 +170,7 @@ app.include_router(device.router)
 app.include_router(courses.router)
 app.include_router(students.router)
 app.include_router(firmware.router)
+app.include_router(deployments.router)
 app.include_router(ws_router)
 
 

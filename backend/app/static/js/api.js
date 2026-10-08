@@ -230,6 +230,15 @@ const firmwareApi = {
   remove(id) { return apiRequest(`/admin/firmware/${id}`, { method: 'DELETE' }); },
 };
 
+const deploymentsApi = {
+  list() { return apiRequest('/admin/deployments'); },
+  get(id) { return apiRequest(`/admin/deployments/${id}`); },
+  create(body, dryRun = false) {
+    return apiRequest(`/admin/deployments${dryRun ? '?dry_run=true' : ''}`, { method: 'POST', body: JSON.stringify(body) });
+  },
+  act(id, action) { return apiRequest(`/admin/deployments/${id}/${action}`, { method: 'POST' }); },
+};
+
 const modulesApi = {
   async list(deviceType = '') {
     return apiRequest(`/admin/modules${deviceType ? `?device_type=${deviceType}` : ''}`);

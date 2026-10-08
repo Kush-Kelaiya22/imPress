@@ -21,7 +21,8 @@ A missing header → `422`; a wrong key → `403`. The key is compared in consta
 | `POST /api/device/attendance` | (available) | explicit attendance check-in |
 | `POST /api/device/firmware/check` | S3 on OTA hop | is an update pending? |
 | `GET /api/device/firmware/download` | S3 on OTA hop | fetch the pending image |
-| `POST /api/device/firmware/applied` | (available) | report an applied update |
+| `POST /api/device/firmware/applied` | (pre-v2.1 clients) | report an applied update (goes through the state machine) |
+| `POST /api/device/ota/status` | OTA clients | report update progress (#34) |
 | `POST /api/polls/{id}/vote`, `POST /api/quizzes/{id}/answer` | direct device submissions (not used by current firmware) | see [below](#direct-voteanswer-endpoints) |
 | `WS /ws/class/{id}?role=device` | C6 | backend → device commands. See the [WebSocket API](websocket-api.md). |
 
@@ -111,19 +112,38 @@ Each stored answer or vote broadcasts the live count to the class room (`quiz_an
 | student not enrolled in the class (and no device fallback) | 400 |
 | ok | 200 `{"status":"checked_in","class_name":"Bio"}`; upsert, so repeated check-ins keep one row |
 
-## Firmware check, download, applied
+## Firmware check, download, status
 
 ```
 POST /api/device/firmware/check   {"mac_address": "…", "current_version": "1.0.0"}
-→ {"update_available": true, "version": "1.2.0", "ota_status": "downloading", "current_version": "1.0.0"}
+→ {"update_available": true, "version": "1.2.0", "ota_status": "precheck", "current_version": "1.0.0",
+   "sha256": "<64 hex>", "size": 980320, "deployment_id": 7}
 
 GET  /api/device/firmware/download?mac_address=…&version=1.2.0   → application/octet-stream
-POST /api/device/firmware/applied {"mac_address": "…", "version": "1.2.0"}
-→ {"status": "ok", "firmware_version": "1.2.0"}
+     X-Firmware-SHA256: <64 hex>
+
+POST /api/device/ota/status  {"mac_address": "…", "state": "verifying"}
+POST /api/device/ota/status  {"mac_address": "…", "state": "success", "version": "1.2.0"}
+POST /api/device/ota/status  {"mac_address": "…", "state": "failed", "error": "esp_ota_end", "error_code": 5379}
+→ {"status": "ok", "state": "...", "deployment_id": 7}
 ```
-- `update_available` = `pending_version` set and different from the reported version.
-- **Download** is only allowed for the device's `pending_version`: no pending update, or a different version → `403`. The version must be semver, and the file `<device_type>-<version>.bin` must exist (else `404`).
-- **Applied** sets `firmware_version`, clears `pending_version`, and sets `ota_status = applied`.
+- **`firmware/check`:**
+  - `update_available` is true when `pending_version` is set and differs from the reported version;
+  - for an update offered by a deployment, it returns the image's **SHA-256 and size**, which the device verifies before installing;
+  - it moves the device `queued → precheck`.
+- **Download:**
+  - only the device's `pending_version` is served: with no pending update, or a different version, it returns `403`;
+  - the image comes from the registry for the device's own type (`404` if none);
+  - the response carries `X-Firmware-SHA256` and moves the device to `downloading`.
+- **`ota/status`:**
+  - states: `precheck`, `downloading`, `verifying`, `installing`, `rebooting`, `health_check`, `success`, `rolled_back`, `failed`;
+  - **forward only**: going backwards or an unknown state is `409`; repeating the current state is a harmless no-op;
+  - `success` must carry the version now running, and counts only if it is the expected one;
+  - `409` when no update is in progress.
+
+  See the [OTA architecture](../firmware/OTA_ARCHITECTURE.md#per-device-state-machine).
+- **`firmware/applied`** (pre-v2.1 clients) is treated as `success` with that version. Without a deployment it sets `firmware_version`, clears `pending_version` and sets `ota_status = applied`, as before.
+- **`register`** now records the reported `firmware_version` (it was accepted and dropped before).
 
 ## Direct vote/answer endpoints
 

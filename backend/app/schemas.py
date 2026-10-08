@@ -596,6 +596,7 @@ class FirmwareArtifactResponse(BaseModel):
 
 class ModuleOtaRequest(BaseModel):
     version: str = Field(min_length=1, max_length=32)
+    allow_downgrade: bool = False   # confirm a rollback to an older version (#37)
 
 
 class ClassDevicesResponse(BaseModel):
@@ -615,6 +616,18 @@ class OtaStatusResponse(BaseModel):
     version: str = ""          # the version to download, when available
     ota_status: str = "idle"   # what the server currently thinks
     current_version: str = ""
+    sha256: str = ""           # of the image to download: verify it before installing (#34)
+    size: int = 0
+    deployment_id: Optional[int] = None
+
+
+class DeviceOtaStatus(BaseModel):
+    """A device reporting its OTA progress (#34)."""
+    mac_address: str = Field(min_length=1, max_length=17)
+    state: str                 # precheck|downloading|verifying|installing|rebooting|health_check|success|rolled_back|failed
+    version: str = Field(default="", max_length=32)    # running version (success / rolled_back)
+    error: str = Field(default="", max_length=200)
+    error_code: Optional[int] = None                   # esp_err_t
 
 
 class DeviceDataBatch(BaseModel):

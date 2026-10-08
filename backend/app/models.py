@@ -169,6 +169,55 @@ class FirmwareArtifact(Base):
     deprecated_at = Column(DateTime, nullable=True)
 
 
+# ── Firmware deployments (#34, #38) ──────────────────────────────────
+
+class FirmwareDeployment(Base):
+    """A rollout of one firmware image to a set of devices, in stages
+    (canary, then batches). Durable: the scheduler resumes it after a restart."""
+    __tablename__ = "firmware_deployments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    artifact_id = Column(Integer, ForeignKey("firmware_artifacts.id"), nullable=False)
+    kind = Column(String(16), default="update")               # update | rollback (downgrade)
+    state = Column(String(16), default="running")             # running | paused | completed | cancelled
+    strategy = Column(JSON, default=dict)                     # canary, batch_size, max_concurrent, ...
+    note = Column(String(255), default="")                    # e.g. why it paused
+    idempotency_key = Column(String(64), unique=True, nullable=True)
+    requested_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=istnow)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+
+    artifact = relationship("FirmwareArtifact", lazy="selectin")
+    targets = relationship("DeploymentTarget", back_populates="deployment", lazy="selectin",
+                           order_by="DeploymentTarget.id")
+
+
+class DeploymentTarget(Base):
+    """One device in a deployment, with its update state."""
+    __tablename__ = "deployment_targets"
+    __table_args__ = (
+        Index("uq_deployment_targets_deployment_device", "deployment_id", "device_id", unique=True),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    deployment_id = Column(Integer, ForeignKey("firmware_deployments.id"), nullable=False, index=True)
+    device_id = Column(Integer, ForeignKey("esp_devices.id"), nullable=False, index=True)
+    stage = Column(Integer, default=0)                        # 0 = canary, 1.. = batches
+    state = Column(String(16), default="waiting")
+    attempts = Column(Integer, default=0)
+    from_version = Column(String(32), default="")
+    final_version = Column(String(32), default="")
+    error_code = Column(Integer, nullable=True)               # esp_err_t from the device
+    error = Column(String(255), default="")
+    started_at = Column(DateTime, nullable=True)              # current attempt
+    updated_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+
+    deployment = relationship("FirmwareDeployment", back_populates="targets", lazy="selectin")
+    device = relationship("EspDevice", lazy="selectin")
+
+
 # ── Class Faculty Association (many-to-many) ───────────────────────────
 
 class_faculty = Table(

@@ -59,6 +59,16 @@ Images are grouped by device type, newest first. For each image the page shows:
 
 ![Push OTA offers only approved images for the device's type](../assets/ui/firmware-push-dialog.png)
 
+### Deploying to many devices
+
+**Deploy** on an approved image opens the rollout dialog. The rollout starts with a **canary**, then moves on in **batches**. It pauses on its own if a stage has more failures than allowed. **Preview** shows every device that will be included and every one that won't, with the reason.
+
+![Deploy dialog with a preview](../assets/ui/deploy-dialog.png)
+
+The **Deployments** list shows progress and refreshes itself while a rollout runs. *Details* shows each device's state, attempts and error. *Pause*, *Resume* (accepting the failures that paused it) and *Cancel* (devices that haven't started installing) control the rollout. How it works: [OTA architecture](../firmware/OTA_ARCHITECTURE.md).
+
+![Deployments list](../assets/ui/deployments-list.png)
+
 ## Safety properties
 
 | Property | Mechanism |

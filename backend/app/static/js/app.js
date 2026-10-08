@@ -2082,7 +2082,7 @@ async function renderAdminModules(app) {
 
 async function renderAdminFirmware(app) {
   const user = await authApi.me();
-  const images = await firmwareApi.list();
+  const [images, deployments] = await Promise.all([firmwareApi.list(), deploymentsApi.list()]);
   const badge = { uploaded: 'badge-outline', approved: 'badge-success', deprecated: 'badge-danger' };
   const targets = { c6: 'C6 gateway', s3: 'S3 hub', student: 'Student module' };
 
@@ -2132,6 +2132,7 @@ async function renderAdminFirmware(app) {
                 <td class="text-sm">${escHtml(a.release_notes || '—')}</td>
                 <td><div class="flex gap-1" style="flex-wrap:wrap">
                   ${a.status !== 'approved' ? `<button class="btn btn-xs btn-primary" data-act="approve">Approve</button>` : ''}
+                  ${a.status === 'approved' && a.target !== 'student' ? `<button class="btn btn-xs btn-primary" data-act="deploy">Deploy</button>` : ''}
                   ${a.status !== 'deprecated' ? `<button class="btn btn-xs btn-outline" data-act="deprecate">Deprecate</button>` : ''}
                   <button class="btn btn-xs btn-outline" data-act="notes">Notes</button>
                   <button class="btn btn-xs btn-outline" data-act="history">History</button>
@@ -2142,6 +2143,31 @@ async function renderAdminFirmware(app) {
           </table></div>`}
         </div>`;
       }).join('')}
+
+      <div class="card mt-2" id="fw-deployments">
+        <div class="card-header"><h2>Deployments</h2></div>
+        ${deployments.length === 0 ? '<p class="text-muted" style="padding:1rem">No deployments yet. Use <strong>Deploy</strong> on an approved image.</p>' : `
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>#</th><th>Image</th><th>State</th><th>Progress</th><th></th></tr></thead>
+          <tbody>${deployments.map(d => {
+            const done = (d.counts.success || 0), failed = ['failed', 'rolled_back', 'timed_out', 'unreachable'].reduce((n, k) => n + (d.counts[k] || 0), 0);
+            return `<tr data-dep="${d.id}">
+              <td>${d.id}</td>
+              <td>${escHtml(d.target)} v${escHtml(d.version)}${d.kind === 'rollback' ? ' <span class="badge badge-sm badge-danger">rollback</span>' : ''}</td>
+              <td><span class="badge ${{ running: 'badge-primary', paused: 'badge-danger', completed: 'badge-success', cancelled: 'badge-outline' }[d.state]}">${escHtml(d.state)}</span>
+                ${d.note ? `<br><span class="text-sm text-danger">${escHtml(d.note)}</span>` : ''}</td>
+              <td class="text-sm"><progress max="${d.total}" value="${done + failed}" style="width:120px"></progress><br>
+                ${done}/${d.total} updated${failed ? `, <span class="text-danger">${failed} failed</span>` : ''} · ${d.stages} stage${d.stages === 1 ? '' : 's'}</td>
+              <td><div class="flex gap-1" style="flex-wrap:wrap">
+                <button class="btn btn-xs btn-outline" data-dact="details">Details</button>
+                ${d.state === 'running' ? '<button class="btn btn-xs btn-outline" data-dact="pause">Pause</button>' : ''}
+                ${d.state === 'paused' ? '<button class="btn btn-xs btn-primary" data-dact="resume">Resume</button>' : ''}
+                ${['running', 'paused'].includes(d.state) ? '<button class="btn btn-xs btn-outline text-danger" data-dact="cancel">Cancel</button>' : ''}
+              </div></td></tr>`;
+          }).join('')}
+          </tbody>
+        </table></div>`}
+      </div>
     </div>`;
 
   // actions
@@ -2166,11 +2192,28 @@ async function renderAdminFirmware(app) {
           await firmwareApi.update(id, { release_notes: notes });
         } else if (btn.dataset.act === 'history') {
           return showFirmwareHistory(id);
+        } else if (btn.dataset.act === 'deploy') {
+          return showDeployDialog(a, () => renderAdminFirmware(app));
         }
         renderAdminFirmware(app);
       } catch (err) { showToast(err.message, 'error'); }
     };
   });
+
+  document.querySelectorAll('[data-dep] [data-dact]').forEach(btn => {
+    btn.onclick = async () => {
+      const id = Number(btn.closest('[data-dep]').dataset.dep);
+      const act = btn.dataset.dact;
+      if (act === 'details') return showDeploymentDetails(id);
+      if (act === 'cancel' && !confirm('Cancel this deployment? Devices that have started installing still finish.')) return;
+      try { await deploymentsApi.act(id, act); renderAdminFirmware(app); } catch (err) { showToast(err.message, 'error'); }
+    };
+  });
+  // refresh while a rollout is running; stops when this page is left
+  if (deployments.some(d => d.state === 'running')) {
+    const seq = routeSeq;
+    setTimeout(() => { if (seq === routeSeq && location.hash === '#/admin/firmware') renderAdminFirmware(app); }, 5000);
+  }
 
   // upload
   const drop = document.getElementById('fw-drop');
@@ -2200,6 +2243,121 @@ async function renderAdminFirmware(app) {
       progress.classList.add('hidden');
     }
   }
+}
+
+async function showDeployDialog(artifact, onDone) {
+  const [devices, classes] = await Promise.all([modulesApi.list(artifact.target), adminApi.listClasses()]);
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = `
+    <div class="modal-backdrop"></div>
+    <div class="modal-content card" style="max-width:640px">
+      <h2 style="margin-top:0">Deploy ${escHtml(artifact.target)} v${escHtml(artifact.version)}</h2>
+      <div class="form-group">
+        <label for="dep-mode">Devices</label>
+        <select id="dep-mode">
+          <option value="pick">Choose devices</option>
+          <option value="all">Every ${escHtml(artifact.target)} device</option>
+          <option value="version">Devices running a version</option>
+          <option value="class">Devices of a classroom</option>
+        </select>
+      </div>
+      <div id="dep-pick" class="form-group" style="max-height:180px;overflow:auto">
+        ${devices.length ? devices.map(d => `<label class="text-sm check-row"><input type="checkbox" value="${d.id}" />
+          ${escHtml(d.device_name || d.mac_address)} · v${escHtml(d.firmware_version)}${d.is_connected ? '' : ' · offline'}</label>`).join('')
+          : `<p class="text-muted text-sm">No ${escHtml(artifact.target)} devices registered.</p>`}
+      </div>
+      <div id="dep-version" class="form-group hidden"><select id="dep-version-sel">
+        ${[...new Set(devices.map(d => d.firmware_version))].map(v => `<option>${escHtml(v)}</option>`).join('')}</select></div>
+      <div id="dep-class" class="form-group hidden"><select id="dep-class-sel">
+        ${classes.map(c => `<option value="${c.id}">${escHtml(c.code)} · ${escHtml(c.name)}</option>`).join('')}</select></div>
+      <div class="grid-2">
+        <div class="form-group"><label for="dep-canary">Canary devices</label><input type="number" id="dep-canary" min="0" value="1" /></div>
+        <div class="form-group"><label for="dep-batch">Batch size</label><input type="number" id="dep-batch" min="1" value="5" /></div>
+        <div class="form-group"><label for="dep-conc">At once (max)</label><input type="number" id="dep-conc" min="1" value="5" /></div>
+        <div class="form-group"><label for="dep-fail">Failures allowed per stage</label><input type="number" id="dep-fail" min="0" value="0" /></div>
+      </div>
+      <label class="text-sm check-row"><input type="checkbox" id="dep-downgrade" /> Allow downgrading devices on a newer version (rollback)</label>
+      <div id="dep-plan" class="mt-1" aria-live="polite"></div>
+      <div class="flex gap-1 mt-1">
+        <button class="btn btn-outline" id="dep-preview">Preview</button>
+        <button class="btn btn-primary" id="dep-start" disabled>Start deployment</button>
+        <button class="btn btn-outline" id="dep-close">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  const $ = (sel) => modal.querySelector(sel);
+  const close = () => modal.remove();
+  $('.modal-backdrop').onclick = close;
+  $('#dep-close').onclick = close;
+  $('#dep-mode').onchange = () => {
+    const m = $('#dep-mode').value;
+    $('#dep-pick').classList.toggle('hidden', m !== 'pick');
+    $('#dep-version').classList.toggle('hidden', m !== 'version');
+    $('#dep-class').classList.toggle('hidden', m !== 'class');
+    $('#dep-start').disabled = true;
+    $('#dep-plan').innerHTML = '';
+  };
+  const body = () => {
+    const m = $('#dep-mode').value;
+    const b = {
+      artifact_id: artifact.id, allow_downgrade: $('#dep-downgrade').checked,
+      strategy: { canary: Number($('#dep-canary').value), batch_size: Number($('#dep-batch').value),
+                  max_concurrent: Number($('#dep-conc').value), max_failures: Number($('#dep-fail').value) },
+    };
+    if (m === 'pick') b.device_ids = [...modal.querySelectorAll('#dep-pick input:checked')].map(i => Number(i.value));
+    if (m === 'all') b.all_compatible = true;
+    if (m === 'version') { b.running_version = $('#dep-version-sel').value; b.device_type = artifact.target; }
+    if (m === 'class') { b.class_id = Number($('#dep-class-sel').value); b.device_type = artifact.target; }
+    return b;
+  };
+  $('#dep-preview').onclick = async () => {
+    try {
+      const plan = await deploymentsApi.create(body(), true);
+      const stages = [...new Set(plan.included.map(x => x.stage))].length;
+      $('#dep-plan').innerHTML = `
+        <p class="text-sm"><strong>${plan.included.length}</strong> device(s) in ${stages} stage(s)
+          ${plan.included.length ? `(canary: ${plan.included.filter(x => x.stage === 0).length})` : ''}.</p>
+        ${plan.excluded.length ? `<p class="text-sm">Excluded:</p><ul class="text-sm">${plan.excluded.map(e =>
+          `<li>${escHtml(e.mac_address)}: ${escHtml(e.reason)}</li>`).join('')}</ul>` : ''}`;
+      $('#dep-start').disabled = plan.included.length === 0;
+    } catch (err) { $('#dep-plan').innerHTML = `<p class="text-danger text-sm">${escHtml(err.message)}</p>`; }
+  };
+  $('#dep-start').onclick = async () => {
+    $('#dep-start').disabled = true;
+    try {
+      const r = await deploymentsApi.create(body());
+      close();
+      showToast(`Deployment #${r.deployment.id} started: ${r.deployment.total} device(s)`, 'success');
+      onDone();
+    } catch (err) { $('#dep-start').disabled = false; showToast(err.message, 'error'); }
+  };
+}
+
+async function showDeploymentDetails(id) {
+  const d = await deploymentsApi.get(id);
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = `
+    <div class="modal-backdrop"></div>
+    <div class="modal-content card" style="max-width:720px">
+      <h2 style="margin-top:0">Deployment #${d.id}: ${escHtml(d.target)} v${escHtml(d.version)}</h2>
+      <p class="text-sm text-muted">${escHtml(d.state)}${d.note ? ` · ${escHtml(d.note)}` : ''} · canary ${d.strategy.canary},
+        batches of ${d.strategy.batch_size}, ${d.strategy.max_concurrent} at once, ${d.strategy.max_attempts} attempt(s), timeout ${d.strategy.timeout_s} s</p>
+      <div class="table-wrap"><table class="table csv-preview">
+        <thead><tr><th>Stage</th><th>State</th><th>Device</th></tr></thead>
+        <tbody>${d.targets.map(t => `<tr>
+          <td>${t.stage === 0 ? 'canary' : t.stage}</td>
+          <td><span class="badge badge-sm">${escHtml(t.state)}</span>${t.attempts > 1 ? ` <span class="text-sm text-muted">attempt ${t.attempts}</span>` : ''}</td>
+          <td>${escHtml(t.device_name || t.mac_address)} <span class="text-muted text-sm">${escHtml(t.from_version)} → ${escHtml(t.final_version || d.version)}</span>
+            ${t.error ? `<div class="text-danger text-sm">${escHtml(t.error)}${t.error_code ? ` (0x${t.error_code.toString(16)})` : ''}</div>` : ''}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+      <button class="btn btn-outline mt-1" id="dep-details-close">Close</button>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('.modal-backdrop').onclick = () => modal.remove();
+  modal.querySelector('#dep-details-close').onclick = () => modal.remove();
 }
 
 async function showFirmwareHistory(id) {

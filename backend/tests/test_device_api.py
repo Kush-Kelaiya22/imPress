@@ -194,3 +194,13 @@ def test_class_presence_snapshot_walks_gateway_tree(client, db, su):
         n = (await s.execute(select(EspDevice).where(EspDevice.id == node))).scalar_one()
         return await class_id_for_device(s, n)
     assert db(resolve) == cid
+
+
+def test_registration_records_the_running_version(client, db):
+    # it was accepted and silently dropped; deployments rely on it (#38)
+    r = client.post("/api/device/register", headers=DEVICE, json={
+        "mac_address": GW, "device_type": "c6", "device_name": "gw", "firmware_version": "2.1.0"})
+    assert r.status_code == 200
+    assert _device(db).firmware_version == "2.1.0"
+    client.post("/api/device/register", headers=DEVICE, json={"mac_address": GW, "device_type": "c6"})
+    assert _device(db).firmware_version == "2.1.0"       # an older client that omits it changes nothing
