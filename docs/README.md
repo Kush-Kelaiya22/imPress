@@ -42,6 +42,9 @@ This folder is the long-form documentation for imPress. The [project README](../
 | ↳ [Device compatibility](hardware/DEVICE_COMPATIBILITY.md) | which image runs where, what OTA can and can't change, firmware ↔ backend version mixes |
 | **[Firmware](firmware/)** | understand firmware delivery |
 | ↳ [OTA architecture](firmware/OTA_ARCHITECTURE.md) | image validation, registry, deployment state machine, staged rollout, per-device paths |
+| ↳ [Firmware versioning](firmware/FIRMWARE_VERSIONING.md) | where versions come from, immutability, comparison, releasing a version |
+| ↳ [Recovery procedure](firmware/RECOVERY_PROCEDURE.md) | rolled-back devices, paused deployments, fleet rollback, serial reflash, undoing a backend upgrade |
+| **[Deployment](deployment/)** | find the installation, configuration and troubleshooting pages |
 | **[Engineering](engineering/)** | see the evidence behind the v2.1 work |
 | ↳ [System audit](engineering/SYSTEM_AUDIT.md) | the v2 baseline: architecture map, device matrix, measured footprints, defects, test baseline |
 | ↳ [v2/v3 comparison](engineering/V2_V3_COMPARISON.md) | what `v3` changed, why its CI failed, what v2.1 adopts or rejects |
