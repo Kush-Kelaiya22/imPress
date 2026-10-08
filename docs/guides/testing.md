@@ -242,8 +242,9 @@ flowchart LR
     T --> H["Firmware host (gcc + ASan/UBSan)"]
     T --> I["ESP-IDF v6.1 build ×3<br/>size report · images · SHA256SUMS"]
     T --> F["Frontend build<br/>npm ci"]
+    T --> K["Clean install + smoke test<br/>install.sh · start.sh · smoke_test.py"]
     T --> U["Browser UI checks<br/>Playwright + Chromium"]
-    R & A & B & S & H & I & F & U --> G{"CI result<br/>(single required check)"}
+    R & A & B & S & H & I & F & U & K --> G{"CI result<br/>(single required check)"}
 ```
 
 | Job | Runs | Artifacts |
@@ -256,6 +257,7 @@ flowchart LR
 | ESP-IDF v6.1 build | `idf.py build` + `idf.py size` for `class_c6`, `class_s3`, `student`; `sha256sum` of every image | `.bin` images + `SHA256SUMS` (7 days) |
 | Frontend build | `run_tests.py --suite frontend`: `npm ci` + `vite build` (Node 20) | – |
 | Browser UI checks | `playwright install --with-deps chromium`; `run_tests.py --suite ui` | screenshots + JUnit XML |
+| Clean install + smoke test | `scripts/install.sh` into a fresh venv, `scripts/start.sh`, then `scripts/smoke_test.py` over HTTP (#42) | server log in the job output |
 | **CI result** | fails unless every job above succeeded | – |
 
 Pipeline properties:

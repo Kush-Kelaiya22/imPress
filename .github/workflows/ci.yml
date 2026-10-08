@@ -202,10 +202,36 @@ jobs:
             reports/
           retention-days: 14
 
+  install-smoke:
+    # The documented install path on a fresh runner (#42): scripts/install.sh
+    # into a new venv, scripts/start.sh, then the HTTP smoke test.
+    name: Clean install + smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      IMPRESS_INITIAL_ADMIN_PASSWORD: smoke-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: scripts/install.sh
+        run: scripts/install.sh
+      - name: scripts/start.sh
+        run: |
+          nohup scripts/start.sh > server.log 2>&1 &
+          for _ in $(seq 60); do curl -sf http://127.0.0.1:8000/health && exit 0; sleep 1; done
+          cat server.log; exit 1
+      - name: HTTP smoke test
+        run: python scripts/smoke_test.py --password "$IMPRESS_INITIAL_ADMIN_PASSWORD"
+      - name: Server log
+        if: always()
+        run: cat server.log
+
   result:
     name: CI result
     if: always()
-    needs: [repo, security, backend, firmware-static, firmware-host, firmware-build, frontend, ui]
+    needs: [repo, security, backend, firmware-static, firmware-host, firmware-build, frontend, ui, install-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
