@@ -220,6 +220,16 @@ const adminApi = {
 
 // ── Modules / Devices (R7 connectivity, R8 OTA) ───────────────────
 
+const firmwareApi = {
+  list(target = '') { return apiRequest(`/admin/firmware${target ? `?target=${target}` : ''}`); },
+  detail(id) { return apiRequest(`/admin/firmware/${id}`); },
+  upload(file, onProgress) { return uploadFile('/admin/firmware', file, onProgress); },
+  approve(id) { return apiRequest(`/admin/firmware/${id}/approve`, { method: 'POST' }); },
+  deprecate(id) { return apiRequest(`/admin/firmware/${id}/deprecate`, { method: 'POST' }); },
+  update(id, data) { return apiRequest(`/admin/firmware/${id}`, { method: 'PATCH', body: JSON.stringify(data) }); },
+  remove(id) { return apiRequest(`/admin/firmware/${id}`, { method: 'DELETE' }); },
+};
+
 const modulesApi = {
   async list(deviceType = '') {
     return apiRequest(`/admin/modules${deviceType ? `?device_type=${deviceType}` : ''}`);

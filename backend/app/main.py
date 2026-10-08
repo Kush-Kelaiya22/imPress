@@ -16,7 +16,7 @@ from sqlalchemy import select
 from .config import settings, check_secure, insecure_settings
 from .database import init_db, async_session
 from .timeutil import istnow
-from .routers import auth, classes, quizzes, polls, device, admin, courses, students
+from .routers import auth, classes, quizzes, polls, device, admin, courses, students, firmware
 from .routers.classes import live_router as classes_live_router  # GET /api/devices/live
 from .ws.handler import router as ws_router
 from .services.presence import presence_sweep_loop
@@ -164,6 +164,7 @@ app.include_router(polls.router)
 app.include_router(device.router)
 app.include_router(courses.router)
 app.include_router(students.router)
+app.include_router(firmware.router)
 app.include_router(ws_router)
 
 

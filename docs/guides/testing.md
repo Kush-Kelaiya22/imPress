@@ -196,6 +196,7 @@ python run_tests.py --with-ui            # or: pytest ui_tests
 | File | Checks |
 |---|---|
 | `test_navigation.py` | a page the user left before it finished loading never paints over the page they moved to (#51); normal navigation and in-page re-renders still work |
+| `test_firmware.py` | a random-bytes upload shows the parser's reason; a valid image uploads, is approved and becomes *latest*, history shows the approval, actions stay inside the table; *Push OTA* lists only approved images and queues the update; without approved images the dialog points to the Firmware page (#35/#36) |
 | `test_csv_classes.py` | Classrooms import: an invalid plan shows the reasons (readable) and blocks; a valid file creates 3 sections in 2 courses, the list refreshes and shows the teacher as faculty; update mode re-plans as unchanged; export downloads them (#32) |
 | `test_csv_questions.py` | template download; a file with invalid rows shows the reasons, readable without horizontal scrolling, and the add button is (visibly) disabled; a valid file fills the form and creates the quiz; an unusable file shows why (#31) |
 

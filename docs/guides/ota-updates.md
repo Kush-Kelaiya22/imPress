@@ -31,10 +31,11 @@ flowchart TB
    # image: firmware/class_s3/build/impress_class_s3.bin
    ```
 2. **Upload** (admin): `POST /api/admin/firmware` with `file=@impress_class_s3.bin`. The backend reads the target (`s3`), chip and version from the image itself. It refuses anything that isn't a valid, uncorrupted imPress image for a known chip. It also refuses a different image under a version that already exists: bump `version.txt` instead. The image is stored as `firmware_bins/<sha256>.bin`.
-3. **Make sure the S3 has a gateway**: its `gateway_id` must point at the room's C6 (admin "link device"). Otherwise the prompt can't be delivered.
-4. **Push**: `POST /api/admin/modules/{s3_id}/ota {"version": "1.2.0"}`. It is refused (404) unless that image was uploaded for the device's type. The response shows `pending_version` and `ota_status: downloading`.
-5. **Watch:** the S3 log shows the hop, the HTTP status, the download size and the reboot. After reboot: `New firmware verified — rollback cancelled`, then `Booted after OTA to 1.2.0: running 1.2.0 (applied)`.
-6. **The result reaches the backend** through the C6 (batch `ota_result`):
+3. **Approve** it (Admin → **Firmware** → *Approve*). Only approved images can be pushed. *Deprecate* retires an image for new pushes without affecting devices already running it or about to install it.
+4. **Make sure the S3 has a gateway**: its `gateway_id` must point at the room's C6 (admin "link device"). Otherwise the prompt can't be delivered.
+5. **Push**: Admin → Modules → *Push OTA* offers the approved images for that device's type. API: `POST /api/admin/modules/{s3_id}/ota {"version": "1.2.0"}`, which returns 404 if no such image exists and 409 if it isn't approved. The response shows `pending_version` and `ota_status: downloading`.
+6. **Watch:** the S3 log shows the hop, the HTTP status, the download size and the reboot. After reboot: `New firmware verified — rollback cancelled`, then `Booted after OTA to 1.2.0: running 1.2.0 (applied)`.
+7. **The result reaches the backend** through the C6 (batch `ota_result`):
 
    | Report | Device row afterwards |
    |---|---|
@@ -44,6 +45,19 @@ flowchart TB
    | `failed` (before any reboot) | `ota_status: failed`, pending kept for a retry; the `esp_err_t` is in the activity log (`module.ota_result`) |
 
    Before v2.1 the S3 reported "applied" *before* rebooting, and the report never reached the backend: the C6 dropped it. Its version was a hand-edited `#define`, so after an update the backend kept offering the same image (#33).
+
+## Firmware page
+
+![Firmware page: an approved S3 image, marked latest](../assets/ui/firmware-page.png)
+
+Images are grouped by device type, newest first. For each image the page shows:
+- its status (*uploaded*, *approved*, *deprecated*), channel, size and short SHA-256;
+- how many devices run it or have it pending;
+- the build date and IDF version.
+
+**History** lists its upload, approval, pushes and the results devices reported. **Delete** is offered only for images that aren't approved, and the server still refuses it while any device runs the image or has it pending: that image is the way back.
+
+![Push OTA offers only approved images for the device's type](../assets/ui/firmware-push-dialog.png)
 
 ## Safety properties
 

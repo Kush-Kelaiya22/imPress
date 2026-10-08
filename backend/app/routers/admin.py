@@ -5,7 +5,7 @@ import hashlib
 import io
 import re
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import commit_or_conflict, get_db
 from ..models import (
-    User, ClassSession, Course, Student, StudentEnrollment, EspDevice, ActivityLog, FirmwareArtifact,
+    User, ClassSession, Course, Student, StudentEnrollment, EspDevice, ActivityLog,
 )
 from ..schemas import (
     AdminUserCreate, UserResponse, UserUpdate,
@@ -23,10 +23,10 @@ from ..schemas import (
     StudentRegister, StudentResponse, BulkStudentRegister, StudentEnroll,
     ActivityLogResponse,
     DeviceResponse, ModuleAccessUpdate, ModuleOtaRequest, ModuleLinkDevice,
-    ClassDevicesResponse, FirmwareArtifactResponse,
+    ClassDevicesResponse,
     CsvImportResult, CsvImportError,
 )
-from ..services.firmware_store import normalize_version, resolve as resolve_firmware, store_upload
+from ..services.firmware_store import normalize_version, resolve as resolve_firmware
 from ..services.mesh_bridge import send_command_to_devices
 from ..timeutil import istnow
 from ..auth import require_admin, require_teacher_or_admin
@@ -1150,8 +1150,11 @@ async def admin_push_ota(
     # the device then got 404 on download (#33).
     version = normalize_version(body.version)
     dt = (dev.device_type or "").lower()
-    if await resolve_firmware(db, dt, version) is None:
+    artifact = await resolve_firmware(db, dt, version, include_deprecated=True)
+    if artifact is None:
         raise HTTPException(404, f"No uploaded {dt or 'device'} firmware {version}; upload it first")
+    if artifact.status != "approved":
+        raise HTTPException(409, f"{dt} firmware {version} is {artifact.status}; only approved images can be pushed")
     body.version = version
 
     dev.pending_version = body.version
@@ -1185,59 +1188,6 @@ async def admin_push_ota(
             await db.commit()
 
     return _device_response(dev)
-
-
-async def _register_upload(db, user, file, **kw) -> FirmwareArtifactResponse:
-    artifact, created = await store_upload(db, file, user.id, **kw)
-    if created:
-        await log_activity(db, "firmware.upload", user.id, "firmware", artifact.id, {
-            "target": artifact.target, "version": artifact.version, "sha256": artifact.sha256,
-            "size": artifact.size, "filename": file.filename or ""})
-    await commit_or_conflict(db, "This version was registered by a concurrent upload; reload")
-    resp = FirmwareArtifactResponse.model_validate(artifact)
-    resp.created = created
-    return resp
-
-
-@router.post("/firmware", response_model=FirmwareArtifactResponse)
-async def admin_upload_firmware_image(
-    file: UploadFile = File(...),
-    channel: str = Form("stable"),
-    release_notes: str = Form(""),
-    user: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Upload a firmware image. Target, chip and version are read from the
-    image (422 if it isn't a valid imPress app image). Re-uploading identical
-    bytes is a no-op; a different image under an existing version is 409."""
-    return await _register_upload(db, user, file, channel=channel, release_notes=release_notes)
-
-
-@router.post("/firmware/upload", response_model=FirmwareArtifactResponse)
-async def admin_upload_firmware(
-    device_type: str = Form(...),
-    version: str = Form(...),
-    file: UploadFile = File(...),
-    user: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Pre-v2.1 form upload, kept for scripts: device_type and version must
-    match what the image says."""
-    if device_type not in ("c6", "s3", "student"):
-        raise HTTPException(400, "device_type must be c6 | s3 | student")
-    return await _register_upload(db, user, file, device_type=device_type, version=version)
-
-
-@router.get("/firmware", response_model=list[FirmwareArtifactResponse])
-async def admin_list_firmware(
-    target: str = Query("", description="c6 | s3 | student"),
-    user: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    q = select(FirmwareArtifact).order_by(FirmwareArtifact.target, FirmwareArtifact.uploaded_at.desc())
-    if target:
-        q = q.where(FirmwareArtifact.target == target)
-    return [FirmwareArtifactResponse.model_validate(a) for a in (await db.execute(q)).scalars()]
 
 
 @router.post("/modules/{device_id}/verify", response_model=DeviceResponse)

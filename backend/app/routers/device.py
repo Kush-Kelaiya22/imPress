@@ -252,7 +252,9 @@ async def firmware_download(mac_address: str, version: str,
     if version != device.pending_version:
         raise HTTPException(403, "Requested version does not match pending OTA")
 
-    artifact = await resolve_firmware(db, (device.device_type or "").lower(), version)
+    # deprecated images stay downloadable for an update already pushed:
+    # deprecating must not strand a device mid-update
+    artifact = await resolve_firmware(db, (device.device_type or "").lower(), version, include_deprecated=True)
     if artifact is None:
         raise HTTPException(404, f"No registered {device.device_type} firmware {version}")
     path = artifact_file(artifact)

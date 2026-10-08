@@ -587,6 +587,9 @@ class FirmwareArtifactResponse(BaseModel):
     approved_at: Optional[datetime] = None
     deprecated_at: Optional[datetime] = None
     created: Optional[bool] = None     # upload response: false = these bytes were already registered
+    devices_running: int = 0           # devices whose firmware_version is this
+    devices_pending: int = 0           # devices about to install it
+    latest_approved: bool = False      # highest approved version for its target
 
     model_config = {"from_attributes": True}
 

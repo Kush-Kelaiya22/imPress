@@ -15,6 +15,7 @@ const routes = {
   '#/classes': renderClasses,
   '#/class': renderClassDetail,
   '#/admin/modules': renderAdminModules,
+  '#/admin/firmware': renderAdminFirmware,
   '#/settings': renderSettings,
   '#/quiz': renderQuizCreate,
   '#/poll': renderPollCreate,
@@ -181,6 +182,7 @@ function renderNavbar(user, currentHash) {
     links.push({ href: '#/admin/students', label: '🎓 Students', active: currentHash === '#/admin/students' });
     links.push({ href: '#/admin/classes', label: '🏫 Classrooms', active: currentHash === '#/admin/classes' });
     links.push({ href: '#/admin/modules', label: '📡 Modules', active: currentHash === '#/admin/modules' });
+    links.push({ href: '#/admin/firmware', label: '💾 Firmware', active: currentHash === '#/admin/firmware' });
     links.push({ href: '#/admin/users', label: '👥 Users', active: currentHash === '#/admin/users' });
     links.push({ href: '#/admin/activity', label: '📋 Activity', active: currentHash === '#/admin/activity' });
   } else {
@@ -2063,7 +2065,7 @@ async function renderAdminModules(app) {
                   <td class="text-sm text-center">${d.free_heap ? formatBytes(d.free_heap) : '—'}</td>
                   <td class="text-sm text-center">${d.total_flash ? formatBytes(d.total_flash) : '—'}</td>
                   <td class="nowrap">
-                    <button class="btn btn-xs btn-outline" onclick="window._pushOta(${d.id}, '${escHtml(d.device_name || d.mac_address).replace(/'/g, "\\'")}')">Push OTA</button>
+                    <button class="btn btn-xs btn-outline" onclick="window._pushOta(${d.id}, '${escHtml(d.device_name || d.mac_address).replace(/'/g, "\\'")}', '${escHtml(d.device_type)}', '${escHtml(d.firmware_version || '')}')">Push OTA</button>
                     ${d.is_active && !d.verified_at ? `<button class="btn btn-xs btn-outline" onclick="window._verifyModule(${d.id})">Verify</button>` : ''}
                   </td>
                 </tr>
@@ -2074,6 +2076,151 @@ async function renderAdminModules(app) {
       </div>
     </div>
   `;
+}
+
+// ── Firmware manager (#35/#36) ─────────────────────────────────
+
+async function renderAdminFirmware(app) {
+  const user = await authApi.me();
+  const images = await firmwareApi.list();
+  const badge = { uploaded: 'badge-outline', approved: 'badge-success', deprecated: 'badge-danger' };
+  const targets = { c6: 'C6 gateway', s3: 'S3 hub', student: 'Student module' };
+
+  app.innerHTML = `
+    ${renderNavbar(user, '#/admin/firmware')}
+    <div class="container mt-2">
+      <div class="page-header">
+        <h1>Firmware</h1>
+        <p class="text-muted">Upload, approve and retire images. Only approved images can be pushed to devices.</p>
+      </div>
+
+      <div class="card" id="fw-upload">
+        <div class="card-header"><h2>Upload an image</h2></div>
+        <div style="padding:1rem">
+          <p class="form-hint" style="margin-top:0">
+            The app <strong>.bin</strong> from <code>firmware/&lt;project&gt;/build/</code>. Device type, chip and version are read
+            from the image itself; anything that isn't a valid, uncorrupted imPress image is refused. To publish a fix,
+            bump <code>version.txt</code> and rebuild: an existing version can't be replaced.
+          </p>
+          <div class="csv-drop" id="fw-drop" role="button" tabindex="0" aria-label="Choose a firmware image">
+            <p style="margin:0 0 0.5rem">Drop a firmware .bin here or click to browse</p>
+            <input type="file" id="fw-file" accept=".bin,application/octet-stream" />
+            <button type="button" class="btn btn-sm btn-outline" id="fw-browse">Choose File</button>
+          </div>
+          <progress id="fw-progress" class="hidden" max="100" value="0" style="width:100%;margin-top:0.5rem"></progress>
+          <div id="fw-result" class="mt-1" aria-live="polite"></div>
+        </div>
+      </div>
+
+      ${Object.entries(targets).map(([t, label]) => {
+        const rows = images.filter(a => a.target === t);
+        return `
+        <div class="card mt-2">
+          <div class="card-header"><h2>${label} <span class="text-muted text-sm">(${t})</span></h2></div>
+          ${rows.length === 0 ? '<p class="text-muted" style="padding:1rem">No images yet.</p>' : `
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>Version</th><th>Status</th><th>Devices</th><th>Build</th><th>Notes</th><th></th></tr></thead>
+            <tbody>${rows.map(a => `
+              <tr data-fw="${a.id}">
+                <td><strong>v${escHtml(a.version)}</strong>${a.latest_approved ? ' <span class="badge badge-sm badge-primary">latest</span>' : ''}
+                  <br><span class="text-muted text-sm" title="${escHtml(a.sha256)}">${formatBytes(a.size)} · ${escHtml(a.sha256.slice(0, 12))}…</span></td>
+                <td><span class="badge ${badge[a.status]}">${escHtml(a.status)}</span>
+                  ${a.channel !== 'stable' ? `<span class="badge badge-sm badge-outline">${escHtml(a.channel)}</span>` : ''}
+                  ${a.legacy ? '<span class="badge badge-sm badge-outline" title="Adopted from the pre-v2.1 store">legacy</span>' : ''}</td>
+                <td class="text-sm">${a.devices_running} running${a.devices_pending ? `<br>${a.devices_pending} pending` : ''}</td>
+                <td class="text-sm">${escHtml(a.build_date)}<br><span class="text-muted">IDF ${escHtml(a.idf_version)}</span></td>
+                <td class="text-sm">${escHtml(a.release_notes || '—')}</td>
+                <td><div class="flex gap-1" style="flex-wrap:wrap">
+                  ${a.status !== 'approved' ? `<button class="btn btn-xs btn-primary" data-act="approve">Approve</button>` : ''}
+                  ${a.status !== 'deprecated' ? `<button class="btn btn-xs btn-outline" data-act="deprecate">Deprecate</button>` : ''}
+                  <button class="btn btn-xs btn-outline" data-act="notes">Notes</button>
+                  <button class="btn btn-xs btn-outline" data-act="history">History</button>
+                  ${a.status !== 'approved' ? `<button class="btn btn-xs btn-outline text-danger" data-act="delete">Delete</button>` : ''}
+                </div></td>
+              </tr>`).join('')}
+            </tbody>
+          </table></div>`}
+        </div>`;
+      }).join('')}
+    </div>`;
+
+  // actions
+  document.querySelectorAll('[data-fw] [data-act]').forEach(btn => {
+    btn.onclick = async () => {
+      const id = Number(btn.closest('[data-fw]').dataset.fw);
+      const a = images.find(x => x.id === id);
+      try {
+        if (btn.dataset.act === 'approve') {
+          await firmwareApi.approve(id);
+          showToast(`v${a.version} approved`, 'success');
+        } else if (btn.dataset.act === 'deprecate') {
+          if (!confirm(`Deprecate ${a.target} v${a.version}? It can no longer be pushed; devices running it are not affected.`)) return;
+          await firmwareApi.deprecate(id);
+        } else if (btn.dataset.act === 'delete') {
+          if (!confirm(`Delete ${a.target} v${a.version} permanently?`)) return;
+          await firmwareApi.remove(id);
+          showToast('Image deleted', 'success');
+        } else if (btn.dataset.act === 'notes') {
+          const notes = prompt('Release notes', a.release_notes || '');
+          if (notes === null) return;
+          await firmwareApi.update(id, { release_notes: notes });
+        } else if (btn.dataset.act === 'history') {
+          return showFirmwareHistory(id);
+        }
+        renderAdminFirmware(app);
+      } catch (err) { showToast(err.message, 'error'); }
+    };
+  });
+
+  // upload
+  const drop = document.getElementById('fw-drop');
+  const input = document.getElementById('fw-file');
+  const progress = document.getElementById('fw-progress');
+  const result = document.getElementById('fw-result');
+  document.getElementById('fw-browse').onclick = (e) => { e.stopPropagation(); input.click(); };
+  drop.onclick = () => input.click();
+  drop.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } };
+  drop.ondragover = (e) => { e.preventDefault(); drop.style.borderColor = 'var(--primary)'; };
+  drop.ondragleave = () => { drop.style.borderColor = ''; };
+  drop.ondrop = (e) => { e.preventDefault(); drop.style.borderColor = ''; if (e.dataTransfer.files.length) upload(e.dataTransfer.files[0]); };
+  input.onchange = () => { if (input.files[0]) upload(input.files[0]); input.value = ''; };
+
+  async function upload(file) {
+    result.innerHTML = `<p class="text-muted text-sm">Uploading and checking ${escHtml(file.name)}…</p>`;
+    progress.value = 0;
+    progress.classList.remove('hidden');
+    try {
+      const a = await firmwareApi.upload(file, (p) => { progress.value = p; });
+      showToast(a.created ? `${targets[a.target]} v${a.version} uploaded; approve it to make it pushable`
+                          : `This exact image is already registered (${a.target} v${a.version})`, a.created ? 'success' : 'info');
+      renderAdminFirmware(app);
+    } catch (err) {
+      result.innerHTML = `<p class="text-danger">${escHtml(err.message)}</p>`;
+    } finally {
+      progress.classList.add('hidden');
+    }
+  }
+}
+
+async function showFirmwareHistory(id) {
+  const d = await firmwareApi.detail(id);
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = `
+    <div class="modal-backdrop"></div>
+    <div class="modal-content card" style="max-width:640px">
+      <h2 style="margin-top:0">${escHtml(d.artifact.target)} v${escHtml(d.artifact.version)}</h2>
+      <p class="text-sm text-muted" style="overflow-wrap:anywhere">sha256 ${escHtml(d.artifact.sha256)}<br>
+        ${escHtml(d.artifact.project)} · ${escHtml(d.artifact.chip)} · IDF ${escHtml(d.artifact.idf_version)} · built ${escHtml(d.artifact.build_date)}</p>
+      <h3>Devices</h3>
+      ${d.devices.length ? `<ul class="text-sm">${d.devices.map(x => `<li>${escHtml(x.device_name || x.mac_address)}: running v${escHtml(x.firmware_version)}${x.pending_version ? `, pending v${escHtml(x.pending_version)} (${escHtml(x.ota_status)})` : ''}</li>`).join('')}</ul>` : '<p class="text-muted text-sm">None.</p>'}
+      <h3>History</h3>
+      ${d.history.length ? `<ul class="text-sm">${d.history.map(x => `<li>${escHtml(String(x.timestamp).replace('T', ' ').slice(0, 19))} · ${escHtml(x.action)}${x.details && x.details.result ? ` · ${escHtml(x.details.result)}` : ''}</li>`).join('')}</ul>` : '<p class="text-muted text-sm">Nothing yet.</p>'}
+      <button class="btn btn-outline mt-1" id="fw-history-close">Close</button>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('.modal-backdrop').onclick = () => modal.remove();
+  modal.querySelector('#fw-history-close').onclick = () => modal.remove();
 }
 
 // Helpers
@@ -2092,14 +2239,44 @@ window._verifyModule = async function (deviceId) {
   } catch (err) { showToast(err.message, 'error'); }
 };
 
-window._pushOta = async function (deviceId, name) {
-  const version = prompt(`Push firmware version to ${name || `device #${deviceId}`}:`, '1.0.0');
-  if (!version) return;
-  try {
-    await modulesApi.pushOta(deviceId, version.trim());
-    showToast(`OTA v${version.trim()} queued`, 'success');
-    renderAdminModules(document.getElementById('app'));
-  } catch (err) { showToast(err.message, 'error'); }
+window._pushOta = async function (deviceId, name, deviceType, current) {
+  // pick from the APPROVED images for this device's type (#36); a free-text
+  // version used to be accepted even when no such image existed
+  let images;
+  try { images = (await firmwareApi.list(deviceType)).filter(a => a.status === 'approved'); }
+  catch (err) { showToast(err.message, 'error'); return; }
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = `
+    <div class="modal-backdrop"></div>
+    <div class="modal-content card">
+      <h2 style="margin-top:0">Update ${escHtml(name)}</h2>
+      <p class="text-muted text-sm">${escHtml(deviceType)} · running v${escHtml(current || '?')}</p>
+      ${images.length ? `
+        <div class="form-group">
+          <label for="ota-version">Approved firmware</label>
+          <select id="ota-version">${images.map(a => `<option value="${escHtml(a.version)}">v${escHtml(a.version)}${a.latest_approved ? ' (latest)' : ''} · ${escHtml(a.channel)} · ${formatBytes(a.size)}</option>`).join('')}</select>
+        </div>
+        <div class="flex gap-1"><button class="btn btn-primary" id="ota-go">Push update</button>
+        <button class="btn btn-outline" id="ota-cancel">Cancel</button></div>`
+      : `<p>No approved ${escHtml(deviceType)} firmware yet. Upload and approve one on the <a href="#/admin/firmware">Firmware</a> page.</p>
+         <button class="btn btn-outline" id="ota-cancel">Close</button>`}
+    </div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelector('.modal-backdrop').onclick = close;
+  modal.querySelector('#ota-cancel').onclick = close;
+  const go = modal.querySelector('#ota-go');
+  if (go) go.onclick = async () => {
+    const version = modal.querySelector('#ota-version').value;
+    go.disabled = true;
+    try {
+      await modulesApi.pushOta(deviceId, version);
+      close();
+      showToast(`Update to v${version} queued`, 'success');
+      renderAdminModules(document.getElementById('app'));
+    } catch (err) { go.disabled = false; showToast(err.message, 'error'); }
+  };
 };
 
 // ── Faculty: Class List ───────────────────────────────────────

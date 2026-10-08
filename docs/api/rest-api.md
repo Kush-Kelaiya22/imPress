@@ -304,8 +304,13 @@ stateDiagram-v2
 | `POST /api/admin/modules/{node_id}/link-device` · `POST /api/admin/modules/{id}/unlink` | admin | set/clear `gateway_id` relations |
 | `POST /api/admin/firmware` | admin | *multipart* `file`, optional `channel` (`stable`/`beta`), `release_notes`. The file must be a valid imPress ESP-IDF app image. **Target, chip and version are read from the image** (see below). Returns `FirmwareArtifactResponse` with `created`: identical bytes → `created: false`; a different image for an existing target+version → **409**; invalid → **422** with the reason; > 4 MB → 413 |
 | `POST /api/admin/firmware/upload` | admin | pre-v2.1 form: `device_type`, `version`, `file`. Same validation; the form values must match the image (422 otherwise) |
-| `GET /api/admin/firmware?target=` | admin | registered images `[{id, sha256, size, target, chip, project, version, idf_version, build_date, elf_sha256, status, channel, release_notes, legacy, uploaded_by, uploaded_at, …}]` |
-| `POST /api/admin/modules/{id}/ota` | admin | `{version}` → `pending_version`. **404** unless a registered, non-deprecated image exists for the device's type and version (#33/#35). For an S3 with a gateway, sends `device_command ota_update` to the gateway's class room |
+| `GET /api/admin/firmware?target=` | admin | registered images, newest version first per target: `[{id, sha256, size, target, chip, project, version, idf_version, build_date, elf_sha256, status, channel, release_notes, legacy, uploaded_by, uploaded_at, approved_by, approved_at, deprecated_at, devices_running, devices_pending, latest_approved}]` |
+| `GET /api/admin/firmware/{id}` | admin | `{artifact, devices: [{id, mac_address, device_name, firmware_version, pending_version, ota_status, is_connected}], history: [{action, timestamp, user_id, device_id, details}]}`: devices running or pending this version, plus upload / approval / push / result events |
+| `POST /api/admin/firmware/{id}/approve` | admin | `uploaded`/`deprecated` → **approved** (pushable). Idempotent |
+| `POST /api/admin/firmware/{id}/deprecate` | admin | → **deprecated**: no new pushes; devices running it, or with it already pending, are unaffected (it stays downloadable for them) |
+| `PATCH /api/admin/firmware/{id}` | admin | `{channel: stable\|beta, release_notes}` only; the binary and its facts are immutable |
+| `DELETE /api/admin/firmware/{id}` | admin | **409** while approved (deprecate first), or while any device runs it or has it pending (kept as the recovery path); otherwise removes the row and the file |
+| `POST /api/admin/modules/{id}/ota` | admin | `{version}` → `pending_version`. **404** unless an image exists for the device's type and version (#33/#35); **409** unless it is **approved** (#36). For an S3 with a gateway, sends `device_command ota_update` to the gateway's class room |
 | `GET /api/admin/activity` | admin | activity log |
 
 **What makes an upload valid** (`services/firmware_image.py`, #35):
