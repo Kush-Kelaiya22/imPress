@@ -286,7 +286,7 @@ More: [troubleshooting guide](docs/guides/troubleshooting.md), [known issues](do
 | **Testing** | [Test strategy](docs/testing/TEST_STRATEGY.md) · [Hardware validation](docs/testing/HARDWARE_VALIDATION.md) |
 | **Engineering** | [System audit](docs/engineering/SYSTEM_AUDIT.md) · [v2 / v3 comparison](docs/engineering/V2_V3_COMPARISON.md) · [Database migrations](docs/engineering/DATABASE_MIGRATIONS.md) |
 | **Reference** | [Data model](docs/reference/data-model.md) · [Hardware and wiring](docs/reference/hardware.md) · [Known issues](docs/reference/known-issues.md) |
-| **Project policies** | [Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Version policy and history](Version.md) |
+| **Project policies** | [Contributing](CONTRIBUTING.md) · [Version policy and history](CONTRIBUTING.md#14-version-policy-and-change-history) · [Code of Conduct](CODE_OF_CONDUCT.md) |
 
 The [documentation index](docs/README.md) describes when to read each page. The **[wiki](https://github.com/Kush-Kelaiya22/imPress/wiki)** covers the same ground as step-by-step guides for administrators, teachers, operators and developers.
 
@@ -310,7 +310,6 @@ imPress/
 ├── tests/                  repository, CI and documentation checks
 ├── ui_tests/               Playwright browser checks
 ├── VERSION                 release version (2.1.0)
-├── Version.md              version policy and change history
 ├── CONTRIBUTING.md         contributor workflow and engineering rules
 ├── CODE_OF_CONDUCT.md      community standards and enforcement
 ├── run_tests.py            unified test runner
