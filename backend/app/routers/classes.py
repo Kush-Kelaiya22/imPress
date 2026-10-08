@@ -8,11 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db
 from ..models import User, ClassSession, StudentEnrollment, EspDevice
 from ..schemas import ClassCreate, ClassJoin, ClassResponse, DeviceTreeResponse, DeviceTreeNode
-from ..auth import get_current_user, require_teacher_or_admin
+from ..auth import require_teacher_or_admin
 from ..activity import log_activity
 from ..schedule import find_schedule_conflicts
 from ..services.presence import presence_snapshot
-from sqlalchemy import select
 
 router = APIRouter(prefix="/api/classes", tags=["classes"])
 

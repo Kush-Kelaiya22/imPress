@@ -1,7 +1,10 @@
 name: CI
 
+# Pull requests get CI through `pull_request`; pushes only run on long-lived
+# branches, so a PR branch isn't built twice per push.
 on:
   push:
+    branches: [main, v2, v3, "varun/**"]
   pull_request:
   workflow_dispatch:
 
@@ -20,49 +23,73 @@ env:
   FORCE_COLOR: "1"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
+# Third-party actions and images are pinned to immutable commits/digests;
+# the trailing comment names the release. Update them together.
 jobs:
   repo:
     name: Repository and CI checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: backend/requirements*.txt
-      - name: Install dependencies
-        run: pip install -r backend/requirements-dev.txt
+          cache-dependency-path: backend/requirements-lock.txt
+      - name: Install locked dependencies
+        run: pip install --require-hashes -r backend/requirements-lock.txt
       - name: Lint workflow (actionlint + shellcheck)
-        run: docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.12 -no-color
+        run: docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -no-color
+      - name: Lint Python (ruff, pyflakes rules)
+        run: ruff check --output-format github .
       - name: Byte-compile sources
         run: python -m compileall -q backend/app run_tests.py tests firmware/tests
       - name: Repository, CI and docs checks
         run: python run_tests.py --suite repo --junit-dir reports
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: junit-repo
           path: reports/
           retention-days: 14
 
+  security:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Python dependencies (pip-audit, locked set)
+        run: |
+          pip install "pip-audit>=2.7"
+          pip-audit --strict --disable-pip --require-hashes -r backend/requirements-lock.txt
+      - name: Frontend dependencies (npm audit, high and critical)
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
   backend:
     name: Backend tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: backend/requirements*.txt
-      - name: Install dependencies
-        run: pip install -r backend/requirements-dev.txt
-      - name: pytest backend/tests
-        run: python run_tests.py --suite backend --junit-dir reports
-      - uses: actions/upload-artifact@v4
+          cache-dependency-path: backend/requirements-lock.txt
+      - name: Install locked dependencies
+        run: pip install --require-hashes -r backend/requirements-lock.txt
+      - name: pytest backend/tests (with coverage)
+        run: python run_tests.py --suite backend --junit-dir reports --coverage reports
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: junit-backend
@@ -74,8 +101,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install pytest
@@ -88,8 +115,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Host C suites
@@ -99,13 +126,13 @@ jobs:
     name: ESP-IDF v6.1 build (${{ matrix.project }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    container: espressif/idf:v6.1
+    container: espressif/idf:v6.1@sha256:81893c71bb5e570088901f21def8684c25cd2a9020281bd01b843a7655edb18c
     strategy:
       fail-fast: false
       matrix:
         project: [class_c6, class_s3, student]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: idf.py build
         shell: bash
         run: |
@@ -118,13 +145,19 @@ jobs:
           . "$IDF_PATH/export.sh" >/dev/null
           cd firmware/${{ matrix.project }}
           idf.py size | tee -a "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - name: Image checksums
+        shell: bash
+        run: |
+          cd firmware/${{ matrix.project }}/build
+          sha256sum ./*.bin bootloader/bootloader.bin partition_table/partition-table.bin | tee SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: firmware-${{ matrix.project }}
           path: |
             firmware/${{ matrix.project }}/build/*.bin
             firmware/${{ matrix.project }}/build/bootloader/bootloader.bin
             firmware/${{ matrix.project }}/build/partition_table/partition-table.bin
+            firmware/${{ matrix.project }}/build/SHA256SUMS
           retention-days: 7
           if-no-files-found: error
 
@@ -133,17 +166,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - name: npm install + vite build
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: npm ci + vite build
         run: python3 run_tests.py --suite frontend
 
   result:
     name: CI result
     if: always()
-    needs: [repo, backend, firmware-static, firmware-host, firmware-build, frontend]
+    needs: [repo, security, backend, firmware-static, firmware-host, firmware-build, frontend]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

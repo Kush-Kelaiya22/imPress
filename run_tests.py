@@ -39,7 +39,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-IDF_IMAGE = "espressif/idf:v6.1"
+# Same pinned image as the CI build job (tag for humans, digest for reproducibility).
+IDF_IMAGE = "espressif/idf:v6.1@sha256:81893c71bb5e570088901f21def8684c25cd2a9020281bd01b843a7655edb18c"
 IDF_PROJECTS = ("class_c6", "class_s3", "student")
 HEARTBEAT_SECONDS = 30.0      # progress line interval when stdout is not a terminal (CI)
 
@@ -80,6 +81,7 @@ class SuiteResult:
     cases: list[CaseResult] = field(default_factory=list)
     reason: str = ""          # why skipped / how it failed
     output_tail: str = ""
+    coverage: float | None = None   # line coverage %, when --coverage was used
 
     @property
     def total(self) -> int:
@@ -114,8 +116,11 @@ def discover() -> list[Suite]:
     for project in IDF_PROJECTS:
         suites.append(Suite(f"idf:{project}", "cmd", f"ESP-IDF v6.1 build: {project}",
                             [], optional=True))
-    suites.append(Suite("frontend", "cmd", "Frontend build (npm install + vite build)",
-                        ["sh", "-c", "npm install --no-audit --no-fund --no-package-lock --loglevel=error && npm run build"],
+    # npm ci installs exactly the committed lockfile and never rewrites it
+    install = ("npm ci --no-audit --no-fund --loglevel=error" if (ROOT / "frontend/package-lock.json").exists()
+               else "npm install --no-audit --no-fund --no-package-lock --loglevel=error")
+    suites.append(Suite("frontend", "cmd", "Frontend build (npm ci + vite build)",
+                        ["sh", "-c", f"{install} && npm run build"],
                         cwd=ROOT / "frontend", optional=True, requires=["npm"]))
     return suites
 
@@ -273,6 +278,9 @@ def run_streaming(cmd, cwd, env, verbose=False, live=False, timeout=0.0) -> tupl
     except KeyboardInterrupt:
         aborted = "interrupted"
         _stop(proc)
+    except BaseException:                 # e.g. BrokenPipeError on the status line
+        _stop(proc)                       # never leave the suite running orphaned
+        raise
     finally:
         if live:
             sys.stdout.write("\r" + " " * width + "\r")
@@ -282,8 +290,16 @@ def run_streaming(cmd, cwd, env, verbose=False, live=False, timeout=0.0) -> tupl
     return proc.returncode, b"".join(chunks).decode(errors="replace"), aborted
 
 
+COVERAGE_SOURCES = {"backend": "backend/app"}   # pytest suites measured with --coverage
+
+
+def parse_coverage(path: Path) -> float:
+    """Total line coverage (%) from a Cobertura XML report (pytest-cov)."""
+    return round(float(ET.parse(path).getroot().get("line-rate", 0)) * 100, 1)
+
+
 def run_suite(suite: Suite, junit_dir: Path | None, verbose: bool, live: bool = False,
-              timeout: float = 0.0) -> SuiteResult:
+              timeout: float = 0.0, coverage_dir: Path | None = None) -> SuiteResult:
     cmd = list(suite.cmd)
     if suite.name.startswith("idf:"):
         cmd, why = _idf_command(suite.name.split(":", 1)[1])
@@ -316,6 +332,11 @@ def run_suite(suite: Suite, junit_dir: Path | None, verbose: bool, live: bool = 
         out_dir.mkdir(parents=True, exist_ok=True)
         xml_path = out_dir / f"{suite.name.replace(':', '_')}.xml"
         cmd += [f"--junitxml={xml_path}"]
+    cov_xml = None
+    if coverage_dir and suite.name in COVERAGE_SOURCES:
+        coverage_dir.mkdir(parents=True, exist_ok=True)
+        cov_xml = coverage_dir / f"coverage-{suite.name}.xml"
+        cmd += [f"--cov={COVERAGE_SOURCES[suite.name]}", f"--cov-report=xml:{cov_xml}", "--cov-report="]
 
     env = {**os.environ, "PYTHONUNBUFFERED": "1", **suite.env}
     start = time.perf_counter()
@@ -332,6 +353,8 @@ def run_suite(suite: Suite, junit_dir: Path | None, verbose: bool, live: bool = 
         cases = [CaseResult(suite.name, "passed" if returncode == 0 else "failed")]
 
     res = SuiteResult(suite.name, suite.description, "PASS", seconds, cases=cases)
+    if cov_xml and cov_xml.exists():
+        res.coverage = parse_coverage(cov_xml)
     res.passed = sum(c.status == "passed" for c in cases)
     res.failed = sum(c.status == "failed" for c in cases)
     res.skipped = sum(c.status == "skipped" for c in cases)
@@ -422,6 +445,10 @@ def markdown_report(results: list[SuiteResult], wall: float) -> str:
         lines += [f"- `{c.name}` {c.message}" for c in r.cases if c.status in ("failed", "error")][:20]
         if r.output_tail:
             lines += ["", "```", r.output_tail, "```"]
+    covered = [r for r in results if r.coverage is not None]
+    if covered:
+        lines += ["", "| Coverage | Lines |", "|---|---:|"]
+        lines += [f"| `{r.name}` ({COVERAGE_SOURCES.get(r.name, '')}) | {r.coverage}% |" for r in covered]
     lines += ["", f"Wall time: {wall:.1f}s"]
     return "\n".join(lines) + "\n"
 
@@ -454,6 +481,8 @@ def main(argv=None) -> int:
     ap.add_argument("--json", type=Path, help="write a machine-readable report")
     ap.add_argument("--markdown", type=Path, help="write a Markdown report (default: $GITHUB_STEP_SUMMARY if set)")
     ap.add_argument("--junit-dir", type=Path, help="keep pytest JUnit XML files here")
+    ap.add_argument("--coverage", type=Path, metavar="DIR",
+                    help="measure backend line coverage (pytest-cov); XML report written to DIR")
     ap.add_argument("--no-color", action="store_true", help="disable ANSI colours (also honours NO_COLOR)")
     args = ap.parse_args(argv)
 
@@ -479,13 +508,15 @@ def main(argv=None) -> int:
         print(f"{paint('▶', '36')} {suite.name:<28} {paint(suite.description, '2')}", flush=True)
         try:
             res = run_suite(suite, args.junit_dir, args.verbose,
-                            live=sys.stdout.isatty() and not args.verbose, timeout=args.timeout)
+                            live=sys.stdout.isatty() and not args.verbose, timeout=args.timeout,
+                            coverage_dir=args.coverage)
         except KeyboardInterrupt:   # Ctrl-C outside the child process (preflight, parsing)
             res = SuiteResult(suite.name, suite.description, "FAIL", 0.0, errors=1, reason="interrupted")
         results.append(res)
         print(f"  {paint.status(res.status)} {fmt_secs(res.seconds).strip()}"
               + (f"  {res.passed} passed" if res.status != "SKIP" else f"  {res.reason}")
               + (paint(f", {res.failed + res.errors} failed", "31") if res.failed + res.errors else "")
+              + (f", coverage {res.coverage}%" if res.coverage is not None else "")
               + (paint(f"  ({res.reason})", "31") if res.status == "FAIL" and not res.reason.startswith("exit code")
                  else ""), flush=True)
         if res.reason == "interrupted":
@@ -512,4 +543,9 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except BrokenPipeError:
+        # stdout was piped into something that stopped reading (`| head`)
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        sys.exit(1)

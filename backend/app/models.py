@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models for imPress."""
 
 from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, DateTime, Date, ForeignKey, Text, JSON, Table
+    Column, Integer, String, Boolean, DateTime, Date, ForeignKey, Text, JSON, Table
 )
 from sqlalchemy.orm import relationship
 from .database import Base

@@ -5,13 +5,12 @@ the flow of questions from teacher → students and answers back.
 """
 
 import logging
-from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import Quiz, QuizQuestion, QuizAnswer, Poll, PollVote
+from ..models import Quiz, QuizQuestion, QuizAnswer, PollVote
 from ..ws.manager import manager
 
 logger = logging.getLogger(__name__)

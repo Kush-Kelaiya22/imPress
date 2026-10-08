@@ -15,7 +15,7 @@ from ..models import (
     Quiz, QuizQuestion, QuizAnswer, Poll, PollVote, Attendance, class_faculty,
 )
 from ..schemas import (
-    AdminUserCreate, SuperAdminUserCreate, UserResponse, UserUpdate,
+    AdminUserCreate, UserResponse, UserUpdate,
     PasswordReset,
     ClassCreate, ClassUpdate, ClassAssignTeacher, ClassResponse,
     ClassFacultyUpdate,
@@ -27,9 +27,8 @@ from ..schemas import (
 )
 from ..services.firmware_store import save_firmware
 from ..services.mesh_bridge import send_command_to_devices
-from ..config import settings
 from ..timeutil import istnow
-from ..auth import require_admin, require_super_admin, require_teacher_or_admin
+from ..auth import require_admin, require_teacher_or_admin
 from ..activity import log_activity
 from ..schedule import find_schedule_conflicts
 
