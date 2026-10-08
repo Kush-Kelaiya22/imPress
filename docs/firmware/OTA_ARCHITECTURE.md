@@ -24,6 +24,7 @@ flowchart LR
 | Deployment engine | `services/deployments.py`, `routers/deployments.py` | Per-device state machine, staged rollout, retries, timeouts, durability (#34, #38) |
 | Device reports | `POST /api/device/ota/status`, batch `ota_result`, `firmware/check`, `firmware/download` | Move a device through the states |
 | S3 client | `firmware/class_s3/main/ota.c` | Wi-Fi hop, HTTP status and size checks, `esp_ota_*`, result after reboot (#33) |
+| C6 client | `firmware/class_c6/main/ota.c`, `ota_logic.c` | check, download + SHA-256, verify, install, reboot, health check, report each step (#34) |
 
 ## Per-device state machine
 
@@ -100,10 +101,40 @@ flowchart LR
 | Device | Prompt | Download | Result | Status |
 |---|---|---|---|---|
 | S3 hub | WS `device_command ota_update` → its C6 → SPI `MSG_OTA_PROMPT` | Wi-Fi hop, `firmware/download` | after reboot, `MSG_OTA_APPLIED` record → C6 → batch `ota_result` | implemented (#33) |
-| C6 gateway | WS `ota_update` with its own MAC | `firmware/download` | `POST /api/device/ota/status` | client in progress (#34) |
+| C6 gateway | WS `ota_update` with its own MAC (and a check at every boot, for prompts missed while offline) | `firmware/download`, hashed while streaming | `POST /api/device/ota/status` for every step; after the reboot `health_check` → `success`, or `rolled_back` | implemented (#34): `firmware/class_c6/main/ota.c` |
 | Student module | – | – | – | **no OTA transport**: ESP-NOW frames are ≤ 250 bytes and there is no Wi-Fi provisioning; deployments exclude them. Update over serial. |
+
+## The C6 gateway's update
+
+```mermaid
+sequenceDiagram
+    participant BE as Backend
+    participant C6 as C6 (running v1)
+    participant BL as Bootloader
+    BE->>C6: WS ota_update {device_type: c6, mac}
+    C6->>BE: firmware/check → v2, sha256, size (precheck)
+    C6->>BE: GET firmware/download (downloading)
+    Note over C6: esp_ota_write into the inactive slot,<br/>PSA SHA-256 over the stream
+    C6->>BE: ota/status verifying
+    Note over C6: digest == offered sha256?<br/>esp_ota_end (chip, segments, appended hash)
+    C6->>BE: ota/status installing → rebooting
+    C6->>BL: reboot (NVS: ota_target = v2)
+    BL->>C6: boot v2 (PENDING_VERIFY)
+    Note over C6: SPI up, Wi-Fi up, register 200
+    C6->>BE: ota/status health_check
+    Note over C6: esp_ota_mark_app_valid_cancel_rollback
+    C6->>BE: ota/status success (version v2)
+    Note over C6,BL: no Wi-Fi/backend within 120 s → reboot →<br/>bootloader reverts → v1 reports rolled_back
+```
+
+Rules the code keeps, each with a structural test (`firmware/tests/test_c6_ota.py`) and host tests of the pure parts (`test_ota_logic.c`):
+- **An offer that can't be verified is ignored:** a missing or short SHA-256, a non-semver version, or a zero size.
+- **Nothing is written to flash on an HTTP error:** the status code and length are checked before `esp_ota_begin`.
+- **The order is fixed:** the image is checked against the backend's SHA-256, then `esp_ota_end`'s own checks; only then is it made bootable.
+- **Success comes from the new image:** after its health check.
+- **Watchdog:** an image that can't reach the network within 120 s is rebooted into the previous one, which reports `rolled_back`.
 
 ## What is and isn't verified
 
 - **Verified by automated tests:** image validation against real build output; the whole state machine and rollout logic against simulated devices (`test_deployments.py`, `ui_tests/test_deployments.py`); the S3 client's structure (`firmware/tests/test_ota_versioning.py`); IDF builds.
-- **Not yet verified on hardware:** an actual S3 or C6 update, a rollback after a crashing image, power loss mid-download. The bench checklist is in PR #55 and will move into the hardware validation matrix (#43).
+- **Not yet verified on hardware:** an actual S3 or C6 update, a rollback after a crashing image, power loss mid-download, the C6 health watchdog. The bench checklist is in PR #55 and will move into the hardware validation matrix (#43).

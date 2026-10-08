@@ -311,6 +311,18 @@ int http_send_attendance(const char *enrollment, const char *class_code)
     return _http_post(url, json);
 }
 
+int http_post_api(const char *path, const char *json, char *out, size_t out_size)
+{
+    char url[256];
+    _url(url, sizeof(url), path);
+    return _http_post_body(url, json, out, out_size);
+}
+
+void http_api_url(char *buf, size_t sz, const char *path)
+{
+    _url(buf, sz, path);
+}
+
 int http_send_batch(const char *json)
 {
     char url[256];

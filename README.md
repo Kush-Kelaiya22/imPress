@@ -48,7 +48,7 @@ Student modules never join Wi-Fi. They form an **ESP-NOW mesh** and relay each o
 | Mesh networking | Multi-hop ESP-NOW relaying (TTL 5) with de-duplication at the student, hub and server layers: one press is one answer |
 | Classroom management | Courses, classes with timetable clash warnings, CSV import of students and staff, enrollment, attendance, co-faculty |
 | Access control | `super_admin` > `admin` > `teacher`; server-side sessions with idle and absolute expiry; one class-access rule everywhere |
-| Device fleet | Live presence per class (gateway, hub, modules), telemetry, and OTA updates for the hub with automatic rollback |
+| Device fleet | Live presence per class (gateway, hub, modules), telemetry, and staged over-the-air updates for the hub and gateway with automatic rollback |
 
 ## Architecture
 

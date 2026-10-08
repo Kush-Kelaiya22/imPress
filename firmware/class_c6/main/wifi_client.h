@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -79,6 +80,16 @@ int http_send_attendance(const char *enrollment, const char *class_code);
  * @return HTTP status code
  */
 int http_send_batch(const char *json);
+
+/**
+ * @brief POST JSON to a backend API path (e.g. "/api/device/firmware/check").
+ * @param out       response body (NUL-terminated, truncated to out_size), may be NULL
+ * @return HTTP status, 0 on a transport error
+ */
+int http_post_api(const char *path, const char *json, char *out, size_t out_size);
+
+/** @brief Full backend URL for an API path. */
+void http_api_url(char *buf, size_t sz, const char *path);
 
 #ifdef __cplusplus
 }

@@ -1,6 +1,9 @@
 # OTA updates
 
-Over-the-air updates are implemented for the **S3 hub**. The C6 and student modules have dual OTA partitions but no OTA client yet, so update them over serial.
+Over-the-air updates are implemented for the **S3 hub** (Wi-Fi hop, #33) and the **C6 gateway** (direct, #34). Student modules have dual OTA partitions but no over-the-air transport (ESP-NOW frames are ≤ 250 bytes and they have no Wi-Fi credentials), so update them over serial; deployments exclude them. Design: [OTA architecture](../firmware/OTA_ARCHITECTURE.md).
+
+> [!IMPORTANT]
+> v2.1 enables **app rollback on the C6**, which changes its bootloader. Flash each C6 **once over serial** with this release; from then on it updates over the air.
 
 ## How it works
 

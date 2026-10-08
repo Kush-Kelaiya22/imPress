@@ -166,9 +166,11 @@ Each suite compiles **real firmware sources** with `-Wall -Wextra -Werror -fsani
 
 | Suite | Real code | Cases |
 |---|---|---|
-| `protocol/test_host/run.sh` | `protocol.c` | frame round-trip/CRC, limits, SPI record golden bytes, single + full-slot batch, truncation at every offset |
+| `protocol/test_host/run.sh` | `protocol.c` | frame round-trip/CRC, limits, SPI record golden bytes, single + full-slot batch, truncation at every offset; **SPI slot codec and FIFO** (CRC check value, golden layout, empty/full/corrupt/short-buffer, FIFO order, overflow, wrap-around) (#29) |
 | `protocol/test_host/run_mesh_dedup.sh` | `protocol.c` | message id ignores TTL/hops, window + wrap-around, ring eviction, **relay-storm simulation** (legacy vs new) |
-| `class_c6/test_host/run.sh` | `spi_slave.c` + fake pointer-retaining SPI driver | idle polling never overfills the queue; descriptor survives stack reuse (ASan use-after-return) |
+| `class_c6/test_host/run.sh` | `spi_slave.c` + fake pointer-retaining SPI driver | idle polling never overfills the queue; descriptor survives stack reuse (ASan use-after-return); back-to-back frames delivered in order; corrupted S3 slot rejected and the link recovers; FIFO full; ready line (#29) |
+| `class_c6/test_host/run_student_set.sh` | `student_set.c` | join/leave counts, heartbeats don't count students, S3 reboot clears the set, capacity, non-terminated radio input (#29) |
+| `class_c6/test_host/run_ota_logic.sh` | `ota_logic.c` + vendored cJSON | firmware/check offers parsed; unverifiable offers refused (no/short hash, non-semver, zero size); SHA-256 comparison; prompts routed to this C6, the S3, or ignored (#34) |
 | `class_c6/test_host/run_ws_command.sh` | `ws_command.c` + vendored cJSON | the backend contract fixture → frames → student structs; malformed and edge inputs |
 | `class_c6/test_host/run_config.sh` | `config.c` + NVS fake | Kconfig defaults, NVS overlay, bad overrides fall back (#18), class id persistence, NVS recovery |
 | `student/test_host/run.sh` | `config.c` + NVS fake | identity format, placeholder, set-once, reboot persistence, clear/re-provision, profile push rules, NVS recovery |
