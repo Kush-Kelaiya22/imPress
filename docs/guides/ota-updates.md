@@ -13,25 +13,37 @@ flowchart TB
     S3 --> CK{"POST /firmware/check<br/>update_available?"}
     CK -- no --> DT["detach: unregister handlers · disconnect ·<br/>restore mesh channel — NO reboot"]
     CK -- yes --> DL["GET /firmware/download (only the pending version is served)<br/>esp_ota_write → esp_ota_end → set boot partition"]
-    DL -- failure --> DT
-    DL -- ok --> AP["MSG_OTA_APPLIED → C6 · reboot"]
+    DL -- failure --> F["report FAILED + esp_err_t"] --> DT
+    DL -- ok --> AP["save target version in NVS · reboot"]
     AP --> B{"first boot of the new image<br/>(PENDING_VERIFY)"}
     B -- "mesh + SPI init OK" --> V["esp_ota_mark_app_valid_cancel_rollback()"]
     B -- "crash / reset before that" --> RB["bootloader rolls back to the previous image"]
+    V --> R["running version == target → report APPLIED"]
+    RB --> R2["running version != target → report ROLLED_BACK"]
+    R & R2 & F --> BE["SPI record → C6 → batch ota_result → backend<br/>firmware_version / ota_status updated"]
 ```
 
 ## Step by step
 
-1. **Build** with the version string bumped (`FIRMWARE_VERSION` in `firmware/class_s3/main/config.h`):
+1. **Build** with the version bumped in **`firmware/class_s3/version.txt`** (all three projects use `2.1.0` for this release). The build writes it into the image's app descriptor, and the firmware reports exactly that (`FIRMWARE_VERSION` is `esp_app_get_description()->version`):
    ```bash
    docker run --rm -v "$PWD/firmware":/project -w /project/class_s3 espressif/idf:v6.1 idf.py build
    # image: firmware/class_s3/build/impress_class_s3.bin
    ```
 2. **Upload** (admin): *multipart* `device_type=s3`, `version=1.2.0`, `file=@impress_class_s3.bin`. The version must be semver (`1.2.0` or `v1.2.0`). It is stored as `firmware_bins/s3-1.2.0.bin`.
 3. **Make sure the S3 has a gateway**: its `gateway_id` must point at the room's C6 (admin "link device"). Otherwise the prompt can't be delivered.
-4. **Push**: `POST /api/admin/modules/{s3_id}/ota {"version": "1.2.0"}`. The response shows `pending_version` and `ota_status: downloading`.
-5. **Watch:** the S3 log shows the hop, download size and reboot. After reboot: `New firmware verified — rollback cancelled`.
-6. The device row is updated by `/firmware/check` (current version). `/firmware/applied` is available for reporting.
+4. **Push**: `POST /api/admin/modules/{s3_id}/ota {"version": "1.2.0"}`. It is refused (404) unless that image was uploaded for the device's type. The response shows `pending_version` and `ota_status: downloading`.
+5. **Watch:** the S3 log shows the hop, the HTTP status, the download size and the reboot. After reboot: `New firmware verified — rollback cancelled`, then `Booted after OTA to 1.2.0: running 1.2.0 (applied)`.
+6. **The result reaches the backend** through the C6 (batch `ota_result`):
+
+   | Report | Device row afterwards |
+   |---|---|
+   | `applied` with the pushed version | `firmware_version` = it, `ota_status: applied`, pending cleared |
+   | `applied` with another version | `firmware_version` = what runs, `ota_status: failed` |
+   | `rolled_back` | `ota_status: rolled_back`, pending cleared (not offered again) |
+   | `failed` (before any reboot) | `ota_status: failed`, pending kept for a retry; the `esp_err_t` is in the activity log (`module.ota_result`) |
+
+   Before v2.1 the S3 reported "applied" *before* rebooting, and the report never reached the backend: the C6 dropped it. Its version was a hand-edited `#define`, so after an update the backend kept offering the same image (#33).
 
 ## Safety properties
 

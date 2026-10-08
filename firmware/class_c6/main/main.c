@@ -256,6 +256,27 @@ static cJSON *msg_to_json(msg_type_t type, const uint8_t *payload, uint16_t len,
         cJSON_AddStringToObject(j, "enrollment_number", (const char *)payload);
         break;
     }
+    case MSG_OTA_APPLIED: {
+        /* The S3's OTA outcome (applied after reboot / rolled back / failed).
+         * It was never relayed before, so the backend never saw an S3 update
+         * complete. */
+        if (len < sizeof(payload_ota_result_t)) break;
+        payload_ota_result_t r;
+        memcpy(&r, payload, sizeof(r));
+        r.version[sizeof(r.version) - 1] = '\0';
+        r.mac[sizeof(r.mac) - 1] = '\0';
+        static const char *const names[] = {"applied", "rolled_back", "failed"};
+        j = cJSON_CreateObject();
+        cJSON_AddStringToObject(j, "type", "ota_result");
+        cJSON_AddStringToObject(j, "mac_address", r.mac);
+        cJSON_AddStringToObject(j, "version", r.version);
+        cJSON_AddStringToObject(j, "result", r.result < 3 ? names[r.result] : "failed");
+        cJSON_AddNumberToObject(j, "error", r.error);
+        cJSON_AddStringToObject(j, "device_mac", s_mac_str);   /* relaying gateway */
+        ESP_LOGI(TAG, "S3 OTA result: %s %s (err %ld)", r.version,
+                 r.result < 3 ? names[r.result] : "?", (long)r.error);
+        break;
+    }
     case MSG_SPI_STATUS: {
         if (len < 2) break;
         j = cJSON_CreateObject();

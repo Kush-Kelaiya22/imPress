@@ -176,6 +176,7 @@ void app_main(void)
 
     /* Start tasks */
     xTaskCreate(spi_link_task, "spi_link", 4096, NULL, 5, NULL);
+    ota_report_boot_result();   /* queued on the SPI FIFO; the link task delivers it */
     xTaskCreate(heartbeat_task, "heartbeat", 2048, NULL, 3, NULL);
 
     /* Main loop: periodic status logging */

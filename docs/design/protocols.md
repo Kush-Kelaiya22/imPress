@@ -64,7 +64,7 @@ AA 22 00 12 | 03 00 | 01 | 41 42 43 44 45 31 32 33 34 35 00 | B1 C8 3F D5 | 68 9
 | `0x30` / `0x31` | `ACK` / `NACK` | diagnostics | – | 0 |
 | `0x40`–`0x42` | `SPI_AGGREGATE` / `SPI_COMMAND` / `SPI_STATUS` | C6 ↔ S3 internal | `SPI_COMMAND` carries a JSON string; `SPI_STATUS` byte 0 = status | ≤ 240 |
 | `0x50` | `OTA_PROMPT` | C6 → S3 | `version char[32] · token char[64]` | 96 |
-| `0x51` | `OTA_APPLIED` | S3 → C6 | same struct (version filled) | 96 |
+| `0x51` | `OTA_APPLIED` | S3 → C6 (SPI record, sender 0) | `payload_ota_result_t`: `version[32] · mac[13] (12 hex) · result u8 (0 applied, 1 rolled_back, 2 failed) · error i32 (esp_err_t)`; the C6 relays it as batch `ota_result` | 50 |
 
 Strings are NUL-terminated and zero-padded. Writers always use `strncpy(dst, src, sizeof dst - 1)` into a zeroed struct.
 

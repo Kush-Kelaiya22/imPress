@@ -10,12 +10,16 @@
 
 #pragma once
 
+#include "esp_app_desc.h"
 #include <stdbool.h>
 #include "driver/gpio.h"
 
 /* ── Device Identity ── */
 #define DEVICE_TYPE         "student"
-#define FIRMWARE_VERSION    "1.0.0"
+/* The version is the image's own (esp_app_desc_t), set from version.txt in
+ * the project root by the build. It is what the backend and OTA compare, so it
+ * can't drift from the binary the way a hand-edited #define did. */
+#define FIRMWARE_VERSION    (esp_app_get_description()->version)
 #define NVS_NAMESPACE       "impress"
 #define NVS_KEY_INIT        "init_done"      /* u8: 1 = provisioned */
 #define NVS_KEY_ENROLL      "enroll"         /* str 11 (10 + NUL) */

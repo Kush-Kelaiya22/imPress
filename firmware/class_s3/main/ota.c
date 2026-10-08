@@ -38,6 +38,9 @@
 #include "esp_ota_ops.h"
 #include "esp_efuse.h"
 #include "esp_mac.h"
+#include "esp_app_desc.h"
+#include "nvs.h"
+#include <stdlib.h>
 
 static const char *TAG = "s3_ota";
 
@@ -252,14 +255,38 @@ static int _firmware_check(const char *mac, const char *cur_version,
 
 /* ── OTA apply ────────────────────────────────────────────────────── */
 
+/* Report an OTA outcome to the backend: an SPI record from sender 0 (the
+ * C6 parses S3 slots as records; a bare frame was dropped) carrying
+ * MSG_OTA_APPLIED, relayed by the C6 as {"type": "ota_result", ...}. */
+static void _report_result(const char *version, ota_result_code_t result, esp_err_t err)
+{
+    payload_ota_result_t r = {0};
+    snprintf(r.version, sizeof(r.version), "%s", version ? version : "");
+    _get_mac(r.mac, sizeof(r.mac));
+    r.result = (uint8_t)result;
+    r.error = (int32_t)err;
+    uint8_t frame[MSG_MAX_SIZE];
+    int n = msg_encode(MSG_OTA_APPLIED, (const uint8_t *)&r, sizeof(r), frame, sizeof(frame));
+    static uint8_t rec[SPI_RECORD_HEADER_SIZE + MSG_MAX_SIZE];
+    int len = n > 0 ? spi_record_write(rec, sizeof(rec), 0, frame, (uint16_t)n) : -1;
+    if (len > 0) {
+        spi_master_send(rec, len);
+    }
+    ESP_LOGI(TAG, "OTA result %d for %s reported (err=%s)", result, r.version, esp_err_to_name(err));
+}
+
 static esp_err_t _download_and_apply(const char *mac, const char *version)
 {
     char url[320];
     _url(url, sizeof(url), "/api/device/firmware/download");
-    /* Append query params */
     char full_url[400];
-    snprintf(full_url, sizeof(full_url), "%s?mac_address=%s&version=%s",
-             url, mac, version);
+    snprintf(full_url, sizeof(full_url), "%s?mac_address=%s&version=%s", url, mac, version);
+
+    const esp_partition_t *update_part = esp_ota_get_next_update_partition(NULL);
+    if (!update_part) {
+        ESP_LOGE(TAG, "No OTA partition available");
+        return ESP_ERR_NOT_FOUND;
+    }
 
     esp_http_client_config_t config = {
         .url        = full_url,
@@ -271,73 +298,105 @@ static esp_err_t _download_and_apply(const char *mac, const char *version)
     if (!client) return ESP_FAIL;
     esp_http_client_set_header(client, "X-API-Key", g_cfg.api_key);
 
-    /* Get partition info */
-    const esp_partition_t *update_part = esp_ota_get_next_update_partition(NULL);
-    if (!update_part) {
-        esp_http_client_cleanup(client);
-        ESP_LOGE(TAG, "No OTA partition available");
-        return ESP_ERR_NOT_FOUND;
-    }
-    ESP_LOGI(TAG, "OTA target: %s @ 0x%lx", update_part->label,
-             (unsigned long)update_part->address);
-
-    esp_ota_handle_t ota_handle = 0;
-    esp_err_t ret = esp_ota_begin(update_part, OTA_SIZE_UNKNOWN, &ota_handle);
+    esp_err_t ret = esp_http_client_open(client, 0);
     if (ret != ESP_OK) {
         esp_http_client_cleanup(client);
         return ret;
     }
+    /* Check the response BEFORE touching flash: an error body (403/404 JSON)
+     * used to be streamed into the OTA partition. */
+    int64_t length = esp_http_client_fetch_headers(client);
+    int status = esp_http_client_get_status_code(client);
+    if (status != 200) {
+        ESP_LOGE(TAG, "Firmware download refused: HTTP %d", status);
+        esp_http_client_cleanup(client);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    if (length > 0 && length > (int64_t)update_part->size) {
+        ESP_LOGE(TAG, "Image of %lld bytes does not fit %s (%lu bytes)",
+                 (long long)length, update_part->label, (unsigned long)update_part->size);
+        esp_http_client_cleanup(client);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    ESP_LOGI(TAG, "OTA target: %s @ 0x%lx, %lld bytes", update_part->label,
+             (unsigned long)update_part->address, (long long)length);
 
+    esp_ota_handle_t ota_handle = 0;
+    ret = esp_ota_begin(update_part, length > 0 ? (size_t)length : OTA_SIZE_UNKNOWN, &ota_handle);
+    if (ret != ESP_OK) {
+        esp_http_client_cleanup(client);
+        return ret;
+    }
     char *buf = malloc(8192);
     if (!buf) {
         esp_ota_abort(ota_handle);
         esp_http_client_cleanup(client);
         return ESP_ERR_NO_MEM;
     }
-
-    esp_err_t err = esp_http_client_open(client, 0);
-    if (err != ESP_OK) {
-        free(buf);
-        esp_ota_abort(ota_handle);
-        esp_http_client_cleanup(client);
-        return err;
-    }
-
-    esp_http_client_fetch_headers(client);
-    int total = 0;
-    int n;
+    int total = 0, n;
     while ((n = esp_http_client_read(client, buf, 8192)) > 0) {
         ret = esp_ota_write(ota_handle, buf, n);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "esp_ota_write failed: %s", esp_err_to_name(ret));
-            free(buf);
-            esp_ota_abort(ota_handle);
-            esp_http_client_cleanup(client);
-            return ret;
+            break;
         }
         total += n;
     }
-
     free(buf);
+    bool complete = esp_http_client_is_complete_data_received(client);
     esp_http_client_cleanup(client);
+    if (ret != ESP_OK || n < 0 || !complete || (length > 0 && total != length)) {
+        ESP_LOGE(TAG, "Download incomplete: %d of %lld bytes", total, (long long)length);
+        esp_ota_abort(ota_handle);
+        return ret != ESP_OK ? ret : ESP_ERR_INVALID_SIZE;
+    }
 
-    /* The download endpoint is HTTP (no TLS for LAN) — esp_ota_end still needs
-     * to run before we commit the boot partition. */
+    /* esp_ota_end verifies the image: chip id, segments, appended SHA-256. */
     ret = esp_ota_end(ota_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_end failed: %s", esp_err_to_name(ret));
         return ret;
     }
-
     ret = esp_ota_set_boot_partition(update_part);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "esp_ota_set_boot_partition failed: %s",
-                 esp_err_to_name(ret));
+        ESP_LOGE(TAG, "esp_ota_set_boot_partition failed: %s", esp_err_to_name(ret));
         return ret;
     }
-
-    ESP_LOGI(TAG, "OTA complete: %d bytes, reboot into new firmware", total);
+    ESP_LOGI(TAG, "OTA written and verified: %d bytes", total);
     return ESP_OK;
+}
+
+/* The version we are about to boot into, kept across the reboot so the new
+ * image (or the old one, after a rollback) can report what really runs. */
+#define OTA_NVS_KEY "ota_target"
+
+static void _remember_target(const char *version)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_str(h, OTA_NVS_KEY, version);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+void ota_report_boot_result(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) return;
+    char target[32] = "";
+    size_t len = sizeof(target);
+    if (nvs_get_str(h, OTA_NVS_KEY, target, &len) == ESP_OK && target[0]) {
+        const char *running = esp_app_get_description()->version;
+        bool applied = strcmp(running, target) == 0;
+        ESP_LOGI(TAG, "Booted after OTA to %s: running %s (%s)", target, running,
+                 applied ? "applied" : "rolled back");
+        _report_result(applied ? running : target,
+                       applied ? OTA_RESULT_APPLIED : OTA_RESULT_ROLLED_BACK, ESP_OK);
+        nvs_erase_key(h, OTA_NVS_KEY);
+        nvs_commit(h);
+    }
+    nvs_close(h);
 }
 
 /* ── Public API ───────────────────────────────────────────────────── */
@@ -403,24 +462,16 @@ static void _ota_task(void *arg)
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "OTA failed: %s; staying on current firmware",
                  esp_err_to_name(ret));
+        _report_result(target_version, OTA_RESULT_FAILED, ret);
         _ota_finish_without_update();
         return;
     }
 
-    /* 5. Tell C6 so it can relay firmware/applied to the server. */
-    payload_ota_prompt_t ack;
-    memset(&ack, 0, sizeof(ack));
-    snprintf(ack.version, sizeof(ack.version), "%s", target_version);
-    /* MSG_OTA_APPLIED is a final ACK signal back to the C6 */
-    uint8_t encoded[MSG_MAX_SIZE];
-    int len = msg_encode(MSG_OTA_APPLIED, (const uint8_t *)&ack, sizeof(ack),
-                         encoded, sizeof(encoded));
-    if (len > 0) {
-        spi_master_send(encoded, len);
-    }
-
-    /* 6. Short delay for the C6 to pick up the ACK, then reboot. */
-    vTaskDelay(pdMS_TO_TICKS(1500));
+    /* 5. Success is reported by the new image after it boots and passes its
+     *    health check (ota_report_boot_result), not now: with app rollback
+     *    the image may never become the running one. */
+    _remember_target(target_version);
+    vTaskDelay(pdMS_TO_TICKS(500));
     ESP_LOGI(TAG, "Rebooting into new firmware ...");
     esp_restart();
 }

@@ -24,7 +24,7 @@ from ..schemas import (
     ClassDevicesResponse,
     CsvImportResult, CsvImportError,
 )
-from ..services.firmware_store import save_firmware
+from ..services.firmware_store import firmware_path, normalize_version, save_firmware
 from ..services.mesh_bridge import send_command_to_devices
 from ..timeutil import istnow
 from ..auth import require_admin, require_teacher_or_admin
@@ -1081,6 +1081,13 @@ async def admin_push_ota(
     dev = result.scalar_one_or_none()
     if not dev:
         raise HTTPException(404, "Module not found")
+    # A push used to accept any version string and show 'downloading' while
+    # the device then got 404 on download (#33).
+    version = normalize_version(body.version)
+    dt = (dev.device_type or "").lower()
+    if not firmware_path(dt, version).is_file():
+        raise HTTPException(404, f"No uploaded {dt or 'device'} firmware {version}; upload it first")
+    body.version = version
 
     dev.pending_version = body.version
     dev.ota_status = "downloading"

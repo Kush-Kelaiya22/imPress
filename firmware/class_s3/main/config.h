@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "esp_app_desc.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "esp_bit_defs.h"
@@ -20,7 +21,10 @@
 
 /* ── Device Identity ── */
 #define DEVICE_TYPE         "s3"
-#define FIRMWARE_VERSION    "0.1.0"
+/* The version is the image's own (esp_app_desc_t), set from version.txt in
+ * the project root by the build. It is what the backend and OTA compare, so it
+ * can't drift from the binary the way a hand-edited #define did. */
+#define FIRMWARE_VERSION    (esp_app_get_description()->version)
 
 /* ── NVS Namespace & Keys ── */
 #define NVS_NAMESPACE       "s3_cfg"

@@ -7,6 +7,7 @@ app is imported so pydantic-settings picks it up.
 
 import asyncio
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -44,6 +45,8 @@ async def _reset_db():
     from app.database import engine
     await engine.dispose()
     (_TMP / "test.db").unlink(missing_ok=True)
+    # uploaded firmware is state too: a file left by one test must not exist in the next
+    shutil.rmtree(_TMP / "firmware_bins", ignore_errors=True)
 
 
 # Fire-and-forget DB tasks the app spawns (presence pushes, WS presence
