@@ -312,6 +312,19 @@ typedef struct {
  */
 bool mesh_dedup_check(mesh_dedup_t *d, uint32_t id, uint32_t now_ms);
 
+/* ── Backend JSON responses ────────────────────────────────────────────
+ * The devices read one or two string fields from small backend responses
+ * (the device key from /register, #66). No cJSON on the S3.
+ */
+
+/**
+ * @brief Copy the string value of the top-level `"key": "value"` in json.
+ * @return its length, or -1 if absent, not a string, escaped, or longer
+ *         than out_len - 1 (out is then empty). Values with escapes are
+ *         refused rather than mis-decoded: the backend's keys never need them.
+ */
+int json_get_string(const char *json, const char *key, char *out, size_t out_len);
+
 #ifdef __cplusplus
 }
 #endif

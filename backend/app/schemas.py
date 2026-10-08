@@ -564,6 +564,9 @@ class DeviceResponse(BaseModel):
     # Telemetry from classroom node
     student_count: int = 0
     free_heap: int = 0
+    # Per-device key (#66): shared (none issued) | issued (not used yet) | active
+    key_state: str = "shared"
+    key_confirmed_at: Optional[datetime] = None
     # Health (#39): state + why, and the diagnostics behind it
     health: str = "UNKNOWN"
     health_reasons: list[str] = []

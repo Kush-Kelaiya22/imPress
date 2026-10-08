@@ -303,3 +303,34 @@ bool mesh_dedup_check(mesh_dedup_t *d, uint32_t id, uint32_t now_ms)
     d->next = (d->next + 1) % MESH_DEDUP_SLOTS;
     return false;
 }
+
+/* ── Backend JSON responses ─────────────────────────────────────────── */
+
+int json_get_string(const char *json, const char *key, char *out, size_t out_len)
+{
+    if (!out || out_len == 0) return -1;
+    out[0] = '\0';
+    if (!json || !key) return -1;
+    size_t klen = strlen(key);
+    for (const char *p = strchr(json, '"'); p; p = strchr(p + 1, '"')) {
+        if (strncmp(p + 1, key, klen) != 0 || p[1 + klen] != '"') continue;
+        const char *v = p + 2 + klen;
+        while (*v == ' ' || *v == '\t' || *v == '\r' || *v == '\n') v++;
+        if (*v != ':') continue;                 /* the key text appeared as a value */
+        v++;
+        while (*v == ' ' || *v == '\t' || *v == '\r' || *v == '\n') v++;
+        if (*v != '"') return -1;                /* null, number, object… */
+        v++;
+        size_t n = 0;
+        while (v[n] && v[n] != '"') {
+            if (v[n] == '\\' || (unsigned char)v[n] < 0x20) { out[0] = '\0'; return -1; }
+            if (n + 1 >= out_len) { out[0] = '\0'; return -1; }
+            out[n] = v[n];
+            n++;
+        }
+        if (v[n] != '"') { out[0] = '\0'; return -1; }   /* unterminated */
+        out[n] = '\0';
+        return (int)n;
+    }
+    return -1;
+}

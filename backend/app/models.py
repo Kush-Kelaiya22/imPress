@@ -127,6 +127,11 @@ class EspDevice(Base):
     ota_requested_at = Column(DateTime, nullable=True)
     verified_at = Column(DateTime, nullable=True)      # admin "verify" stamp
 
+    # Per-device key (#66): only its SHA-256 is stored. Active once used.
+    api_key_hash = Column(String(64), nullable=True, index=True)
+    key_issued_at = Column(DateTime, nullable=True)
+    key_confirmed_at = Column(DateTime, nullable=True)
+
     # Latest diagnostics from the gateway heartbeat (#39); NULL = not reported
     uptime_s = Column(Integer, nullable=True)
     reset_reason = Column(String(16), nullable=True)   # esp_reset_reason(): poweron, panic, task_wdt, brownout…

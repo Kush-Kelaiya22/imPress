@@ -28,7 +28,7 @@ flowchart LR
         API["FastAPI"] --- DB[("SQLite")]
     end
     M -- "no authentication on air" --> HUB
-    GW -- "X-API-Key (shared secret)" --> API
+    GW -- "X-API-Key (own device key; shared key only to enrol)" --> API
     HUB -- "X-API-Key" --> API
     BR -- "session token (TLS)" --> API
 ```
@@ -61,12 +61,13 @@ flowchart LR
 | T14 | Wrong, corrupt or foreign image offered to devices | Uploads are parsed as ESP-IDF app images (chip, project, semver version, appended SHA-256, slot size) and registered immutably (#35); downloads come from the registry, for the device's own type, with `X-Firmware-SHA256` | ✅ (authenticity still needs signing, T8) |
 | T12 | Teacher takes over another teacher's class with its join code | Joining by code only adds co-faculty; the primary teacher is never replaced (#19) | ✅ |
 | T13 | Reading other classes' questions, answers and results by enumerating ids | Quiz/poll details and results require class access (#20) | ✅ |
+| T15 | Impersonating a device with the shared key (a leaked key, or one read from any device's flash) | Per-device keys (#66): a device registers with the shared key and is issued its own; once used, only that key can act for its MAC, and only for that MAC. Admins can reset one device's key or disable one device without touching the others. `IMPRESS_DEVICE_KEYS_REQUIRED=true` limits the shared key to registration | ✅ (an unclaimed or reset device can still be claimed by whoever holds the shared key first) |
 
 ## Residual risks and recommended hardening
 
 1. **Sign OTA images.** Enable `CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT` (or Secure Boot v2) with an offline key. See the [OTA guide](../guides/ota-updates.md#signing-images).
 2. **TLS everywhere:** a reverse proxy for the backend, plus `cert_pem` in the firmware HTTP clients.
-3. **Per-device API keys** (rotation, revocation) instead of one shared key.
+3. ~~Per-device API keys~~: done in #66 (T15). Turn on `IMPRESS_DEVICE_KEYS_REQUIRED` once every device runs firmware with per-device keys.
 4. **Message authentication on the mesh** (e.g. a per-class key and HMAC over the frame) if answer spoofing becomes a concern. ESP-NOW also supports encrypted unicast peers, but not encrypted broadcast.
 5. **Purge git history** of the databases committed before v2 and rotate the affected passwords.
 

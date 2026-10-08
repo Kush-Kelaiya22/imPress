@@ -48,5 +48,11 @@ def test_health_badges_and_diagnostics_refresh(server, page):
     expect(_row(page, dialog, "Health")).to_contain_text("online")
     SHOTS.mkdir(exist_ok=True)
     dialog.screenshot(path=str(SHOTS / "diagnostics.png"))
+
+    # #66: registration issued this gateway its own key; resetting it is confirmed first
+    expect(_row(page, dialog, "Device key")).to_contain_text("issued")
+    page.once("dialog", lambda d: d.accept())
+    dialog.get_by_role("button", name="Reset key").click()
+    expect(_row(page, dialog, "Device key")).to_contain_text("shared key")
     dialog.get_by_role("button", name="Close").click()
     expect(page.locator(".modal")).to_have_count(0)

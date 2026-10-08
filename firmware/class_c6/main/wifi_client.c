@@ -8,6 +8,7 @@
 
 #include "wifi_client.h"
 #include "config.h"
+#include "protocol.h"     /* json_get_string */
 #include "esp_adc/adc_oneshot.h"
 
 #include <string.h>
@@ -162,6 +163,23 @@ static int _battery_pct(void)
 
 /* ── HTTP Helper ───────────────────────────────────────────────────── */
 
+/* Set when the backend refused this device's own key (#66): it was reset by
+ * an admin. The key is dropped at once; the heartbeat task re-registers. */
+static volatile bool s_reregister;
+
+bool http_reregister_pending(void)
+{
+    return s_reregister;
+}
+
+static void _check_auth(int status)
+{
+    if (status == 401 && cfg_has_device_key()) {
+        cfg_clear_device_key();
+        s_reregister = true;
+    }
+}
+
 static int _http_post_body(const char *url, const char *json,
                            char *out, size_t out_size)
 {
@@ -207,6 +225,7 @@ static int _http_post_body(const char *url, const char *json,
         ESP_LOGW(TAG, "HTTP POST failed: %s", esp_err_to_name(err));
     }
     esp_http_client_cleanup(client);
+    _check_auth(status);
     return status;
 }
 
@@ -232,13 +251,25 @@ int http_register_device(const char *mac_address, const char *device_type)
              "\"device_name\":\"imPress C6\",\"firmware_version\":\"%s\"}",
              mac_address, device_type, FIRMWARE_VERSION);
 
-    char resp[200];
+    char resp[320];
     int status = _http_post_body(url, json, resp, sizeof(resp));
+    if (status == 401 && !cfg_has_device_key()) {
+        /* _check_auth just dropped a reset device key: register with the
+         * shared key now, which issues a new one. */
+        status = _http_post_body(url, json, resp, sizeof(resp));
+    }
 
     /* The backend auto-links this gateway to a class (R6) and returns
      * {"device_id":N,"status":"registered","class_id":N|null}. Adopt the
      * class_id so the WebSocket can open. */
     if (status == 200) {
+        s_reregister = false;
+        /* Registering with the shared key issues this device its own key
+         * (#66); from now on every request sends it instead. */
+        char key[sizeof(g_cfg.api_key)];
+        if (json_get_string(resp, "device_key", key, sizeof(key)) > 0) {
+            cfg_set_device_key(key);
+        }
         char *p = strstr(resp, "\"class_id\"");
         if (p) {
             p = strchr(p, ':');

@@ -66,7 +66,8 @@ typedef struct {
     char     wifi_pass[NVS_KEY_PASS_LEN];
     char     backend_host[NVS_KEY_HOST_LEN];
     uint16_t backend_port;
-    char     api_key[NVS_KEY_KEY_LEN];
+    char     api_key[NVS_KEY_KEY_LEN];   /* sent on every request: dev_key if issued, else prov_key */
+    char     prov_key[NVS_KEY_KEY_LEN];  /* the site's shared key, used to register (#66) */
     int32_t  class_id;
     /* Mesh (from Kconfig, no NVS override needed) */
     uint32_t hb_interval_ms;
@@ -77,6 +78,12 @@ typedef struct {
 
 /* ── Global Runtime Config ── */
 extern s3_config_t g_cfg;
+
+/* Per-device key (#66): issued by /register, then sent instead of the shared
+ * key. Cleared when the backend answers 401 (an admin reset it). */
+void cfg_set_device_key(const char *key);
+void cfg_clear_device_key(void);
+bool cfg_has_device_key(void);
 
 /**
  * @brief Load persisted config from NVS, falling back to Kconfig defaults.

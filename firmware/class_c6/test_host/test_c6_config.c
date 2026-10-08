@@ -77,6 +77,26 @@ static void test_boot_count_increments_once_per_boot(void)
     CHECK(nvs_open_handles() == 0);
 }
 
+static void test_device_key_replaces_the_shared_key_and_survives_reboot(void)
+{
+    init_nvs_config();
+    CHECK(!cfg_has_device_key() && strcmp(g_cfg.api_key, CONFIG_DEVICE_API_KEY) == 0);
+    cfg_set_device_key("dev-key-123");
+    CHECK(cfg_has_device_key() && strcmp(g_cfg.api_key, "dev-key-123") == 0);
+    CHECK(strcmp(g_cfg.prov_key, CONFIG_DEVICE_API_KEY) == 0);        /* kept for re-registration */
+    memset(&g_cfg, 0, sizeof g_cfg);
+    init_nvs_config();                                                  /* reboot */
+    CHECK(cfg_has_device_key() && strcmp(g_cfg.api_key, "dev-key-123") == 0);
+    cfg_clear_device_key();                                             /* the backend refused it */
+    CHECK(!cfg_has_device_key() && strcmp(g_cfg.api_key, CONFIG_DEVICE_API_KEY) == 0);
+    memset(&g_cfg, 0, sizeof g_cfg);
+    init_nvs_config();
+    CHECK(!cfg_has_device_key());                                       /* cleared for good */
+    cfg_set_device_key("");                                             /* ignored */
+    CHECK(!cfg_has_device_key());
+    CHECK(nvs_open_handles() == 0);
+}
+
 static void test_nvs_layout_change_is_recovered(void)
 {
     nvs_fail_next_init(ESP_ERR_NVS_NO_FREE_PAGES);
@@ -91,6 +111,7 @@ int main(void)
     RUN(test_bad_overrides_fall_back_to_defaults);
     RUN(test_backend_assigned_class_id_survives_reboot);
     RUN(test_boot_count_increments_once_per_boot);
+    RUN(test_device_key_replaces_the_shared_key_and_survives_reboot);
     RUN(test_nvs_layout_change_is_recovered);
     puts("PASS test_c6_config");
     return 0;

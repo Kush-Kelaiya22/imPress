@@ -195,6 +195,29 @@ static void test_slot_fifo_order_and_overflow(void)
     CHECK(spi_slot_fifo_count(&g_fifo) == 0);
 }
 
+static void test_json_get_string(void)
+{
+    char out[48];
+    const char *reg = "{\"device_id\":3,\"status\":\"registered\",\"class_id\":null,"
+                      "\"device_key\":\"AbC-12_xyz\"}";
+    CHECK(json_get_string(reg, "device_key", out, sizeof out) == 10 && strcmp(out, "AbC-12_xyz") == 0);
+    CHECK(json_get_string(reg, "status", out, sizeof out) == 10 && strcmp(out, "registered") == 0);
+    CHECK(json_get_string(reg, "missing", out, sizeof out) == -1 && out[0] == '\0');
+    CHECK(json_get_string(reg, "class_id", out, sizeof out) == -1);          /* null is not a string */
+    CHECK(json_get_string(reg, "device_id", out, sizeof out) == -1);         /* number */
+    /* the key's name appearing as a value is not the key */
+    CHECK(json_get_string("{\"a\":\"device_key\",\"device_key\" : \"K\"}", "device_key", out, sizeof out) == 1
+          && strcmp(out, "K") == 0);
+    CHECK(json_get_string("{\"device_keys\":\"no\"}", "device_key", out, sizeof out) == -1);   /* prefix only */
+    char small[4];
+    CHECK(json_get_string("{\"k\":\"abcd\"}", "k", small, sizeof small) == -1 && small[0] == '\0');   /* too long */
+    CHECK(json_get_string("{\"k\":\"abc\"}", "k", small, sizeof small) == 3);
+    CHECK(json_get_string("{\"k\":\"a\\\"b\"}", "k", out, sizeof out) == -1);   /* escapes refused */
+    CHECK(json_get_string("{\"k\":\"abc", "k", out, sizeof out) == -1 && out[0] == '\0');   /* unterminated */
+    CHECK(json_get_string("{\"k\":\"\"}", "k", out, sizeof out) == 0);
+    CHECK(json_get_string(NULL, "k", out, sizeof out) == -1);
+}
+
 int main(void)
 {
     RUN(test_frame_roundtrip);
@@ -207,6 +230,7 @@ int main(void)
     RUN(test_slot_roundtrip_and_golden_layout);
     RUN(test_slot_empty_full_and_errors);
     RUN(test_slot_fifo_order_and_overflow);
+    RUN(test_json_get_string);
     puts("PASS test_protocol");
     return 0;
 }

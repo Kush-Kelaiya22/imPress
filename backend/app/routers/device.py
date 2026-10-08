@@ -1,7 +1,7 @@
 """Device router: ESP32 devices register, heartbeat, and submit data."""
 
 import asyncio
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +11,7 @@ from ..models import EspDevice, ClassSession, Attendance, StudentEnrollment, Stu
     Quiz, QuizAnswer, Poll, PollVote
 from ..schemas import DeviceRegister, DeviceHeartbeat, DeviceStatusPing, DeviceAttendance, \
     DeviceDataBatch, DeviceFirmwareCheck, DeviceOtaApplied, DeviceOtaStatus, OtaStatusResponse
-from ..config import api_key_ok
+from ..device_auth import DeviceCaller, authorize, denial, device_caller, new_device_key
 from ..services.presence import class_id_for_device, mark_online, _push_after_commit
 from ..services.firmware_store import artifact_file, resolve as resolve_firmware
 from ..services import deployments as deployment_engine, student_modules
@@ -21,13 +21,9 @@ from ..ws.manager import manager
 router = APIRouter(prefix="/api/device", tags=["device"])
 
 
-async def _verify_api_key(x_api_key: str = Header(...)):
-    if not api_key_ok(x_api_key):
-        raise HTTPException(403, "Invalid device API key")
-
-
-@router.post("/register", dependencies=[Depends(_verify_api_key)])
-async def register_device(body: DeviceRegister, db: AsyncSession = Depends(get_db)):
+@router.post("/register")
+async def register_device(body: DeviceRegister, db: AsyncSession = Depends(get_db), caller: DeviceCaller = Depends(device_caller)):
+    await authorize(db, caller, body.mac_address, registering=True)
     result = await db.execute(
         select(EspDevice).where(EspDevice.mac_address == body.mac_address)
     )
@@ -105,15 +101,27 @@ async def register_device(body: DeviceRegister, db: AsyncSession = Depends(get_d
                     },
                 ))
 
+    # Per-device key (#66): registering with the shared key issues one. A
+    # key that was never used is replaced, so a lost response can't lock the
+    # device out; an active key can't be re-issued this way (denial() above).
+    device_key = None
+    if caller.shared and device.key_confirmed_at is None:
+        device_key, device.api_key_hash = new_device_key()
+        device.key_issued_at = istnow()
+
     await db.commit()
     await db.refresh(device)
     # Fire-and-forget presence push to teachers (new session to avoid holding request DB)
     asyncio.create_task(_push_after_commit(device.id))
-    return {"device_id": device.id, "status": "registered", "class_id": linked_class_id}
+    response = {"device_id": device.id, "status": "registered", "class_id": linked_class_id}
+    if device_key:
+        response["device_key"] = device_key       # shown once; only its hash is stored
+    return response
 
 
-@router.post("/heartbeat", dependencies=[Depends(_verify_api_key)])
-async def heartbeat(body: DeviceHeartbeat, db: AsyncSession = Depends(get_db)):
+@router.post("/heartbeat")
+async def heartbeat(body: DeviceHeartbeat, db: AsyncSession = Depends(get_db), caller: DeviceCaller = Depends(device_caller)):
+    await authorize(db, caller, body.mac_address)
     result = await db.execute(
         select(EspDevice).where(EspDevice.mac_address == body.mac_address)
     )
@@ -149,8 +157,8 @@ async def heartbeat(body: DeviceHeartbeat, db: AsyncSession = Depends(get_db)):
     return {"status": "ok", "server_time": istnow_aware().isoformat()}
 
 
-@router.post("/ping", dependencies=[Depends(_verify_api_key)])
-async def status_ping(body: DeviceStatusPing, db: AsyncSession = Depends(get_db)):
+@router.post("/ping")
+async def status_ping(body: DeviceStatusPing, db: AsyncSession = Depends(get_db), caller: DeviceCaller = Depends(device_caller)):
     """C6 classroom status ping (every ~2 minutes).
 
     Carries a periodic classroom update — current mesh student population,
@@ -158,6 +166,7 @@ async def status_ping(body: DeviceStatusPing, db: AsyncSession = Depends(get_db)
     log ("class.status_update") and uses to keep the gateway's live presence
     and student_count fresh between heartbeats.
     """
+    await authorize(db, caller, body.mac_address)
     result = await db.execute(
         select(EspDevice).where(EspDevice.mac_address == body.mac_address)
     )
@@ -191,10 +200,11 @@ async def status_ping(body: DeviceStatusPing, db: AsyncSession = Depends(get_db)
     return {"status": "ok", "server_time": istnow_aware().isoformat()}
 
 
-@router.post("/firmware/check", response_model=OtaStatusResponse,
-             dependencies=[Depends(_verify_api_key)])
-async def firmware_check(body: DeviceFirmwareCheck, db: AsyncSession = Depends(get_db)):
+@router.post("/firmware/check", response_model=OtaStatusResponse)
+async def firmware_check(body: DeviceFirmwareCheck, db: AsyncSession = Depends(get_db),
+                         caller: DeviceCaller = Depends(device_caller)):
     """Student node polls to see if an OTA update is pending (R8)."""
+    await authorize(db, caller, body.mac_address)
     result = await db.execute(
         select(EspDevice).where(EspDevice.mac_address == body.mac_address)
     )
@@ -229,10 +239,11 @@ async def firmware_check(body: DeviceFirmwareCheck, db: AsyncSession = Depends(g
     )
 
 
-@router.post("/firmware/applied", dependencies=[Depends(_verify_api_key)])
-async def firmware_applied(body: DeviceOtaApplied, db: AsyncSession = Depends(get_db)):
+@router.post("/firmware/applied")
+async def firmware_applied(body: DeviceOtaApplied, db: AsyncSession = Depends(get_db), caller: DeviceCaller = Depends(device_caller)):
     """Pre-v2.1 'update applied' report. It now goes through the deployment
     state machine: success only with the expected version (#34)."""
+    await authorize(db, caller, body.mac_address)
     result = await db.execute(
         select(EspDevice).where(EspDevice.mac_address == body.mac_address)
     )
@@ -251,12 +262,13 @@ async def firmware_applied(body: DeviceOtaApplied, db: AsyncSession = Depends(ge
     return {"status": "ok", "firmware_version": device.firmware_version, "ota_status": device.ota_status}
 
 
-@router.post("/ota/status", dependencies=[Depends(_verify_api_key)])
-async def ota_status(body: DeviceOtaStatus, db: AsyncSession = Depends(get_db)):
+@router.post("/ota/status")
+async def ota_status(body: DeviceOtaStatus, db: AsyncSession = Depends(get_db), caller: DeviceCaller = Depends(device_caller)):
     """A device reports OTA progress: precheck → downloading → verifying →
     installing → rebooting → health_check → success | rolled_back | failed.
     Only forward moves are accepted (409 otherwise); repeating the current
     state is a no-op, so retries and duplicates are harmless."""
+    await authorize(db, caller, body.mac_address)
     device = (await db.execute(select(EspDevice).where(EspDevice.mac_address == body.mac_address))).scalar_one_or_none()
     if device is None:
         raise HTTPException(404, "Device not registered")
@@ -271,15 +283,16 @@ async def ota_status(body: DeviceOtaStatus, db: AsyncSession = Depends(get_db)):
     return {"status": "ok", "state": target.state, "deployment_id": target.deployment_id}
 
 
-@router.get("/firmware/download", dependencies=[Depends(_verify_api_key)])
+@router.get("/firmware/download")
 async def firmware_download(mac_address: str, version: str,
-                            db: AsyncSession = Depends(get_db)):
+                            db: AsyncSession = Depends(get_db), caller: DeviceCaller = Depends(device_caller)):
     """Stream the firmware image for a device's pending OTA update (R8).
 
     Only the version an admin pushed to this device is served, and only from
     the registry (#35): a validated image for the device's own type. The
     image's SHA-256 is sent as X-Firmware-SHA256 for the device to verify.
     """
+    await authorize(db, caller, mac_address)
     result = await db.execute(
         select(EspDevice).where(EspDevice.mac_address == mac_address)
     )
@@ -306,13 +319,14 @@ async def firmware_download(mac_address: str, version: str,
                         headers={"X-Firmware-SHA256": artifact.sha256})
 
 
-@router.post("/attendance", dependencies=[Depends(_verify_api_key)])
-async def check_attendance(body: DeviceAttendance, db: AsyncSession = Depends(get_db)):
+@router.post("/attendance")
+async def check_attendance(body: DeviceAttendance, db: AsyncSession = Depends(get_db), caller: DeviceCaller = Depends(device_caller)):
     """Student (mesh node) checks in to a class.
 
     Identity is the student's ENROLLMENT NUMBER. mac_address, when present, is
     the relaying class gateway (C6) and is used only to mark the node.
     """
+    await authorize(db, caller, body.mac_address)
     # Class lookup by code (active session)
     cls_result = await db.execute(
         select(ClassSession).where(ClassSession.code == body.class_code)
@@ -551,15 +565,24 @@ async def _observe_module(db: AsyncSession, kind: str, msg: dict, gateway: EspDe
     await student_modules.observe(db, kind, msg, gateway, class_id)
 
 
-@router.post("/batch", dependencies=[Depends(_verify_api_key)])
-async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db)):
+@router.post("/batch")
+async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db), caller: DeviceCaller = Depends(device_caller)):
     """C6 sends batched data from mesh students."""
     processed = 0
     skipped = 0
     touched_device_ids: list[int] = []
     participation: list[dict] = []
+    denied: dict[str, str | None] = {}
     for msg in body.messages:
         msg_type = msg.get("type", "")
+        # #66: a relayed message is accepted only for a gateway the caller may
+        # act for. Answers and votes carry no device_mac: they are the caller's.
+        mac = msg.get("device_mac") or (caller.device.mac_address if caller.device else "")
+        if mac not in denied:
+            denied[mac] = await denial(db, caller, mac or None)
+        if denied[mac]:
+            skipped += 1
+            continue
 
         if msg_type == "heartbeat":
             # device_mac is the relaying gateway; device_id is the sender (a

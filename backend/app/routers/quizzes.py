@@ -17,7 +17,7 @@ from ..auth import get_current_user, require_teacher_or_admin
 from ..ws.manager import manager
 from ..activity import log_activity
 from ..timeutil import istnow
-from .device import _verify_api_key
+from ..device_auth import DeviceCaller, authorize, device_caller
 from .classes import _has_access
 
 router = APIRouter(prefix="/api/quizzes", tags=["quizzes"])
@@ -326,11 +326,12 @@ async def next_question(
 
 # ── Device Answers ──────────────────────────────────────────────────
 
-@router.post("/{quiz_id}/answer", dependencies=[Depends(_verify_api_key)])
+@router.post("/{quiz_id}/answer")
 async def submit_answer(
     quiz_id: int,
     body: QuizAnswerSubmit,
     db: AsyncSession = Depends(get_db),
+    caller: DeviceCaller = Depends(device_caller),
 ):
     result = await db.execute(select(Quiz).where(Quiz.id == quiz_id))
     quiz = result.scalar_one_or_none()
@@ -347,8 +348,10 @@ async def submit_answer(
         raise HTTPException(422, "selected_option out of range for this question")
     # device_id is the de-dup key, so it must be a real registered device,
     # not an arbitrary integer a caller can increment.
-    if await db.get(EspDevice, body.device_id) is None:
+    device = await db.get(EspDevice, body.device_id)
+    if device is None:
         raise HTTPException(404, "Device not registered")
+    await authorize(db, caller, device.mac_address)          # #66: only for itself
 
     # Prevent duplicate answers for the same question
     existing = await db.execute(

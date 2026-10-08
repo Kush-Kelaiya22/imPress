@@ -4,11 +4,39 @@ These endpoints are called by firmware: the C6 gateway (`firmware/class_c6/main/
 
 ## Authentication
 
-Every request carries the shared device key:
+Every request carries a device key:
 ```
-X-API-Key: <IMPRESS_DEVICE_API_KEY>
+X-API-Key: <key>
 ```
-A missing header → `422`; a wrong key → `403`. The key is compared in constant time. On the device side it comes from Kconfig `DEVICE_API_KEY`, overridable via NVS `api_key`.
+There are two kinds of key (#66):
+
+| Key | Where it comes from | What it may do |
+|---|---|---|
+| **Shared provisioning key** | `IMPRESS_DEVICE_API_KEY` on the server; Kconfig `DEVICE_API_KEY` / NVS `api_key` on devices | register; act for any device that has no active key of its own (unless `IMPRESS_DEVICE_KEYS_REQUIRED=true`, which limits it to registration) |
+| **Per-device key** | issued in the `/register` response (`device_key`), stored by the device in NVS `dev_key`; the server keeps only its SHA-256 | act for **its own MAC only** |
+
+**Lifecycle of a device key:**
+
+```mermaid
+stateDiagram-v2
+    [*] --> shared: device has no key
+    shared --> issued: register with the shared key (response carries device_key)
+    issued --> issued: register again with the shared key (a lost response): a new key replaces it
+    issued --> active: first request made with it
+    active --> shared: admin resets it (POST /api/admin/modules/{id}/reset-key)
+```
+
+- **Once a key is active,** the shared key is refused for that MAC (`403`), so holding the shared key no longer lets anyone impersonate that device.
+- **A device key used for another MAC** is refused (`403`).
+- **A disabled device** (`POST /api/admin/modules/{id}/access {is_active: false}`) is refused whichever key it presents (`403`). Other devices are unaffected.
+
+| Response | Meaning | What the firmware does |
+|---|---|---|
+| `422` | the `X-API-Key` header is missing | — |
+| `401` | unknown key: never issued, replaced, or reset by an admin | drops its device key, goes back to the shared key and registers again (it is issued a new key) |
+| `403` | known key that may not do this (another device, a disabled device, the shared key for a device with its own key, or the shared key outside registration in required mode) | keeps its key |
+
+Batches: a relayed message is accepted only for a gateway the caller may act for. Messages without `device_mac` (answers, votes) count as the caller's own; a refused message is counted in `skipped`. Keys are compared in constant time (shared) or by SHA-256 lookup (device keys).
 
 ## Endpoint summary
 
@@ -36,8 +64,9 @@ A missing header → `422`; a wrong key → `403`. The key is compared in consta
  "firmware_version": "1.0.0", "classroom_code": ""}
 ```
 ```json
-{"device_id": 12, "status": "registered", "class_id": 3}
+{"device_id": 12, "status": "registered", "class_id": 3, "device_key": "kq3V…43 characters"}
 ```
+`device_key` is present only when the request used the shared key and the device has no active key. It is shown once: store it (NVS `dev_key`) and send it from then on.
 
 Behaviour:
 - **Upsert by `mac_address`**: name and type are updated; the device is marked online (`esp_device.online` logged only on an offline → online transition).
