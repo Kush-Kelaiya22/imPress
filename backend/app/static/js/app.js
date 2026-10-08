@@ -119,6 +119,7 @@ async function router() {
   const path = getRoute();
   const handler = routes[path];
 
+  stopLiveDevicesPolling();   // only the class page polls; leaving it stops the timer
   // Drop any stale class-form listeners before rendering a new route
   if (window.formFacultyOutsideClick) {
     document.removeEventListener('click', window.formFacultyOutsideClick);
@@ -2011,7 +2012,7 @@ async function renderAdminActivity(app) {
 
 async function renderAdminModules(app) {
   const user = await authApi.me();
-  const devices = await modulesApi.list();
+  const [devices, mods] = await Promise.all([modulesApi.list(), studentModulesApi.list()]);
 
   const connected = devices.filter(d => d.is_connected).length;
   const otaPending = devices.filter(d => d.ota_status === 'downloading').length;
@@ -2074,8 +2075,51 @@ async function renderAdminModules(app) {
           </table>
         </div>
       </div>
+
+      <div class="card mt-2" id="student-modules">
+        <div class="card-header">
+          <h2>Student modules seen by gateways</h2>
+          <span class="badge badge-outline">${mods.filter(m => m.state === 'connected').length}/${mods.length} connected</span>
+        </div>
+        <div class="filter-row" style="display:flex;gap:0.5rem;flex-wrap:wrap;padding:0 1rem">
+          <input type="search" id="sm-q" placeholder="Search device ID or enrollment" style="max-width:260px" />
+          <select id="sm-state" style="max-width:180px">
+            <option value="">All states</option><option value="connected">Connected</option><option value="seen">Seen previously</option>
+          </select>
+          <select id="sm-class" style="max-width:240px">
+            <option value="">All classes</option>
+            ${[...new Map(mods.filter(m => m.class_id).map(m => [m.class_id, m])).values()].map(m =>
+              `<option value="${m.class_id}">${escHtml(m.class_code)} · ${escHtml(m.class_name)}${m.section ? ` (${escHtml(m.section)})` : ''}</option>`).join('')}
+          </select>
+        </div>
+        <div class="table-responsive">
+          <table class="table">
+            <thead><tr><th>Device ID</th><th>Enrollment</th><th>State</th><th>Class</th><th>Gateway</th><th>Last seen</th><th>Battery</th></tr></thead>
+            <tbody id="sm-rows"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   `;
+
+  const $ = (sel) => app.querySelector(sel);
+  const draw = () => {
+    const q = $('#sm-q').value.trim().toUpperCase(), st = $('#sm-state').value, cls = $('#sm-class').value;
+    const rows = mods.filter(m => (!st || m.state === st) && (!cls || String(m.class_id) === cls)
+      && (!q || m.device_uid.includes(q) || m.enrollment_number.includes(q)));
+    $('#sm-rows').innerHTML = rows.length ? rows.map(m => `<tr>
+        <td><code>${escHtml(m.device_uid || '—')}</code></td>
+        <td>${escHtml(m.enrollment_number || '—')}</td>
+        <td>${_moduleState(m)}</td>
+        <td class="text-sm">${m.class_id ? `${escHtml(m.class_code)}${m.section ? ` · ${escHtml(m.section)}` : ''}` : '—'}</td>
+        <td class="text-sm">${escHtml(m.gateway_name || '—')}</td>
+        <td class="text-sm">${m.last_seen ? escHtml(formatAgo(m.last_seen_ago_s)) : '—'}</td>
+        <td class="text-sm">${m.battery_pct != null ? m.battery_pct + '%' : '—'}</td>
+      </tr>`).join('')
+      : `<tr><td colspan="7" class="text-muted">${mods.length ? 'No module matches these filters.' : 'No student module has joined a gateway yet.'}</td></tr>`;
+  };
+  ['#sm-q', '#sm-state', '#sm-class'].forEach(sel => $(sel).addEventListener('input', draw));
+  draw();
 }
 
 // ── Firmware manager (#35/#36) ─────────────────────────────────
@@ -2525,17 +2569,51 @@ function _liveDeviceTile(d) {
     </div>`;
 }
 
+function _moduleState(m) {
+  return m.state === 'connected'
+    ? '<span class="badge badge-success">connected</span>'
+    : `<span class="badge">seen ${m.last_seen_ago_s != null ? escHtml(formatAgo(m.last_seen_ago_s)) : ''}</span>`;
+}
+
+// Student modules seen on the class gateway's mesh (#40)
+function _liveModulesSection(mods) {
+  if (!mods.length) return '';
+  const on = mods.filter(m => m.state === 'connected').length;
+  return `
+    <div class="live-modules" style="grid-column:1/-1">
+      <h3 class="text-sm" style="margin:0.5rem 0">Student modules · ${on}/${mods.length} connected</h3>
+      <div class="table-responsive"><table class="table">
+        <thead><tr><th>Device ID</th><th>Enrollment</th><th>State</th><th>Battery</th><th>Signal</th></tr></thead>
+        <tbody>${mods.map(m => `<tr>
+          <td><code>${escHtml(m.device_uid || '—')}</code></td>
+          <td>${escHtml(m.enrollment_number || '—')}</td>
+          <td>${_moduleState(m)}</td>
+          <td class="text-sm">${m.battery_pct != null ? m.battery_pct + '%' : '—'}</td>
+          <td class="text-sm">${m.rssi != null ? m.rssi + ' dBm' : '—'}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`;
+}
+
+function formatAgo(s) {
+  if (s < 90) return `${s}s ago`;
+  if (s < 5400) return `${Math.round(s / 60)}m ago`;
+  if (s < 172800) return `${Math.round(s / 3600)}h ago`;
+  return `${Math.round(s / 86400)}d ago`;
+}
+
 function renderLiveDevices(snap) {
   const grid = document.getElementById('live-devices-grid');
   if (!grid) return;
   const countEl = document.getElementById('live-devices-count');
   const updatedEl = document.getElementById('live-devices-updated');
   if (!snap || !Array.isArray(snap.devices) || snap.devices.length === 0) {
-    grid.innerHTML = '<p class="text-muted" style="padding:1rem">No class node linked yet — devices will appear once the gateway is registered and linked.</p>';
+    grid.innerHTML = '<p class="text-muted" style="padding:1rem">No class node linked yet — devices will appear once the gateway is registered and linked.</p>'
+      + _liveModulesSection((snap && snap.student_modules) || []);
     if (countEl) { countEl.textContent = '0 online'; countEl.className = 'badge badge-outline'; }
     return;
   }
-  grid.innerHTML = snap.devices.map(_liveDeviceTile).join('');
+  grid.innerHTML = snap.devices.map(_liveDeviceTile).join('') + _liveModulesSection(snap.student_modules || []);
   if (countEl) {
     countEl.textContent = `${snap.online_count || 0}/${snap.total_count || snap.devices.length} online`;
     countEl.className = `badge ${snap.online_count ? 'badge-success' : 'badge-outline'}`;
@@ -2783,6 +2861,15 @@ async function renderClassDetail(app, params) {
                   <td class="text-sm">v${escHtml(d.firmware_version || '0.0.0')}</td>
                 </tr>
               `).join('')}
+              ${(classDevices && classDevices.student_modules || []).map(m => `
+                <tr>
+                  <td><strong>${escHtml(m.enrollment_number || 'unknown student')}</strong><br>
+                  <span class="text-muted text-sm">module <code>${escHtml(m.device_uid || '—')}</code> via ${escHtml(m.gateway_name || '—')}</span></td>
+                  <td><span class="badge badge-outline">student</span></td>
+                  <td>${_moduleState(m)}</td>
+                  <td class="text-sm text-muted">—</td>
+                </tr>
+              `).join('')}
             </tbody>
           </table>
         </div>
@@ -2919,6 +3006,10 @@ async function renderClassDetail(app, params) {
     document.getElementById('ws-status').textContent = 'Disconnected';
     document.getElementById('ws-status').className = 'badge badge-danger';
   });
+  // Live devices: was never started, so the panel stayed on "Loading devices…" (#40).
+  // The backend also pushes a fresh snapshot on every change.
+  classSocket.on('presence', (msg) => renderLiveDevices(msg.data));
+  startLiveDevicesPolling(classId);
   classSocket.on('quiz_question', (data) => {
     const feed = document.getElementById('live-feed');
     if (feed) {

@@ -394,6 +394,29 @@ class Attendance(Base):
 
 # ── Activity Logs ────────────────────────────────────────────────────
 
+class StudentModule(Base):
+    """A student module seen on a gateway's mesh (#40): presence, not location.
+
+    One row per module, keyed on the firmware's device_id (the last four bytes
+    of its MAC), updated in place: there is no history.
+    """
+    __tablename__ = "student_modules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    device_uid = Column(Integer, nullable=True, unique=True)   # NULL: pre-v2.1 message without device_id
+    enrollment_number = Column(String(16), default="", index=True)
+    gateway_id = Column(Integer, ForeignKey("esp_devices.id"), nullable=True)
+    class_session_id = Column(Integer, ForeignKey("class_sessions.id"), nullable=True, index=True)
+    is_connected = Column(Boolean, default=False)
+    battery_pct = Column(Integer, nullable=True)
+    rssi = Column(Integer, nullable=True)
+    first_seen = Column(DateTime, default=istnow)
+    last_seen = Column(DateTime, default=istnow)
+
+    gateway = relationship("EspDevice", lazy="selectin")
+    class_session = relationship("ClassSession", lazy="selectin")
+
+
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 

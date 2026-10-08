@@ -147,7 +147,7 @@ Not verifiable without hardware: radio delivery, the SPI link, OTA flashing and 
 | A8 | OTA | S3 ignores the HTTP status of the download and streams an error body into the OTA partition (fails safely, but silently) | `ota.c:_download_and_apply` |
 | A9 | OTA | Backend accepts any bytes as firmware, silently overwrites an existing version, has no size limit, and allows pushing versions that don't exist (status shows `downloading`) | smoke steps 8–9 |
 | A10 | OTA | Only the S3 has an OTA client; the C6 and student modules can only be updated over serial | `grep esp_ota_begin` |
-| A11 | inventory | Mesh-joined students are not visible as connected modules | smoke step 7 |
+| A11 | inventory | Mesh-joined students are not visible as connected modules. **Fixed in #40** (student module inventory). | smoke step 7 |
 | A12 | DB | No versioned migrations; constraint gaps listed in §3 | §3 |
 | A13 | hardware cost | S3 build requires 32 MB flash and octal PSRAM, which it doesn't use | §2 |
 | A14 | diagnostics | Reset reason, uptime, restart count and heap are not reported (except heap on the C6) | firmware grep |

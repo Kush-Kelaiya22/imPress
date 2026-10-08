@@ -15,7 +15,8 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import select
 
-from ..models import EspDevice, ActivityLog, ClassSession
+from ..models import EspDevice, ActivityLog, ClassSession, StudentModule
+from . import student_modules
 from ..database import async_session
 from ..ws.manager import manager
 from ..timeutil import istnow, ist_epoch_ms
@@ -132,6 +133,7 @@ async def presence_snapshot(db, class_id: int) -> dict:
             "devices": [],
             "online_count": 0,
             "total_count": 0,
+            "student_modules": await class_modules(db, class_id, now),
         }
 
     # Collect all devices in the relay tree (root + children)
@@ -174,7 +176,17 @@ async def presence_snapshot(db, class_id: int) -> dict:
         "devices": devices_data,
         "online_count": online_count,
         "total_count": total_count,
+        "student_modules": await class_modules(db, class_id, now),
     }
+
+
+async def class_modules(db, class_id: int, now: datetime | None = None) -> list[dict]:
+    """The class's student modules (#40), connected first."""
+    now = now or istnow()
+    rows = (await db.scalars(select(StudentModule).where(StudentModule.class_session_id == class_id)
+                             .order_by(StudentModule.last_seen.desc()))).all()
+    mods = [student_modules.module_to_dict(m, now) for m in rows]
+    return sorted(mods, key=lambda m: m["state"] != "connected")
 
 
 async def push_presence(db, class_id: int) -> None:
@@ -222,10 +234,14 @@ async def _sweep_once() -> int:
             await mark_offline(db, device)
             transitions += 1
             offline_devices.append(device.id)
-        if transitions:
+        # Student modules have their own, longer threshold; their gateways'
+        # classes get a fresh snapshot. Not counted as device transitions.
+        module_gateways = await student_modules.sweep(db)
+        offline_devices += module_gateways
+        if transitions or module_gateways:
             await db.commit()
     # Trigger presence pushes for devices that went offline (best-effort, new sessions)
-    for dev_id in offline_devices:
+    for dev_id in set(offline_devices):
         asyncio.create_task(_push_after_commit(dev_id))
     return transitions
 

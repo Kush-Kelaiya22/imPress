@@ -11,7 +11,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import (
-    Attendance, ClassSession, EspDevice, Poll, PollVote, Quiz, QuizAnswer, QuizQuestion, Student,
+    Attendance, ClassSession, EspDevice, StudentModule, Poll, PollVote, Quiz, QuizAnswer, QuizQuestion, Student,
     StudentEnrollment, class_faculty,
 )
 
@@ -50,6 +50,8 @@ async def delete_class_records(db: AsyncSession, class_id: int) -> None:
     await db.execute(delete(Attendance).where(Attendance.class_session_id == class_id))
     await db.execute(delete(StudentEnrollment).where(StudentEnrollment.class_session_id == class_id))
     await db.execute(delete(class_faculty).where(class_faculty.c.class_session_id == class_id))
+    await db.execute(update(StudentModule).where(StudentModule.class_session_id == class_id)
+                     .values(class_session_id=None))
     await db.execute(delete(ClassSession).where(ClassSession.id == class_id))
 
 
@@ -67,4 +69,8 @@ async def erase_student(db: AsyncSession, student_id: int) -> None:
                      .values(student_enrollment_id=None))
     await db.execute(delete(Attendance).where(Attendance.student_enrollment_id.in_(enrollments)))
     await db.execute(delete(StudentEnrollment).where(StudentEnrollment.student_id == student_id))
+    roll = await db.scalar(select(Student.roll_number).where(Student.id == student_id))
+    if roll:     # the module stays in the inventory, no longer tied to them
+        await db.execute(update(StudentModule).where(StudentModule.enrollment_number == roll)
+                         .values(enrollment_number=""))
     await db.execute(delete(Student).where(Student.id == student_id))
