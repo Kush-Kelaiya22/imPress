@@ -76,6 +76,8 @@ flowchart LR
 | Brown-out level | default | 7 (highest) | 7 (highest) |
 | Reported version | `#define FIRMWARE_VERSION "1.0.0"` | `"0.1.0"` | `"1.0.0"` |
 
+This matrix is the `v2` baseline. For v2.1 (OTA clients, rollback, PSRAM optional, re-measured sizes) see [device compatibility](../hardware/DEVICE_COMPATIBILITY.md) and [classroom node requirements](../hardware/CLASSROOM_NODE_REQUIREMENTS.md).
+
 Images are **not interchangeable**: each is linked for one chip. ESP-IDF stores the chip ID in the image header, and the bootloader and `esp_ota_end()` reject a mismatch on the device. The backend, however, accepts any bytes (§6).
 
 Cost observation: the S3 image only boots on a module with **32 MB flash and octal PSRAM** (the header declares 32 MB; PSRAM init failure aborts). No code allocates from PSRAM (`grep MALLOC_CAP_SPIRAM`: no hits), and the image uses 0.98 MB. See issue *classroom node minimum specification*.
@@ -149,7 +151,7 @@ Not verifiable without hardware: radio delivery, the SPI link, OTA flashing and 
 | A10 | OTA | Only the S3 has an OTA client; the C6 and student modules can only be updated over serial | `grep esp_ota_begin` |
 | A11 | inventory | Mesh-joined students are not visible as connected modules. **Fixed in #40** (student module inventory). | smoke step 7 |
 | A12 | DB | No versioned migrations; constraint gaps listed in §3 | §3 |
-| A13 | hardware cost | S3 build requires 32 MB flash and octal PSRAM, which it doesn't use | §2 |
+| A13 | hardware cost | S3 build requires 32 MB flash and octal PSRAM, which it doesn't use. **#30:** PSRAM is now optional; the octal-flash requirement is documented, with a reduced-flash profile (built, not booted). | §2 |
 | A14 | diagnostics | Reset reason, uptime, restart count and heap are not reported (except heap on the C6). **Fixed in #39** for the C6 (health states plus diagnostics); the S3's reset reason is not yet relayed. | firmware grep |
 
 ---
