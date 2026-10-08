@@ -13,7 +13,7 @@ from ..schemas import DeviceRegister, DeviceHeartbeat, DeviceStatusPing, DeviceA
     DeviceDataBatch, DeviceFirmwareCheck, DeviceOtaApplied, OtaStatusResponse
 from ..config import api_key_ok
 from ..services.presence import mark_online, _push_after_commit
-from ..services.firmware_store import get_firmware_path
+from ..services.firmware_store import artifact_file, resolve as resolve_firmware
 from ..timeutil import istnow, istnow_aware
 from ..ws.manager import manager
 
@@ -233,11 +233,11 @@ async def firmware_applied(body: DeviceOtaApplied, db: AsyncSession = Depends(ge
 @router.get("/firmware/download", dependencies=[Depends(_verify_api_key)])
 async def firmware_download(mac_address: str, version: str,
                             db: AsyncSession = Depends(get_db)):
-    """Stream the firmware binary for a device's pending OTA update (R8).
+    """Stream the firmware image for a device's pending OTA update (R8).
 
-    Devices download <device_type>-<version>.bin. The device's own row must
-    have pending_version set (or the requested version must equal the row's)
-    so arbitrary binaries can't be pulled without a prior admin push.
+    Only the version an admin pushed to this device is served, and only from
+    the registry (#35): a validated image for the device's own type. The
+    image's SHA-256 is sent as X-Firmware-SHA256 for the device to verify.
     """
     result = await db.execute(
         select(EspDevice).where(EspDevice.mac_address == mac_address)
@@ -252,9 +252,13 @@ async def firmware_download(mac_address: str, version: str,
     if version != device.pending_version:
         raise HTTPException(403, "Requested version does not match pending OTA")
 
-    path = get_firmware_path(device.device_type or "c6", version)
+    artifact = await resolve_firmware(db, (device.device_type or "").lower(), version)
+    if artifact is None:
+        raise HTTPException(404, f"No registered {device.device_type} firmware {version}")
+    path = artifact_file(artifact)
     return FileResponse(path, media_type="application/octet-stream",
-                        filename=path.name)
+                        filename=f"{artifact.project}-{artifact.version}.bin",
+                        headers={"X-Firmware-SHA256": artifact.sha256})
 
 
 @router.post("/attendance", dependencies=[Depends(_verify_api_key)])

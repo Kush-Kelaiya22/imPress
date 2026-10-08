@@ -57,7 +57,8 @@ flowchart LR
 | T8 | Malicious firmware via OTA | Download only of the version an admin pushed to that device (#13); app **rollback** on boot failure (#13) | ⚠️ partial: images are not **signed** and are fetched over HTTP; see residual risks |
 | T9 | Radio spoofing: a rogue device sends answers with someone else's enrollment number | Answers count only for enrolled students and only once each. **No cryptographic protection on air.** | ⚠️ accepted risk |
 | T10 | Radio flooding / jamming | De-dup and bounded queues keep nodes alive; jamming can't be prevented in 2.4 GHz | ⚠️ accepted risk |
-| T11 | Path traversal via firmware version/type | Strict semver regex + a fixed device-type set (`firmware_store.py`), tested | ✅ |
+| T11 | Path traversal via firmware version/type | Stored files are named by their SHA-256 only (`artifact_path` refuses anything else); versions are strict semver; tested | ✅ |
+| T14 | Wrong, corrupt or foreign image offered to devices | Uploads are parsed as ESP-IDF app images (chip, project, semver version, appended SHA-256, slot size) and registered immutably (#35); downloads come from the registry, for the device's own type, with `X-Firmware-SHA256` | ✅ (authenticity still needs signing, T8) |
 | T12 | Teacher takes over another teacher's class with its join code | Joining by code only adds co-faculty; the primary teacher is never replaced (#19) | ✅ |
 | T13 | Reading other classes' questions, answers and results by enumerating ids | Quiz/poll details and results require class access (#20) | ✅ |
 

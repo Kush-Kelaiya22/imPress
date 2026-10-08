@@ -1,5 +1,5 @@
 """Pure helpers: time (timeutil), schedule overlap maths (schedule), firmware
-store path safety (services/firmware_store), WebSocket manager (ws/manager)."""
+artifact path safety (services/firmware_store), WebSocket manager (ws/manager)."""
 
 import asyncio
 from datetime import datetime, timezone
@@ -87,18 +87,15 @@ def test_normalize_version_rejects_anything_else(bad):
         normalize_version(bad)
 
 
-def test_get_firmware_path_cannot_escape_store(tmp_path, monkeypatch):
+def test_artifact_paths_come_from_a_hash_only(tmp_path, monkeypatch):
     from app.config import settings
-    from app.services.firmware_store import get_firmware_path
+    from app.services.firmware_store import artifact_path
     monkeypatch.setattr(settings, "FIRMWARE_DIR", str(tmp_path))
-    (tmp_path / "s3-1.0.0.bin").write_bytes(b"x")
-    assert get_firmware_path("s3", "1.0.0") == tmp_path / "s3-1.0.0.bin"
-    for version in ("../1.0.0", "1.0.0/.."):
-        with pytest.raises(HTTPException):
-            get_firmware_path("s3", version)
-    with pytest.raises(HTTPException) as e:
-        get_firmware_path("s3", "9.9.9")
-    assert e.value.status_code == 404
+    sha = "a" * 64
+    assert artifact_path(sha) == tmp_path / f"{sha}.bin"
+    for bad in ("../" + "a" * 61, "s3-1.0.0", "A" * 64, "a" * 63, ""):
+        with pytest.raises(ValueError):
+            artifact_path(bad)
 
 
 # ── WebSocket connection manager ────────────────────────────────────────────

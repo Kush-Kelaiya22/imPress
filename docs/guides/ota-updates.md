@@ -30,7 +30,7 @@ flowchart TB
    docker run --rm -v "$PWD/firmware":/project -w /project/class_s3 espressif/idf:v6.1 idf.py build
    # image: firmware/class_s3/build/impress_class_s3.bin
    ```
-2. **Upload** (admin): *multipart* `device_type=s3`, `version=1.2.0`, `file=@impress_class_s3.bin`. The version must be semver (`1.2.0` or `v1.2.0`). It is stored as `firmware_bins/s3-1.2.0.bin`.
+2. **Upload** (admin): `POST /api/admin/firmware` with `file=@impress_class_s3.bin`. The backend reads the target (`s3`), chip and version from the image itself. It refuses anything that isn't a valid, uncorrupted imPress image for a known chip. It also refuses a different image under a version that already exists: bump `version.txt` instead. The image is stored as `firmware_bins/<sha256>.bin`.
 3. **Make sure the S3 has a gateway**: its `gateway_id` must point at the room's C6 (admin "link device"). Otherwise the prompt can't be delivered.
 4. **Push**: `POST /api/admin/modules/{s3_id}/ota {"version": "1.2.0"}`. It is refused (404) unless that image was uploaded for the device's type. The response shows `pending_version` and `ota_status: downloading`.
 5. **Watch:** the S3 log shows the hop, the HTTP status, the download size and the reboot. After reboot: `New firmware verified — rollback cancelled`, then `Booted after OTA to 1.2.0: running 1.2.0 (applied)`.
@@ -88,5 +88,5 @@ Signing (above) protects integrity even over plain HTTP; TLS adds confidentialit
 | `OTA aborted — could not connect to WiFi` | the S3's `wifi_ssid`/`wifi_pass` NVS values |
 | `No pending update` | `pending_version` empty, or equal to the current version |
 | download 403 | requested version ≠ `pending_version` (re-push) |
-| download 404 | the file `s3-<version>.bin` is missing from `IMPRESS_FIRMWARE_DIR` |
+| download 404 | no registered `s3` image with that version (upload it); 410: registered but its file was deleted from `IMPRESS_FIRMWARE_DIR` |
 | boots the old version after the update | rollback happened: the new image crashed before mark-valid; read its boot log |

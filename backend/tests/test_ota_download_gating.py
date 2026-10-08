@@ -1,12 +1,11 @@
 """#13: firmware can only be downloaded for an OTA an admin actually pushed."""
 
-import os
-from pathlib import Path
+import hashlib
 
 import pytest
 from sqlalchemy import update
 
-from conftest import DEVICE
+from conftest import DEVICE, auth, login, upload_firmware
 
 MAC = "AA:BB:CC:DD:EE:13"
 
@@ -16,10 +15,8 @@ def device(client, db):
     r = client.post("/api/device/register", headers=DEVICE,
                     json={"mac_address": MAC, "device_type": "s3", "device_name": "hub"})
     assert r.status_code == 200, r.text
-    fw_dir = Path(os.environ["IMPRESS_FIRMWARE_DIR"])
-    fw_dir.mkdir(parents=True, exist_ok=True)
-    for v in ("1.1.0", "9.9.9"):
-        (fw_dir / f"s3-{v}.bin").write_bytes(b"\xe9" + v.encode())
+    h = auth(login(client))
+    images = {v: upload_firmware(client, h, "impress_class_s3", v) for v in ("1.1.0", "9.9.9")}
 
     def set_pending(version):
         from app.models import EspDevice
@@ -27,6 +24,7 @@ def device(client, db):
         async def go(s):
             await s.execute(update(EspDevice).where(EspDevice.mac_address == MAC).values(pending_version=version))
         db(go)
+    set_pending.images = images
     return set_pending
 
 
@@ -43,7 +41,8 @@ def test_no_pending_ota_means_no_download(client, device):
 def test_only_the_pushed_version_downloads(client, device):
     device("1.1.0")
     ok = dl(client, "1.1.0")
-    assert ok.status_code == 200 and ok.content == b"\xe91.1.0"
+    assert ok.status_code == 200 and ok.content == device.images["1.1.0"]
+    assert ok.headers["x-firmware-sha256"] == hashlib.sha256(ok.content).hexdigest()
     assert dl(client, "9.9.9").status_code == 403
 
 
