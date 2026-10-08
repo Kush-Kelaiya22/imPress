@@ -85,7 +85,7 @@ static void s3_clocks(const uint8_t *mosi, size_t n)
     if (s_cfg.post_setup_cb) s_cfg.post_setup_cb(t);
     memcpy(s_miso, t->tx_buffer, SPI_SLOT_BYTES);
     memset(t->rx_buffer, 0, SPI_SLOT_BYTES);
-    memcpy(t->rx_buffer, mosi, n);
+    if (n) memcpy(t->rx_buffer, mosi, n);    /* memcpy(dst, NULL, 0) is UB (gcc UBSan flags it) */
     t->trans_len = t->length;                /* driver writes back into the descriptor */
     s_cfg.post_trans_cb(t);
     if (s_ndone < s_cfg.queue_size) s_done[s_ndone++] = t;
