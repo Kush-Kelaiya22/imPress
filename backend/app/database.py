@@ -1,15 +1,26 @@
 """Async SQLAlchemy engine and session factory."""
 
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
 import logging
 
-from sqlalchemy import text
+from fastapi import HTTPException
+from sqlalchemy import event
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.orm import DeclarativeBase
 
 from .config import settings
 
 engine = create_async_engine(settings.DATABASE_URL, echo=settings.SQL_ECHO)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@event.listens_for(engine.sync_engine, "connect")
+def _sqlite_pragmas(dbapi_conn, _record):
+    """SQLite ignores foreign keys unless asked, per connection."""
+    if engine.dialect.name == "sqlite":
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA foreign_keys=ON")
+        cur.close()
 
 
 class Base(DeclarativeBase):
@@ -22,62 +33,18 @@ async def get_db():
         yield session
 
 
-# Columns added to pre-existing tables via ALTER TABLE (SQLite best-effort).
-_ADD_COLUMNS = {
-    "class_sessions": {
-        "start_date": "DATE",
-        "end_date": "DATE",
-        "exam_start_date": "DATE",
-        "exam_end_date": "DATE",
-        "classroom_code": "VARCHAR(32)",
-    },
-    "esp_devices": {
-        "is_connected": "BOOLEAN DEFAULT 0",
-        "gateway_id": "INTEGER",
-        "is_active": "BOOLEAN DEFAULT 1",
-        "firmware_version": "VARCHAR(32) DEFAULT '0.0.0'",
-        "pending_version": "VARCHAR(32) DEFAULT ''",
-        "ota_status": "VARCHAR(16) DEFAULT 'idle'",
-        "ota_requested_at": "DATETIME",
-        "verified_at": "DATETIME",
-        "student_count": "INTEGER DEFAULT 0",
-        "free_heap": "INTEGER",
-        "total_flash": "INTEGER",
-        "student_enrollment_id": "INTEGER",
-        "device_id": "INTEGER",
-    },
-    "courses": {
-        "exam_date": "DATE",
-        "exam_start_time": "VARCHAR(8)",
-        "exam_end_time": "VARCHAR(8)",
-    },
-    "quiz_answers": {
-        "student_id": "INTEGER",
-    },
-    "poll_votes": {
-        "student_id": "INTEGER",
-    },
-    "attendance": {
-        "student_enrollment_id": "INTEGER",
-        "device_id": "INTEGER",
-    },
-}
+async def commit_or_conflict(db: AsyncSession, detail: str, status: int = 409) -> None:
+    """Commit; a uniqueness/foreign-key violation becomes an HTTP error.
 
-
-async def _migrate_columns():
-    """Add any missing columns to existing tables (non-destructive)."""
-    async with engine.begin() as conn:
-        for table, cols in _ADD_COLUMNS.items():
-            try:
-                result = await conn.execute(text(f"PRAGMA table_info({table})"))
-            except Exception:
-                continue
-            existing = {row[1] for row in result.fetchall()}
-            for name, ddl in cols.items():
-                if name not in existing:
-                    await conn.execute(text(
-                        f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"
-                    ))
+    Application checks ("already answered?") race when two requests arrive
+    together; the database constraint is the real guard, and this keeps the
+    loser of the race from turning into a 500.
+    """
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status, detail)
 
 
 async def _scrub_raw_session_tokens() -> int:
@@ -99,13 +66,10 @@ async def _scrub_raw_session_tokens() -> int:
 
 
 async def init_db():
-    """Create all tables on startup, then best-effort migrate existing ones."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    try:
-        await _migrate_columns()
-    except Exception:
-        pass
+    """Create missing tables and apply pending migrations (stops on failure)."""
+    from .migrations import migrate  # late import: migrations needs Base's metadata loaded
+    from . import models  # noqa: F401  register every table on Base.metadata
+    await migrate(engine, Base.metadata.create_all)
     scrubbed = await _scrub_raw_session_tokens()
     if scrubbed:
         logging.getLogger(__name__).warning(

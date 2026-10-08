@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db
 from ..models import (
     User, ClassSession, Student, StudentEnrollment, EspDevice, ActivityLog,
-    Quiz, QuizQuestion, QuizAnswer, Poll, PollVote, Attendance, class_faculty,
 )
 from ..schemas import (
     AdminUserCreate, UserResponse, UserUpdate,
@@ -31,6 +30,7 @@ from ..timeutil import istnow
 from ..auth import require_admin, require_teacher_or_admin
 from ..activity import log_activity
 from ..schedule import find_schedule_conflicts
+from ..services.records import delete_class_records, ensure_section_free
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -379,6 +379,7 @@ async def admin_create_class(
         capacity=body.capacity,
         classroom_code=(body.classroom_code or "").strip() or None,
     )
+    await ensure_section_free(db, body.course_id, body.course_section)
     if selected_ids:
         rows = await db.execute(select(User).where(User.id.in_(selected_ids), User.role == "teacher"))
         teachers = list(rows.scalars().all())
@@ -503,6 +504,10 @@ async def admin_update_class(
         if room and exists.scalar_one_or_none():
             raise HTTPException(400, "Room label is already in use by another classroom")
 
+    if "course_id" in updates or "course_section" in updates:
+        await ensure_section_free(db, updates.get("course_id", cls.course_id),
+                                  updates.get("course_section", cls.course_section), exclude_id=class_id)
+
     for field, value in updates.items():
         setattr(cls, field, value)
 
@@ -530,25 +535,10 @@ async def admin_delete_class(
 
     # The class row holds the FK to its device node (`ClassSession.device_id`);
     # deleting the class simply drops that link. The node row itself is preserved.
-    cls_id = cls.id
-    # Remove dependent rows explicitly (SQLite doesn't cascade by default).
-    quiz_rows = await db.execute(select(Quiz.id).where(Quiz.class_session_id == cls_id))
-    quiz_ids = [r[0] for r in quiz_rows.all()]
-    if quiz_ids:
-        await db.execute(QuizAnswer.__table__.delete().where(QuizAnswer.quiz_id.in_(quiz_ids)))
-        await db.execute(QuizQuestion.__table__.delete().where(QuizQuestion.quiz_id.in_(quiz_ids)))
-        await db.execute(Quiz.__table__.delete().where(Quiz.id.in_(quiz_ids)))
-    poll_rows = await db.execute(select(Poll.id).where(Poll.class_session_id == cls_id))
-    poll_ids = [r[0] for r in poll_rows.all()]
-    if poll_ids:
-        await db.execute(PollVote.__table__.delete().where(PollVote.poll_id.in_(poll_ids)))
-        await db.execute(Poll.__table__.delete().where(Poll.id.in_(poll_ids)))
-    await db.execute(Attendance.__table__.delete().where(Attendance.class_session_id == cls_id))
-    await db.execute(StudentEnrollment.__table__.delete().where(StudentEnrollment.class_session_id == cls_id))
-    await db.execute(class_faculty.delete().where(class_faculty.c.class_session_id == cls_id))
-    await db.execute(ClassSession.__table__.delete().where(ClassSession.id == cls_id))
+    cls_id, name = cls.id, cls.name
+    await delete_class_records(db, cls_id)
 
-    await log_activity(db, "class.delete", user.id, "class", cls_id, {"name": cls.name})
+    await log_activity(db, "class.delete", user.id, "class", cls_id, {"name": name})
     await db.commit()
     return {"status": "ok", "message": "Class deleted", "class_id": cls_id}
 

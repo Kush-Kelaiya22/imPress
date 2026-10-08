@@ -4,7 +4,8 @@ from conftest import DEVICE, auth, login
 
 
 def test_health(client):
-    assert client.get("/health").json() == {"status": "healthy"}
+    from app.migrations import LATEST
+    assert client.get("/health").json() == {"status": "healthy", "schema_version": LATEST}
 
 
 def test_seeded_super_admin_can_log_in(client):

@@ -14,6 +14,7 @@ from ..schemas import (
     CsvImportResult, CsvImportError,
 )
 from ..auth import require_teacher_or_admin
+from ..services.records import erase_student
 from ..activity import log_activity
 
 router = APIRouter(prefix="/api/students", tags=["students"])
@@ -215,31 +216,8 @@ async def hard_delete_student(
 
     roll = student.roll_number
     name = student.student_name
-
-    # Find enrollments so we can detach attendance rows first
-    enroll_rows = await db.execute(
-        select(StudentEnrollment).where(StudentEnrollment.student_id == student_id)
-    )
-    enrollments = enroll_rows.scalars().all()
-    enroll_ids = [e.id for e in enrollments]
-
-    from ..models import Attendance  # local import to avoid cycles
-    if enroll_ids:
-        # Delete attendance rows tied to these enrollments
-        await db.execute(
-            select(Attendance).where(Attendance.student_enrollment_id.in_(enroll_ids))
-        )
-        for att in (await db.execute(
-            select(Attendance).where(Attendance.student_enrollment_id.in_(enroll_ids))
-        )).scalars().all():
-            await db.delete(att)
-
-        # Delete enrollments
-        for e in enrollments:
-            await db.delete(e)
-
-    # Delete the student
-    await db.delete(student)
+    # answers/votes stay (anonymised) so completed results keep their totals
+    await erase_student(db, student_id)
 
     await log_activity(db, "student.hard_delete", user.id, "student", student_id, {
         "roll_number": roll,

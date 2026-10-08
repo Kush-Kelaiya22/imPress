@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..database import get_db
+from ..database import commit_or_conflict, get_db
 from ..models import User, ClassSession, Poll, PollVote, EspDevice
 from ..schemas import PollCreate, PollResponse, PollVoteSubmit
 from ..auth import get_current_user, require_teacher_or_admin
@@ -243,7 +243,7 @@ async def vote_poll(
         selected_option=body.selected_option,
     )
     db.add(vote)
-    await db.commit()
+    await commit_or_conflict(db, "Already voted", status=400)   # lost a race with an identical request
 
     # Get updated total
     count_result = await db.execute(

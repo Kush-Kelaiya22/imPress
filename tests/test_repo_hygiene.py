@@ -21,7 +21,8 @@ def test_no_tracked_file_is_gitignored(tracked_files):
 
 def test_runtime_paths_are_ignored(tracked_files):
     for path in ("backend/impress.db", "logs/x.log", "backend/.env", "firmware/class_c6/build/x.bin",
-                 "backend/app/__pycache__/x.pyc", "frontend/node_modules/x", "backend/firmware_bins/s3-1.0.0.bin"):
+                 "backend/app/__pycache__/x.pyc", "frontend/node_modules/x", "backend/firmware_bins/s3-1.0.0.bin",
+                 "backend/impress.db.bak-0-to-3-20261008101500"):   # pre-migration backups hold user data
         assert git("check-ignore", "-q", path) == "", path
     assert "backend/.env.example" in tracked_files
 

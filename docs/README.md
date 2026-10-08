@@ -36,6 +36,7 @@ This folder is the long-form documentation for imPress. The [project README](../
 | **[Engineering](engineering/)** | see the evidence behind the v2.1 work |
 | ↳ [System audit](engineering/SYSTEM_AUDIT.md) | the v2 baseline: architecture map, device matrix, measured footprints, defects, test baseline |
 | ↳ [v2/v3 comparison](engineering/V2_V3_COMPARISON.md) | what `v3` changed, why its CI failed, what v2.1 adopts or rejects |
+| ↳ [Database migrations](engineering/DATABASE_MIGRATIONS.md) | how the schema is versioned and upgraded, enforced constraints, backups and restore |
 
 ## Conventions used in these docs
 
