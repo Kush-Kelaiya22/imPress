@@ -48,7 +48,7 @@ flowchart LR
 | Dozens of student devices; school Wi-Fi is unreliable and often limits clients. | Students use **ESP-NOW** (connectionless 802.11 vendor frames, no AP, no association). |
 | ESP-NOW has limited range and no routing. | Students **relay** each other's packets (TTL 5), forming a flooding mesh. See [mesh design](../design/mesh.md). |
 | ESP-NOW and an AP connection fight over the radio channel: the radio must sit on the AP's channel to stay associated. | The **root** (S3) stays on the mesh channel full time; a **separate radio** (C6) does Wi-Fi. They talk over **SPI**. |
-| The hub must forward bursts (everyone answers within seconds). | SPI at 80 MHz with a fixed **4096-byte slot** carries up to 136 answer records per exchange. |
+| The hub must forward bursts (everyone answers within seconds). | Standard SPI (10 MHz default) with a fixed **4096-byte slot** carries up to 136 answer records per exchange, about 2,700 answers/s at the 50 ms poll. |
 | The backend must know a single place per room. | The C6 registers as the class **gateway**; the backend links one gateway per class. |
 | Firmware in the field must be updatable. | The S3 has dual OTA slots and **app rollback**; the backend hosts images and prompts updates through the gateway. |
 

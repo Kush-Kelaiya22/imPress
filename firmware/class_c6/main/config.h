@@ -47,21 +47,17 @@
 #define WIFI_CONNECTED_BIT  BIT0
 #define WIFI_FAIL_BIT       BIT1
 
-/* ── SPI Slave Configuration (C6 = Slave, Quad SPI @ 80 MHz) ── */
+/* ── SPI Slave Configuration (C6 = slave, standard full-duplex SPI; S3 sets the clock) ── */
 #define SPI_HOST            SPI2_HOST
 #define PIN_SPI_MOSI        GPIO_NUM_7
 #define PIN_SPI_MISO        GPIO_NUM_6
 #define PIN_SPI_SCLK        GPIO_NUM_2
 #define PIN_SPI_CS          GPIO_NUM_10
-#define PIN_SPI_WP          GPIO_NUM_3   /* Quad WP / IO2 */
-#define PIN_SPI_HD          GPIO_NUM_4   /* Quad HD / IO3 */
 #define SPI_DMA_CHAN         SPI_DMA_CH_AUTO
 #define SPI_RX_BUF_SIZE     (1024 * 4)
-#define SPI_TX_BUF_SIZE     (1024 * 4)
 
-/* ── SPI Slot Protocol (fixed 4096-byte slot, dual-ready handshake) ── */
+/* ── SPI slot ready lines (slot format: SPI_SLOT_BYTES in protocol.h) ── */
 /* Mirror of the S3 master's ready lines. ACTIVE HIGH, idle LOW. */
-#define SPI_SLOT_BYTES      4096  /* fixed slot size, both directions */
 #define PIN_READY_S3_TO_C6  GPIO_NUM_12  /* INPUT:  S3 asserts→frame queued for us */
 #define PIN_READY_C6_TO_S3  GPIO_NUM_13  /* OUTPUT: we assert→frame queued for S3 */
 

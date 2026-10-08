@@ -65,7 +65,7 @@ stateDiagram-v2
 ```mermaid
 flowchart TB
     A["init_nvs_config()<br/>owns nvs_flash_init; namespace 's3_cfg'"] --> B["mesh_master_init()<br/>Wi-Fi STA start · set channel g_cfg.mesh_channel · ESP-NOW · broadcast peer"]
-    B --> C["spi_master_init()<br/>80 MHz · READY lines · rising-edge IRQ on READY C6→S3"]
+    B --> C["spi_master_init()<br/>standard SPI, 10 MHz · 8-slot TX FIFO · READY lines"]
     C --> D["register on_student_message"]
     D --> E{"running image PENDING_VERIFY?"}
     E -- yes --> F["esp_ota_mark_app_valid_cancel_rollback()"]

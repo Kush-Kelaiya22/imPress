@@ -11,7 +11,7 @@ Short records of the non-obvious choices: the context, the decision, and its con
 
 ### D2: Two radios per room (S3 root + C6 gateway) joined by SPI
 **Context:** an associated Wi-Fi station must follow the AP's channel; the mesh needs a fixed channel.
-**Decision:** the S3 stays on the mesh channel; the C6 does Wi-Fi; they exchange 4 KB SPI slots at 80 MHz.
+**Decision:** the S3 stays on the mesh channel; the C6 does Wi-Fi; they exchange 4 KB SPI slots (standard full-duplex, 10 MHz default; v2's quad mode didn't match the slave driver, see the [v2/v3 comparison](../engineering/V2_V3_COMPARISON.md)).
 **Consequences:** reliable mesh timing and burst capacity (136 answers per slot). There are two firmwares to maintain and a hardware link that needs a careful protocol ([protocols](protocols.md) ③④).
 
 ### D3: Fixed 4096-byte full-duplex slots with two ready lines

@@ -29,7 +29,8 @@ BaseType_t xSemaphoreTake(SemaphoreHandle_t s, TickType_t t) { (void)s; (void)t;
 BaseType_t xSemaphoreGive(SemaphoreHandle_t s) { (void)s; return 1; }
 BaseType_t xSemaphoreGiveFromISR(SemaphoreHandle_t s, BaseType_t *w) { (void)s; (void)w; return 1; }
 esp_err_t gpio_config(const gpio_config_t *c) { (void)c; return ESP_OK; }
-esp_err_t gpio_set_level(gpio_num_t p, uint32_t l) { (void)p; (void)l; return ESP_OK; }
+static int s_ready_c6 = -1;  /* last level driven on PIN_READY_C6_TO_S3 */
+esp_err_t gpio_set_level(gpio_num_t p, uint32_t l) { if (p == PIN_READY_C6_TO_S3) s_ready_c6 = (int)l; return ESP_OK; }
 
 /* ── Fake SPI slave driver (pointer-retaining, like ESP-IDF) ─────── */
 
@@ -70,7 +71,9 @@ esp_err_t spi_slave_get_trans_result(spi_host_device_t h, spi_slave_transaction_
     return ESP_OK;
 }
 
-/* The S3 clocks one 4096-byte slot: what spi_intr() does with the next descriptor. */
+/* The S3 clocks one 4096-byte slot: what spi_intr() does with the next descriptor.
+ * miso (optional) receives the slot the C6 presented. */
+static uint8_t s_miso[SPI_SLOT_BYTES];
 static void s3_clocks(const uint8_t *mosi, size_t n)
 {
     CHECK(s_nqueued > 0);
@@ -79,7 +82,8 @@ static void s3_clocks(const uint8_t *mosi, size_t n)
 
     CHECK(t->length == SPI_SLOT_BYTES * 8);  /* descriptor must still be intact */
     CHECK(t->rx_buffer && t->tx_buffer);
-    s_cfg.post_setup_cb(t);
+    if (s_cfg.post_setup_cb) s_cfg.post_setup_cb(t);
+    memcpy(s_miso, t->tx_buffer, SPI_SLOT_BYTES);
     memset(t->rx_buffer, 0, SPI_SLOT_BYTES);
     memcpy(t->rx_buffer, mosi, n);
     t->trans_len = t->length;                /* driver writes back into the descriptor */
@@ -134,6 +138,42 @@ int main(void)
     CHECK(spi_slave_read(buf, sizeof buf) == 6);
     CHECK(memcmp(buf, "world!", 6) == 0);
     CHECK(s_nqueued == 1);
+
+    CHECK(s_cfg.queue_size == 1);   /* one armed slot, never more */
+
+    /* ── C6 -> S3: back-to-back frames all arrive, in order ────────── */
+    CHECK(spi_slave_send((const uint8_t *)"A1", 2) == 0);
+    CHECK(spi_slave_send((const uint8_t *)"B22", 3) == 0);
+    CHECK(spi_slave_send((const uint8_t *)"C333", 4) == 0);
+    CHECK(s_ready_c6 == 1);
+    uint8_t got[SPI_SLOT_BYTES];
+    const char *expect[] = {NULL /* slot armed before the sends */, "A1", "B22", "C333", NULL};
+    for (int i = 0; i < 5; i++) {
+        s3_clocks(NULL, 0);
+        int glen = spi_slot_decode(s_miso, got, sizeof got);
+        if (expect[i]) {
+            CHECK(glen == (int)strlen(expect[i]) && memcmp(got, expect[i], glen) == 0);
+        } else {
+            CHECK(glen == 0);
+        }
+        CHECK(spi_slave_read(buf, sizeof buf) == 0);   /* S3 sent nothing */
+        CHECK(s_nqueued == 1);
+    }
+    CHECK(s_ready_c6 == 0);   /* FIFO drained */
+
+    /* ── Corrupted S3 slot: rejected (CRC), slot still re-armed ────── */
+    size_t sl = make_slot(slot, "corrupt-me");
+    slot[5] ^= 0x10;
+    s3_clocks(slot, sl);
+    CHECK(spi_slave_read(buf, sizeof buf) == 0);
+    CHECK(s_nqueued == 1);
+    s3_clocks(slot, make_slot(slot, "fine"));      /* link recovers next slot */
+    CHECK(spi_slave_read(buf, sizeof buf) == 4 && memcmp(buf, "fine", 4) == 0);
+
+    /* ── FIFO full: the 9th queued frame is refused, earlier ones kept ─ */
+    for (int i = 0; i < SPI_SLOT_FIFO_DEPTH; i++) CHECK(spi_slave_send((const uint8_t *)"x", 1) == 0);
+    CHECK(spi_slave_send((const uint8_t *)"y", 1) != 0);
+    CHECK(spi_slave_send(buf, SPI_SLOT_PAYLOAD_MAX + 1) == SPI_SLOT_ERR_LEN);
 
     puts("PASS test_spi_slave");
     return 0;

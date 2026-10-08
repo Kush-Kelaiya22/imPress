@@ -19,18 +19,14 @@ flowchart LR
         s11["GPIO11 MOSI"]
         s13["GPIO13 MISO"]
         s10["GPIO10 CS"]
-        s14["GPIO14 WP/IO2"]
-        s9["GPIO9 HD/IO3"]
         s16["GPIO16 READY S3→C6 (out)"]
-        s15["GPIO15 READY C6→S3 (in, pull-down, ↑ IRQ)"]
+        s15["GPIO15 READY C6→S3 (in, pull-down)"]
     end
     subgraph C6["ESP32-C6 (SPI slave)"]
         c2["GPIO2 SCLK"]
         c7["GPIO7 MOSI"]
         c6["GPIO6 MISO"]
         c10["GPIO10 CS"]
-        c3["GPIO3 WP/IO2"]
-        c4["GPIO4 HD/IO3"]
         c12["GPIO12 READY S3→C6 (in)"]
         c13["GPIO13 READY C6→S3 (out)"]
     end
@@ -38,8 +34,6 @@ flowchart LR
     s11 --> c7
     c6 --> s13
     s10 --> c10
-    s14 --- c3
-    s9 --- c4
     s16 --> c12
     c13 --> s15
 ```
@@ -50,13 +44,12 @@ flowchart LR
 | MOSI | 11 | 7 | S3 → C6 |
 | MISO | 13 | 6 | C6 → S3 |
 | CS | 10 | 10 | S3 → C6 |
-| WP / IO2 | 14 | 3 | – |
-| HD / IO3 | 9 | 4 | – |
 | READY S3→C6 | 16 (out) | 12 (in) | S3 → C6 |
 | READY C6→S3 | 15 (in, pull-down) | 13 (out) | C6 → S3 |
 | GND | GND | GND | common ground is required |
 
-- **Clock:** 80 MHz (`SPI_CLOCK_HZ`). Keep wires short (< 10 cm) and paired with ground; lower the clock if CRC mismatches appear in the S3 log (`C6 slot CRC mismatch`).
+- **Mode and clock:** standard full-duplex SPI (4 wires + 2 ready lines), `CONFIG_SPI_CLOCK_MHZ` on the S3, default **10 MHz**. That value was validated on hand-wired boards in the `v3` demo. Keep wires short (< 10 cm) and paired with ground. Lower the clock if `Dropped C6 slot (error -2 …)` / `Dropped S3 slot (error -2 …)` CRC errors appear in the logs; raise it only on a PCB.
+- **Freed pins:** v2's quad mode also wired S3 GPIO14/9 to C6 GPIO3/4 (WP/HD). Standard SPI doesn't use them, so they are free on both boards.
 - ⚠️ **ESP32-C6 GPIO12/13 are its USB-Serial-JTAG D-/D+.** Using them as ready lines disables the native USB port. Flash and monitor through the UART bridge, or move the ready lines in **both** `class_c6/main/config.h` and `class_s3/main/config.h`.
 - Pin definitions live in `firmware/class_c6/main/config.h` and `firmware/class_s3/main/config.h`. The comment block at the top of `spi_slave.c` / `spi_master.c` describes the protocol; the **config headers are authoritative** for pins.
 

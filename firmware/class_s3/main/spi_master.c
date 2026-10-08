@@ -1,22 +1,25 @@
 /**
  * @file spi_master.c
- * @brief SPI master driver for S3 → C6 communication.
+ * @brief SPI master driver for S3 <-> C6 communication (fixed 4096-byte slots).
  *
- * Fixed 4096-byte slot, full duplex, dual-ready handshake:
- *   R_S3 (GPIO4, S3 out, active high): "S3 frame queued push"
- *   R_C6 (GPIO2, S3 in, pull-down):    "C6 frame queued"
- *
- * Slot (identical both directions):
- *   [LEN:2 BE][PAYLOAD:LEN][CRC16 over PAYLOAD only:2][zero pad to SPI_SLOT_BYTES]
- *   LEN=0 => "no payload" (all zeros).
+ *   - Standard full-duplex SPI, mode 0, clock CONFIG_SPI_CLOCK_MHZ (default
+ *     10 MHz). One transfer moves one slot each way; slot format and the
+ *     outgoing FIFO are shared with the C6 (protocol.h).
+ *   - The link task clocks a slot on every poll interval, and immediately
+ *     when spi_master_send() queues something, so it never depends on
+ *     catching a ready-line edge.
+ *   - Ready lines, active high:
+ *       R_S3 (PIN_READY_S3_TO_C6, output): high while our FIFO holds payloads.
+ *       R_C6 (PIN_READY_C6_TO_S3, input, pull-down): informational.
+ *   - A queued payload leaves the FIFO only after a transfer succeeded.
  */
 
 #include "spi_master.h"
 #include "config.h"
+#include "protocol.h"
 
 #include <string.h>
 #include "esp_log.h"
-#include "esp_intr_alloc.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
@@ -25,41 +28,21 @@
 static const char *TAG = "spi_master";
 
 static spi_device_handle_t s_spi_handle;
-static SemaphoreHandle_t s_spi_mutex;
-static SemaphoreHandle_t s_link_signal;   /* given on TX queued / R_C6 rise */
+static SemaphoreHandle_t s_spi_mutex;     /* guards s_txq */
+static SemaphoreHandle_t s_link_signal;   /* given when a payload is queued */
 
-static uint8_t s_tx_slot[SPI_SLOT_BYTES];
-static uint8_t s_rx_slot[SPI_SLOT_BYTES];
-static volatile bool s_tx_pending;
-static uint8_t s_rx_payload[SPI_SLOT_BYTES - 4];
+/* DMA buffers: only touched by the link task around a transfer. */
+static uint8_t s_tx_slot[SPI_SLOT_BYTES] __attribute__((aligned(4)));
+static uint8_t s_rx_slot[SPI_SLOT_BYTES] __attribute__((aligned(4)));
+
+static spi_slot_fifo_t s_txq;             /* S3 -> C6 payloads */
+static uint8_t s_rx_payload[SPI_SLOT_PAYLOAD_MAX];
 static size_t  s_rx_payload_len;
+static uint32_t s_rx_errors;
 
-/* ── CRC-16 XMODEM (poly 0x1021, init 0xFFFF), big-endian on wire ───── */
-
-static uint16_t crc16_local(const uint8_t *data, size_t len)
+static void ready_update(void)
 {
-    uint16_t crc = 0xFFFF;
-    for (size_t i = 0; i < len; i++) {
-        crc ^= ((uint16_t)data[i] << 8);
-        for (int j = 0; j < 8; j++) {
-            if (crc & 0x8000)
-                crc = (crc << 1) ^ 0x1021;
-            else
-                crc <<= 1;
-        }
-    }
-    return crc;
-}
-
-/* R_C6 rising edge: C6 has queued a frame → wake the link task. */
-static void IRAM_ATTR ready_c6_isr(void *arg)
-{
-    (void)arg;
-    BaseType_t woken = pdFALSE;
-    xSemaphoreGiveFromISR(s_link_signal, &woken);
-    if (woken) {
-        portYIELD_FROM_ISR();
-    }
+    gpio_set_level(PIN_READY_S3_TO_C6, spi_slot_fifo_count(&s_txq) ? 1 : 0);
 }
 
 /* ── Init ──────────────────────────────────────────────────────────── */
@@ -72,8 +55,9 @@ int spi_master_init(void)
         ESP_LOGE(TAG, "semaphore alloc failed");
         return -1;
     }
+    spi_slot_fifo_init(&s_txq);
+    s_rx_payload_len = 0;
 
-    /* R_S3: S3 drives it, initial low (idle). */
     gpio_config_t s3_out = {
         .pin_bit_mask = (1ULL << PIN_READY_S3_TO_C6),
         .mode = GPIO_MODE_OUTPUT,
@@ -84,89 +68,69 @@ int spi_master_init(void)
     gpio_config(&s3_out);
     gpio_set_level(PIN_READY_S3_TO_C6, 0);
 
-    /* R_C6: S3 reads it, pull-down, positive-edge ISR (no blind polling). */
     gpio_config_t c6_in = {
         .pin_bit_mask = (1ULL << PIN_READY_C6_TO_S3),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_ENABLE,
-        .intr_type = GPIO_INTR_POSEDGE,
+        .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&c6_in);
-
-    esp_err_t ir = gpio_install_isr_service(ESP_INTR_FLAG_LEVEL1 | ESP_INTR_FLAG_IRAM);
-    if (ir != ESP_OK && ir != ESP_ERR_INVALID_STATE) {
-        ESP_LOGE(TAG, "GPIO ISR service install failed: %d", ir);
-        return -1;
-    }
-    gpio_isr_handler_add(PIN_READY_C6_TO_S3, ready_c6_isr, NULL);
 
     spi_bus_config_t bus_cfg = {
         .mosi_io_num = PIN_SPI_MOSI,
         .miso_io_num = PIN_SPI_MISO,
         .sclk_io_num = PIN_SPI_SCLK,
-        .quadwp_io_num = PIN_SPI_WP,
-        .quadhd_io_num = PIN_SPI_HD,
-        .max_transfer_sz = SPI_TX_BUF_SIZE,
-        .flags = SPICOMMON_BUSFLAG_QUAD,
+        .quadwp_io_num = -1,             /* standard SPI: WP/HD unused */
+        .quadhd_io_num = -1,
+        .max_transfer_sz = SPI_SLOT_BYTES,
+        .flags = 0,
     };
-
     spi_device_interface_config_t dev_cfg = {
         .clock_speed_hz = SPI_CLOCK_HZ,
-        .mode = 0,                    /* SPI mode 0: CPOL=0, CPHA=0 */
+        .mode = 0,                       /* CPOL=0, CPHA=0 */
         .spics_io_num = PIN_SPI_CS,
-        .queue_size = 7,
-        .flags = SPI_DEVICE_HALFDUPLEX,  /* not used, but required for quad */
+        .queue_size = 1,
+        .flags = 0,                      /* full duplex */
     };
 
-    esp_err_t ret;
-    ret = spi_bus_initialize(SPI_HOST, &bus_cfg, SPI_DMA_CHAN);
+    esp_err_t ret = spi_bus_initialize(SPI_HOST, &bus_cfg, SPI_DMA_CHAN);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "SPI bus init failed: %d", ret);
         return -1;
     }
-
     ret = spi_bus_add_device(SPI_HOST, &dev_cfg, &s_spi_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "SPI add device failed: %d", ret);
         return -1;
     }
 
-    ESP_LOGI(TAG, "SPI master initialized, clock: %lu Hz, slot: %d bytes",
-             (unsigned long)SPI_CLOCK_HZ, SPI_SLOT_BYTES);
+    ESP_LOGI(TAG, "SPI master initialized, clock: %lu Hz, slot: %d bytes, TX FIFO: %d",
+             (unsigned long)SPI_CLOCK_HZ, SPI_SLOT_BYTES, SPI_SLOT_FIFO_DEPTH);
     return 0;
 }
 
-/* ── Send (queue S3 slot, non-blocking) ────────────────────────────── */
+/* ── Send (queue a payload, non-blocking) ──────────────────────────── */
 
 int spi_master_send(const uint8_t *data, size_t len)
 {
-    if (len > SPI_SLOT_BYTES - 4) {
-        ESP_LOGE(TAG, "Send too large: %u bytes (max %u)",
-                 (unsigned)len, (unsigned)(SPI_SLOT_BYTES - 4));
-        return -1;
-    }
-
     xSemaphoreTake(s_spi_mutex, portMAX_DELAY);
-
-    memset(s_tx_slot, 0, sizeof(s_tx_slot));
-    if (data && len > 0) {
-        s_tx_slot[0] = (uint8_t)(len >> 8);
-        s_tx_slot[1] = (uint8_t)(len & 0xFF);
-        memcpy(&s_tx_slot[2], data, len);
-        uint16_t crc = crc16_local(data, len);   /* CRC over PAYLOAD only */
-        s_tx_slot[2 + len] = (uint8_t)(crc >> 8);
-        s_tx_slot[3 + len] = (uint8_t)(crc & 0xFF);
-    }
-    s_tx_pending = true;
-    gpio_set_level(PIN_READY_S3_TO_C6, 1);       /* keep asserted until consumed */
+    int rc = spi_slot_fifo_push(&s_txq, data, len);
+    ready_update();
     xSemaphoreGive(s_spi_mutex);
 
-    xSemaphoreGive(s_link_signal);               /* wake coordinator */
+    if (rc == SPI_SLOT_ERR_LEN) {
+        ESP_LOGE(TAG, "Send too large: %u bytes (max %u)",
+                 (unsigned)len, (unsigned)SPI_SLOT_PAYLOAD_MAX);
+        return rc;
+    }
+    if (rc != 0) {
+        ESP_LOGW(TAG, "SPI TX FIFO full, dropped %u-byte frame", (unsigned)len);
+        return rc;
+    }
+    xSemaphoreGive(s_link_signal);       /* wake the link task now */
     return 0;
 }
-
-/* ── Ready / state queries ─────────────────────────────────────────── */
 
 bool spi_master_c6_has_data(void)
 {
@@ -175,7 +139,7 @@ bool spi_master_c6_has_data(void)
 
 bool spi_master_tx_pending(void)
 {
-    return s_tx_pending;
+    return spi_slot_fifo_count(&s_txq) > 0;
 }
 
 SemaphoreHandle_t spi_master_link_signal(void)
@@ -188,49 +152,37 @@ SemaphoreHandle_t spi_master_link_signal(void)
 bool spi_master_poll(void)
 {
     xSemaphoreTake(s_spi_mutex, portMAX_DELAY);
-
-    if (!s_tx_pending) {
-        memset(s_tx_slot, 0, sizeof(s_tx_slot));   /* send empty slot */
-    }
+    bool sending = spi_slot_fifo_peek(&s_txq, s_tx_slot);   /* zero slot if empty */
+    xSemaphoreGive(s_spi_mutex);
     memset(s_rx_slot, 0, sizeof(s_rx_slot));
 
     spi_transaction_t t = {
-        .length = SPI_SLOT_BYTES * 8,              /* full duplex, 4096 bytes */
+        .length = SPI_SLOT_BYTES * 8,
         .tx_buffer = s_tx_slot,
         .rx_buffer = s_rx_slot,
     };
-
     esp_err_t ret = spi_device_polling_transmit(s_spi_handle, &t);
-
-    /* Slot consumed: clear S3 slot and de-assert R_S3. */
-    memset(s_tx_slot, 0, sizeof(s_tx_slot));
-    s_tx_pending = false;
-    gpio_set_level(PIN_READY_S3_TO_C6, 0);
     s_rx_payload_len = 0;
-
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "SPI slot transfer failed: %d", ret);
-        xSemaphoreGive(s_spi_mutex);
+        ESP_LOGE(TAG, "SPI slot transfer failed: %d (payload kept for retry)", ret);
         return false;
     }
 
-    uint16_t rx_len = ((uint16_t)s_rx_slot[0] << 8) | s_rx_slot[1];
-    bool valid = false;
-    if (rx_len > 0 && rx_len <= SPI_SLOT_BYTES - 4) {
-        uint16_t got = ((uint16_t)s_rx_slot[2 + rx_len] << 8) | s_rx_slot[3 + rx_len];
-        uint16_t calc = crc16_local(&s_rx_slot[2], rx_len);
-        if (got == calc) {
-            s_rx_payload_len = rx_len;
-            memcpy(s_rx_payload, &s_rx_slot[2], rx_len);
-            valid = true;
-        } else {
-            ESP_LOGW(TAG, "C6 slot CRC mismatch: expected 0x%04X, got 0x%04X",
-                     (unsigned)calc, (unsigned)got);
-        }
+    if (sending) {                        /* delivered: only now leave the FIFO */
+        xSemaphoreTake(s_spi_mutex, portMAX_DELAY);
+        spi_slot_fifo_drop(&s_txq);
+        ready_update();
+        xSemaphoreGive(s_spi_mutex);
     }
 
-    xSemaphoreGive(s_spi_mutex);
-    return valid;
+    int n = spi_slot_decode(s_rx_slot, s_rx_payload, sizeof(s_rx_payload));
+    if (n < 0) {
+        s_rx_errors++;
+        ESP_LOGW(TAG, "Dropped C6 slot (error %d, %lu total)", n, (unsigned long)s_rx_errors);
+        return false;
+    }
+    s_rx_payload_len = (size_t)n;
+    return n > 0;
 }
 
 int spi_master_rx_copy(uint8_t *buf, size_t buf_size)
@@ -242,5 +194,6 @@ int spi_master_rx_copy(uint8_t *buf, size_t buf_size)
     if (n > 0) {
         memcpy(buf, s_rx_payload, n);
     }
+    s_rx_payload_len = 0;
     return (int)n;
 }

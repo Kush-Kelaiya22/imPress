@@ -98,6 +98,103 @@ static void test_record_truncated_and_edges(void)
     CHECK(spi_record_read(zeros, sizeof zeros, NULL, NULL, &fl) == SPI_RECORD_HEADER_SIZE && fl == 0);
 }
 
+/* Reference CRC-16 (poly 0x1021, init 0xFFFF), written out independently, to
+ * prove crc16_ccitt matches the local copies the v3 drivers carried. */
+static uint16_t crc_ref(const uint8_t *d, size_t n)
+{
+    uint16_t c = 0xFFFF;
+    while (n--) {
+        c ^= (uint16_t)(*d++ << 8);
+        for (int b = 0; b < 8; b++) c = (c & 0x8000) ? (uint16_t)((c << 1) ^ 0x1021) : (uint16_t)(c << 1);
+    }
+    return c;
+}
+
+static void test_crc_matches_reference(void)
+{
+    static const uint8_t check[] = "123456789";
+    CHECK(crc16_ccitt(check, 9) == 0x29B1);            /* CRC-16/CCITT-FALSE check value */
+    uint8_t buf[300];
+    for (size_t i = 0; i < sizeof buf; i++) buf[i] = (uint8_t)(i * 37 + 11);
+    for (size_t n = 0; n <= sizeof buf; n += 17) CHECK(crc16_ccitt(buf, n) == crc_ref(buf, n));
+}
+
+static void test_slot_roundtrip_and_golden_layout(void)
+{
+    static uint8_t slot[SPI_SLOT_BYTES], out[SPI_SLOT_BYTES];
+    const uint8_t p[] = {0xAA, 0x01, 0x00, 0x02, 0x10, 0x20};
+    CHECK(spi_slot_encode(slot, p, sizeof p) == 0);
+    CHECK(slot[0] == 0x00 && slot[1] == sizeof p);              /* LEN big-endian */
+    CHECK(memcmp(slot + 2, p, sizeof p) == 0);
+    uint16_t crc = crc16_ccitt(p, sizeof p);
+    CHECK(slot[2 + sizeof p] == (crc >> 8) && slot[3 + sizeof p] == (crc & 0xFF));
+    for (size_t i = 4 + sizeof p; i < SPI_SLOT_BYTES; i++) CHECK(slot[i] == 0);  /* zero padding */
+    CHECK(spi_slot_decode(slot, out, sizeof out) == (int)sizeof p);
+    CHECK(memcmp(out, p, sizeof p) == 0);
+}
+
+static void test_slot_empty_full_and_errors(void)
+{
+    static uint8_t slot[SPI_SLOT_BYTES], out[SPI_SLOT_BYTES], big[SPI_SLOT_BYTES];
+    memset(big, 0x5A, sizeof big);
+    CHECK(spi_slot_encode(slot, NULL, 0) == 0);                 /* empty = all zero */
+    for (size_t i = 0; i < SPI_SLOT_BYTES; i++) CHECK(slot[i] == 0);
+    CHECK(spi_slot_decode(slot, out, sizeof out) == 0);
+
+    CHECK(spi_slot_encode(slot, big, SPI_SLOT_PAYLOAD_MAX) == 0);   /* exactly fits */
+    CHECK(spi_slot_decode(slot, out, sizeof out) == SPI_SLOT_PAYLOAD_MAX);
+    CHECK(spi_slot_encode(slot, big, SPI_SLOT_PAYLOAD_MAX + 1) == SPI_SLOT_ERR_LEN);
+
+    CHECK(spi_slot_encode(slot, big, 100) == 0);
+    slot[50] ^= 0x01;                                           /* one flipped bit */
+    CHECK(spi_slot_decode(slot, out, sizeof out) == SPI_SLOT_ERR_CRC);
+    slot[50] ^= 0x01;
+    CHECK(spi_slot_decode(slot, out, 99) == SPI_SLOT_ERR_SPACE); /* never a partial copy */
+    slot[0] = 0xFF; slot[1] = 0xFF;                             /* garbage LEN */
+    CHECK(spi_slot_decode(slot, out, sizeof out) == SPI_SLOT_ERR_LEN);
+}
+
+static spi_slot_fifo_t g_fifo;   /* 32 KB: static, like the drivers */
+
+static void test_slot_fifo_order_and_overflow(void)
+{
+    static uint8_t slot[SPI_SLOT_BYTES], out[SPI_SLOT_BYTES];
+    spi_slot_fifo_init(&g_fifo);
+    CHECK(!spi_slot_fifo_peek(&g_fifo, slot));                  /* empty → zero slot */
+    CHECK(spi_slot_decode(slot, out, sizeof out) == 0);
+
+    /* back-to-back frames all survive, in order (the v2 latest-wins bug) */
+    for (int i = 0; i < SPI_SLOT_FIFO_DEPTH; i++) {
+        uint8_t b = (uint8_t)(0x40 + i);
+        CHECK(spi_slot_fifo_push(&g_fifo, &b, 1) == 0);
+    }
+    uint8_t extra = 0xEE;
+    CHECK(spi_slot_fifo_push(&g_fifo, &extra, 1) == -4);        /* full: refused, counted */
+    CHECK(g_fifo.dropped == 1 && spi_slot_fifo_count(&g_fifo) == SPI_SLOT_FIFO_DEPTH);
+
+    for (int i = 0; i < SPI_SLOT_FIFO_DEPTH; i++) {
+        CHECK(spi_slot_fifo_peek(&g_fifo, slot));
+        CHECK(spi_slot_fifo_peek(&g_fifo, slot));               /* peek doesn't consume */
+        CHECK(spi_slot_decode(slot, out, sizeof out) == 1 && out[0] == 0x40 + i);
+        spi_slot_fifo_drop(&g_fifo);
+    }
+    CHECK(spi_slot_fifo_count(&g_fifo) == 0);
+    spi_slot_fifo_drop(&g_fifo);                                /* drop on empty is a no-op */
+    CHECK(spi_slot_fifo_count(&g_fifo) == 0);
+
+    /* wrap-around keeps order */
+    for (int round = 0; round < 3; round++) {
+        for (int i = 0; i < 5; i++) { uint8_t b = (uint8_t)(round * 10 + i); CHECK(spi_slot_fifo_push(&g_fifo, &b, 1) == 0); }
+        for (int i = 0; i < 5; i++) {
+            CHECK(spi_slot_fifo_peek(&g_fifo, slot) && spi_slot_decode(slot, out, sizeof out) == 1);
+            CHECK(out[0] == round * 10 + i);
+            spi_slot_fifo_drop(&g_fifo);
+        }
+    }
+    CHECK(spi_slot_fifo_push(&g_fifo, &extra, SPI_SLOT_PAYLOAD_MAX + 1) == SPI_SLOT_ERR_LEN);
+    CHECK(spi_slot_fifo_count(&g_fifo) == 0);
+}
+
 int main(void)
 {
     RUN(test_frame_roundtrip);
@@ -106,6 +203,10 @@ int main(void)
     RUN(test_record_single);
     RUN(test_record_batch_fills_slot);
     RUN(test_record_truncated_and_edges);
+    RUN(test_crc_matches_reference);
+    RUN(test_slot_roundtrip_and_golden_layout);
+    RUN(test_slot_empty_full_and_errors);
+    RUN(test_slot_fifo_order_and_overflow);
     puts("PASS test_protocol");
     return 0;
 }

@@ -1,25 +1,24 @@
 /**
  * @file spi_slave.c
- * @brief SPI slave driver for C6 — S3 communication (dual-ready, fixed 4096 slot).
+ * @brief SPI slave driver for C6 <-> S3 communication (fixed 4096-byte slots).
  *
- * Protocol (mirror of S3 master, see S3 config.h):
- *   - One full-duplex 4096-byte slot exchange per transaction. C6 keeps a
- *     single 4 KB transaction queued (rx_slot + tx_slot); S3 always clocks.
- *   - Ready lines, ACTIVE HIGH, idle LOW:
- *       PIN_READY_S3_TO_C6 (GPIO4)  INPUT : S3 asserts while it holds a
- *                                          frame unconsumed; we ignore it
- *                                          (full-duplex: S3 clocks anyway).
- *       PIN_READY_C6_TO_S3 (GPIO2)  OUTPUT: WE assert while our tx slot holds
- *                                          a payload S3 has not clocked yet.
- *   - Slot format, both directions:
- *       [0..1]  LEN, big-endian uint16 (payload length 0..4092)
- *       [2..2+LEN-1]  PAYLOAD
- *       [2+LEN..3+LEN]  CRC16 over PAYLOAD ONLY, big-endian (XMODEM)
- *       [4+LEN..4095]  zero padding; an all-zero slot = no payload.
+ * Protocol (mirror of the S3 master; slot format in protocol.h):
+ *   - Standard full-duplex SPI, mode 0, S3 = master and always clocks. The
+ *     GPSPI slave driver only supports this mode; v2's quad/half-duplex master
+ *     could never exchange slots with it (see docs/engineering).
+ *   - Exactly one transaction is armed at a time (rx_slot + tx_slot). The
+ *     DMA owns both buffers until spi_slave_read() reaps the result, so the
+ *     tx slot is only rewritten between transactions.
+ *   - Outgoing payloads wait in a FIFO (spi_slot_fifo_t): back-to-back sends
+ *     are queued, never overwritten.
+ *   - Ready lines, active high:
+ *       PIN_READY_S3_TO_C6  INPUT : informational (the S3 clocks regardless).
+ *       PIN_READY_C6_TO_S3  OUTPUT: high while our FIFO holds payloads.
  */
 
 #include "spi_slave.h"
 #include "config.h"
+#include "protocol.h"
 
 #include <string.h>
 #include "esp_log.h"
@@ -30,55 +29,25 @@
 
 static const char *TAG = "spi_slave";
 
-/* ── DMA-capable slot buffers (4 KB each, required for SPI slave) ──── */
+/* ── DMA buffers: owned by the driver while a transaction is armed ─── */
 static uint8_t s_slot_rx[SPI_SLOT_BYTES] __attribute__((aligned(4)));
 static uint8_t s_slot_tx[SPI_SLOT_BYTES] __attribute__((aligned(4)));
 
+/* The driver keeps this POINTER until the S3 clocks the slot, reads it from
+ * the ISR and writes trans_len back into it, so it must not live on a stack. */
+static spi_slave_transaction_t s_trans;
+
+static spi_slot_fifo_t s_txq;        /* C6 -> S3 payloads (guarded by s_tx_mutex) */
+static bool s_tx_loaded = false;     /* s_slot_tx holds the FIFO head */
+static SemaphoreHandle_t s_tx_mutex;
 static SemaphoreHandle_t s_rx_sem;
 static volatile bool s_has_data = false;
+static uint32_t s_rx_errors = 0;
 
-/* Outgoing payload: LEN + payload + CRC inside s_slot_tx[0..3+LEN]. */
-static volatile size_t s_tx_len = 0;
-static SemaphoreHandle_t s_tx_mutex;
-
-/* Latest-wins tracking for the C6→S3 ready line:
- *   s_post_gen increments on every send() post.
- *   post_setup_cb snapshots the generation the DMA is about to clock.
- *   post_trans_cb compares: if nothing newer was posted mid-flight, the
- *   slot just consumed is the latest post → clear it + drop ready. */
-static volatile uint32_t s_post_gen = 0;
-static volatile uint32_t s_setup_gen = 0;
-static volatile bool s_ready_asserted = false;
-
-static void ready_set(bool level)
+static void ready_update(void)
 {
-    gpio_set_level(PIN_READY_C6_TO_S3, level ? 1 : 0);
-    s_ready_asserted = level;
+    gpio_set_level(PIN_READY_C6_TO_S3, spi_slot_fifo_count(&s_txq) ? 1 : 0);
 }
-
-/* ── CRC-16/XMODEM over data only ──────────────────────────────────── */
-
-static uint16_t crc16_local(const uint8_t *data, size_t len)
-{
-    uint16_t crc = 0xFFFF;
-    for (size_t i = 0; i < len; i++) {
-        crc ^= ((uint16_t)data[i] << 8);
-        for (int j = 0; j < 8; j++) {
-            if (crc & 0x8000)
-                crc = (crc << 1) ^ 0x1021;
-            else
-                crc <<= 1;
-        }
-    }
-    return crc;
-}
-
-/* ── Queue the persistent full-duplex slot transaction ─────────────── */
-
-/* The driver keeps this POINTER until the S3 clocks the slot, reads it from
- * the ISR and writes trans_len back into it, so it must not live on a stack.
- * Exactly one transaction is in flight at a time (see spi_slave_read). */
-static spi_slave_transaction_t s_trans;
 
 static void queue_slot(void)
 {
@@ -87,37 +56,21 @@ static void queue_slot(void)
         .rx_buffer = s_slot_rx,
         .tx_buffer = s_slot_tx,
     };
-    spi_slave_queue_trans(SPI_HOST, &s_trans, portMAX_DELAY);
+    esp_err_t ret = spi_slave_queue_trans(SPI_HOST, &s_trans, portMAX_DELAY);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to arm SPI slot: %d", ret);
+    }
 }
 
-static void IRAM_ATTR spi_post_setup_cb(spi_slave_transaction_t *trans)
-{
-    /* S3 pulled CS low: the DMA is about to clock the current tx slot. */
-    (void)trans;
-    s_setup_gen = s_post_gen;
-}
-
+/* ISR: only signal. Validation and copying happen in task context. */
 static void IRAM_ATTR spi_post_trans_cb(spi_slave_transaction_t *trans)
 {
-    /* This exchange consumed whatever s_slot_tx showed at setup time. */
-    if (s_setup_gen == s_post_gen && s_tx_len > 0) {
-        /* Latest post fully clocked out → clear slot, drop ready. */
-        memset(s_slot_tx, 0, sizeof(s_slot_tx));
-        s_tx_len = 0;
-        ready_set(false);
-    }
-
-    if (trans->trans_len > 0) {
-        uint8_t *rx = (uint8_t *)trans->rx_buffer;
-        uint16_t len = ((uint16_t)rx[0] << 8) | rx[1];
-        if (len > 0 && len <= SPI_SLOT_BYTES - 4) {
-            uint16_t rx_crc = ((uint16_t)rx[2 + len] << 8) | rx[3 + len];
-            uint16_t calc_crc = crc16_local(rx + 2, len);  /* payload only */
-            if (rx_crc == calc_crc) {
-                s_has_data = true;
-                xSemaphoreGiveFromISR(s_rx_sem, NULL);
-            }
-        }
+    (void)trans;
+    BaseType_t woken = pdFALSE;
+    s_has_data = true;
+    xSemaphoreGiveFromISR(s_rx_sem, &woken);
+    if (woken) {
+        portYIELD_FROM_ISR();
     }
 }
 
@@ -127,11 +80,16 @@ int spi_slave_init(void)
 {
     s_rx_sem = xSemaphoreCreateBinary();
     s_tx_mutex = xSemaphoreCreateMutex();
+    if (!s_rx_sem || !s_tx_mutex) {
+        ESP_LOGE(TAG, "semaphore alloc failed");
+        return -1;
+    }
 
     memset(s_slot_rx, 0, sizeof(s_slot_rx));
     memset(s_slot_tx, 0, sizeof(s_slot_tx));
+    spi_slot_fifo_init(&s_txq);
+    s_tx_loaded = false;
 
-    /* Ready lines: S3→C6 is input (informational), C6→S3 is output. */
     gpio_config_t in_cfg = {
         .pin_bit_mask = BIT(PIN_READY_S3_TO_C6),
         .mode = GPIO_MODE_INPUT,
@@ -154,17 +112,15 @@ int spi_slave_init(void)
         .mosi_io_num = PIN_SPI_MOSI,
         .miso_io_num = PIN_SPI_MISO,
         .sclk_io_num = PIN_SPI_SCLK,
-        .quadwp_io_num = PIN_SPI_WP,
-        .quadhd_io_num = PIN_SPI_HD,
+        .quadwp_io_num = -1,             /* standard SPI: WP/HD unused */
+        .quadhd_io_num = -1,
         .max_transfer_sz = SPI_SLOT_BYTES,
-        .flags = SPICOMMON_BUSFLAG_QUAD,
+        .flags = 0,
     };
-
     spi_slave_interface_config_t slave_cfg = {
         .spics_io_num = PIN_SPI_CS,
-        .queue_size = 3,
+        .queue_size = 1,                 /* one armed slot, never more */
         .mode = 0,
-        .post_setup_cb = spi_post_setup_cb,
         .post_trans_cb = spi_post_trans_cb,
     };
 
@@ -175,70 +131,66 @@ int spi_slave_init(void)
     }
 
     queue_slot();
-
-    ESP_LOGI(TAG, "SPI slave initialized (%u-byte dual-ready slot)",
-             (unsigned)SPI_SLOT_BYTES);
+    ESP_LOGI(TAG, "SPI slave initialized (%u-byte full-duplex slot, %d-deep TX FIFO)",
+             (unsigned)SPI_SLOT_BYTES, SPI_SLOT_FIFO_DEPTH);
     return 0;
 }
-
-/* ── Has Data ──────────────────────────────────────────────────────── */
 
 bool spi_slave_has_data(void)
 {
     return s_has_data;
 }
 
-/* ── Read ──────────────────────────────────────────────────────────── */
+/* ── Read: reap the armed slot, validate it, re-arm with the next TX ─── */
 
 int spi_slave_read(uint8_t *buf, size_t buf_size)
 {
     /* Re-arm only after the armed slot completed (reaping it is mandatory).
-     * Re-queueing on every poll piled stale descriptors into the depth-3
-     * queue and then blocked forever while the S3 was idle. */
+     * Re-queueing on every poll piled stale descriptors into the queue and
+     * then blocked forever while the S3 was idle. */
     spi_slave_transaction_t *done;
     if (spi_slave_get_trans_result(SPI_HOST, &done, 0) != ESP_OK) {
         return 0;
     }
+    s_has_data = false;
 
-    int n = 0;
-    if (s_has_data) {
-        uint8_t *rx = s_slot_rx;
-        uint16_t len = ((uint16_t)rx[0] << 8) | rx[1];
-        n = (len < buf_size) ? len : buf_size;
-        memcpy(buf, rx + 2, n);
-        s_has_data = false;
+    int n = spi_slot_decode(s_slot_rx, buf, buf_size);
+    if (n < 0) {
+        s_rx_errors++;
+        ESP_LOGW(TAG, "Dropped S3 slot (error %d, %lu total)", n, (unsigned long)s_rx_errors);
+        n = 0;
     }
 
-    /* Re-arm for the next S3 exchange (S3 bounded-wait covers the gap). */
+    /* The slot just clocked carried the FIFO head: it is delivered. */
+    xSemaphoreTake(s_tx_mutex, portMAX_DELAY);
+    if (s_tx_loaded) {
+        spi_slot_fifo_drop(&s_txq);
+    }
+    s_tx_loaded = spi_slot_fifo_peek(&s_txq, s_slot_tx);
+    ready_update();
+    xSemaphoreGive(s_tx_mutex);
+
     queue_slot();
     return n;
 }
 
-/* ── Send (post a payload slot for S3 to clock) ────────────────────── */
+/* ── Send: queue a payload for the S3 to clock ─────────────────────── */
 
 int spi_slave_send(const uint8_t *data, size_t len)
 {
-    if (len > SPI_SLOT_BYTES - 4) {
-        ESP_LOGE(TAG, "Send too large: %d bytes", (int)len);
-        return -1;
-    }
-
     xSemaphoreTake(s_tx_mutex, portMAX_DELAY);
-
-    memset(s_slot_tx, 0, sizeof(s_slot_tx));
-    s_slot_tx[0] = (len >> 8) & 0xFF;
-    s_slot_tx[1] = len & 0xFF;
-    if (data && len > 0) {
-        memcpy(s_slot_tx + 2, data, len);
-    }
-    uint16_t crc = crc16_local(s_slot_tx + 2, len);  /* payload only */
-    s_slot_tx[2 + len] = (crc >> 8) & 0xFF;
-    s_slot_tx[3 + len] = crc & 0xFF;
-    s_tx_len = len;
-
-    s_post_gen++;
-    ready_set(true);
-
+    int rc = spi_slot_fifo_push(&s_txq, data, len);
+    ready_update();
+    unsigned depth = spi_slot_fifo_count(&s_txq);
     xSemaphoreGive(s_tx_mutex);
-    return 0;
+
+    if (rc == SPI_SLOT_ERR_LEN) {
+        ESP_LOGE(TAG, "Send too large: %d bytes (max %d)", (int)len, SPI_SLOT_PAYLOAD_MAX);
+    } else if (rc != 0) {
+        ESP_LOGW(TAG, "SPI TX FIFO full, dropped %d-byte frame", (int)len);
+    } else {
+        ESP_LOGD(TAG, "SPI TX queued: %d bytes, depth %u", (int)len, depth);
+    }
+    (void)depth;   /* only used by the debug log */
+    return rc;
 }

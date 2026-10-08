@@ -148,6 +148,88 @@ const char *msg_type_name(msg_type_t type)
     }
 }
 
+/* ── SPI slot ──────────────────────────────────────────────────────── */
+
+int spi_slot_encode(uint8_t *slot, const uint8_t *data, size_t len)
+{
+    if (len > SPI_SLOT_PAYLOAD_MAX || (len && !data)) {
+        return SPI_SLOT_ERR_LEN;
+    }
+    memset(slot, 0, SPI_SLOT_BYTES);
+    if (len == 0) {
+        return 0;                       /* all-zero slot = nothing to send */
+    }
+    slot[0] = (uint8_t)(len >> 8);
+    slot[1] = (uint8_t)(len & 0xFF);
+    memcpy(slot + 2, data, len);
+    uint16_t crc = crc16_ccitt(data, len);
+    slot[2 + len] = (uint8_t)(crc >> 8);
+    slot[3 + len] = (uint8_t)(crc & 0xFF);
+    return 0;
+}
+
+int spi_slot_decode(const uint8_t *slot, uint8_t *out, size_t out_size)
+{
+    size_t len = ((size_t)slot[0] << 8) | slot[1];
+    if (len == 0) {
+        return 0;
+    }
+    if (len > SPI_SLOT_PAYLOAD_MAX) {
+        return SPI_SLOT_ERR_LEN;
+    }
+    uint16_t got = (uint16_t)((slot[2 + len] << 8) | slot[3 + len]);
+    if (got != crc16_ccitt(slot + 2, len)) {
+        return SPI_SLOT_ERR_CRC;
+    }
+    if (len > out_size) {
+        return SPI_SLOT_ERR_SPACE;
+    }
+    memcpy(out, slot + 2, len);
+    return (int)len;
+}
+
+void spi_slot_fifo_init(spi_slot_fifo_t *f)
+{
+    f->head = 0;
+    f->count = 0;
+    f->dropped = 0;
+}
+
+int spi_slot_fifo_push(spi_slot_fifo_t *f, const uint8_t *data, size_t len)
+{
+    if (len > SPI_SLOT_PAYLOAD_MAX) {
+        return SPI_SLOT_ERR_LEN;
+    }
+    if (f->count >= SPI_SLOT_FIFO_DEPTH) {
+        f->dropped++;
+        return -4;
+    }
+    unsigned tail = (f->head + f->count) % SPI_SLOT_FIFO_DEPTH;
+    int rc = spi_slot_encode(f->slot[tail], data, len);
+    if (rc == 0) {
+        f->count++;
+    }
+    return rc;
+}
+
+bool spi_slot_fifo_peek(const spi_slot_fifo_t *f, uint8_t *out)
+{
+    if (f->count == 0) {
+        memset(out, 0, SPI_SLOT_BYTES);
+        return false;
+    }
+    memcpy(out, f->slot[f->head], SPI_SLOT_BYTES);
+    return true;
+}
+
+void spi_slot_fifo_drop(spi_slot_fifo_t *f)
+{
+    if (f->count) {
+        f->head = (uint8_t)((f->head + 1) % SPI_SLOT_FIFO_DEPTH);
+        f->count--;
+    }
+}
+
 /* ── SPI batch record ──────────────────────────────────────────────── */
 
 int spi_record_write(uint8_t *out, size_t out_size, uint32_t sender_id,
