@@ -38,6 +38,9 @@ def test_bad_device_type_rejected(client):
 def test_s3_ota_push_prompts_gateway_and_logs(client, db):
     from app.models import EspDevice
     h = auth(login(client))
+    # a push needs an uploaded image (#33); this test used to rely on another test's upload
+    assert client.post("/api/admin/firmware/upload", headers=h, data={"device_type": "s3", "version": "1.2.3"},
+                       files={"file": ("fw.bin", b"\xe9firmware", "application/octet-stream")}).status_code == 200
     cid = client.post("/api/admin/classes", headers=h, json={"name": "Lab", "code": "LAB1"}).json()["id"]
     assert client.post(f"/api/classes/{cid}/activate", headers=h).status_code == 200   # gateways link to active classes
     c6 = client.post("/api/device/register", headers=DEVICE, json={

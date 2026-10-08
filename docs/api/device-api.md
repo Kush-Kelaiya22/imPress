@@ -95,6 +95,7 @@ It updates `last_seen`, battery, RSSI and firmware version, plus non-zero `stude
 | `student_leave` | known enrollment → `ActivityLog student.disconnect` |
 | `quiz_answer` | **stored only if** the student is known, the quiz exists and is `active`, the question exists, `0 ≤ selected_option < len(options)`, all ints, and no answer yet for (quiz, question, student). Otherwise `skipped += 1` |
 | `poll_vote` | stored only if the student is known, the poll is active, the option is in range, and no vote yet for (poll, student) |
+| `ota_result` | `{mac_address (12 hex, as the S3 registered), version, result: applied\|rolled_back\|failed, error, device_mac}` from the S3 via its C6 (#33). Updates the device: `applied` with the pushed version → `ota_status: applied`; another version → `failed`; `rolled_back` clears the pending version; `failed` keeps it. Logged as `module.ota_result`. Unknown MAC or result → `skipped` |
 
 Each stored answer or vote broadcasts the live count to the class room (`quiz_answer` with `total_answers`, `poll_vote` with `total_votes`). Duplicates within one batch are caught too, because the session autoflushes before each duplicate check.
 

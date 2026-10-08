@@ -157,6 +157,24 @@ typedef struct __attribute__((packed)) {
     char     token[64];            /* one-time download token, 0 = none */
 } payload_ota_prompt_t;
 
+/** OTA result: S3 -> C6 -> backend (MSG_OTA_APPLIED, an SPI record from
+ *  sender 0). Sent after rebooting into the new image (APPLIED), when the
+ *  bootloader rolled back to the previous one (ROLLED_BACK), or when an
+ *  attempt failed before any reboot (FAILED, with the esp_err_t). The
+ *  backend records success only from APPLIED with the expected version. */
+typedef enum {
+    OTA_RESULT_APPLIED     = 0,
+    OTA_RESULT_ROLLED_BACK = 1,
+    OTA_RESULT_FAILED      = 2,
+} ota_result_code_t;
+
+typedef struct __attribute__((packed)) {
+    char     version[32];          /* running version (APPLIED) / attempted target */
+    char     mac[13];              /* reporting device, 12 hex + NUL, as it registered */
+    uint8_t  result;               /* ota_result_code_t */
+    int32_t  error;                /* esp_err_t, 0 if none */
+} payload_ota_result_t;
+
 /* ── API Functions ─────────────────────────────────────────────────── */
 
 /**

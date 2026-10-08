@@ -41,6 +41,14 @@ bool ota_in_progress(void);
 /** @brief Called by SPI RX when the C6 ACKs our firmware/applied report. */
 void ota_mark_ackd(void);
 
+/**
+ * @brief After boot: if an OTA was started before the last reboot, report
+ *        whether the target version is now running (APPLIED) or the
+ *        bootloader rolled back (ROLLED_BACK). Call once the image has been
+ *        marked valid and the SPI link is up.
+ */
+void ota_report_boot_result(void);
+
 #ifdef __cplusplus
 }
 #endif

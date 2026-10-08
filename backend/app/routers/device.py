@@ -459,6 +459,38 @@ async def _broadcast_participation(db: AsyncSession, event: dict) -> None:
     await manager.broadcast_to_class(class_id, event)
 
 
+async def _record_ota_result(db: AsyncSession, msg: dict) -> bool:
+    """An S3's OTA outcome, relayed by its C6 (#33).
+
+    The S3 reports after rebooting into the new image (applied), after the
+    bootloader reverted it (rolled_back), or when an attempt failed before
+    any reboot (failed + esp_err_t). Success is recorded only for 'applied'
+    with the version that was pushed: a reboot alone proves nothing.
+    """
+    mac = (msg.get("mac_address") or "").strip()
+    version = str(msg.get("version") or "").strip()[:32]
+    result = msg.get("result")
+    if not mac or result not in ("applied", "rolled_back", "failed"):
+        return False
+    device = (await db.execute(select(EspDevice).where(EspDevice.mac_address == mac))).scalar_one_or_none()
+    if device is None:
+        return False
+    expected = device.pending_version or ""
+    if result == "applied":
+        device.firmware_version = version            # what really runs
+        device.ota_status = "applied" if (not expected or version == expected) else "failed"
+        device.pending_version = ""
+    elif result == "rolled_back":
+        device.ota_status = "rolled_back"
+        device.pending_version = ""                  # don't offer the bad image again
+    else:
+        device.ota_status = "failed"                 # transient: pending kept for a retry
+    db.add(ActivityLog(action="module.ota_result", entity_type="device", entity_id=device.id, details={
+        "mac": mac, "result": result, "version": version, "expected": expected,
+        "error": msg.get("error", 0), "gateway_mac": msg.get("device_mac", "")}))
+    return True
+
+
 async def _resolve_gateway(db: AsyncSession, mac: str) -> EspDevice | None:
     """Resolve the relaying C6 gateway device by its MAC (from a mesh event)."""
     mac = (mac or "").strip()
@@ -585,6 +617,12 @@ async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db
             if gw is not None:
                 touched_device_ids.append(gw.id)
             processed += 1
+
+        elif msg_type == "ota_result":
+            if await _record_ota_result(db, msg):
+                processed += 1
+            else:
+                skipped += 1
 
         elif msg_type in ("quiz_answer", "poll_vote"):
             record = _record_quiz_answer if msg_type == "quiz_answer" else _record_poll_vote
