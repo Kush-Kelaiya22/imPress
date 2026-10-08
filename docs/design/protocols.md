@@ -90,7 +90,7 @@ Duplicates are identified by `mesh_msg_id(sender_id, frame)`, an FNV-1a hash ove
 
 ## ③ SPI slot (S3 ↔ C6, both directions)
 
-One full-duplex transfer of exactly **4096 bytes** (`SPI_SLOT_BYTES`):
+One **standard full-duplex** SPI transfer (mode 0, MOSI/MISO, S3 = master) of exactly **4096 bytes** (`SPI_SLOT_BYTES`, `protocol.h`). The clock is `CONFIG_SPI_CLOCK_MHZ` (default **10 MHz**: ~3.3 ms per slot).
 
 ```
 ┌─────────────┬───────────────────────┬────────────────┬──────────────────┐
@@ -98,16 +98,21 @@ One full-duplex transfer of exactly **4096 bytes** (`SPI_SLOT_BYTES`):
 └─────────────┴───────────────────────┴────────────────┴──────────────────┘
 ```
 
-- **CRC-16/XMODEM-style** (poly `0x1021`, init `0xFFFF`) over the **payload only**.
+- **CRC-16** `crc16_ccitt()` (poly `0x1021`, init `0xFFFF`) over the **payload only**. Both ends build and check slots with the shared `spi_slot_encode()` / `spi_slot_decode()`. A slot with a bad length or CRC is dropped and counted; the link carries on with the next slot.
 - `LEN = 0` (an all-zero slot) means "nothing to send".
 - **S3 → C6 payload** = a sequence of SPI batch records (④).
 - **C6 → S3 payload** = exactly one protocol frame (②).
 
 **Handshake lines** (active high, idle low):
-- **READY S3→C6**: the S3 has a slot queued. Informational for the C6.
-- **READY C6→S3**: the C6 has a frame queued. A rising edge interrupts the S3, which clocks one exchange. The C6 drops it after that exact post is clocked out.
+- **READY S3→C6**: the S3 FIFO holds payloads. Informational for the C6.
+- **READY C6→S3**: the C6 FIFO holds payloads. Informational for the S3.
 
-The S3 also clocks whenever it has its own data to send, and polls every `SPI_POLL_INTERVAL_MS` (50 ms).
+**Queues and timing.**
+
+- **Outgoing FIFOs:** each side queues outgoing payloads in an 8-slot FIFO (`spi_slot_fifo_t`). Back-to-back frames are delivered in order instead of overwriting each other.
+- **S3:** clocks one slot every `SPI_POLL_INTERVAL_MS` (50 ms), and immediately when it queues something. It removes a payload from its FIFO only after the transfer succeeded.
+- **C6:** keeps exactly one transaction armed. Every 2 ms, whether Wi-Fi is up or not, it reaps the completed slot, loads the next FIFO entry into the (now free) DMA buffer and re-arms.
+- **Payload size:** a C6 frame therefore reaches the S3 within one poll interval. Payloads up to `SPI_SLOT_PAYLOAD_MAX` (4092 bytes).
 
 ---
 

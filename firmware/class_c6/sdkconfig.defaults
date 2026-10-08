@@ -16,3 +16,7 @@ CONFIG_WS_TRANSPORT_WEBSOCKET=y
 
 # Logging
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# Flash: DIO works on every C6 module; QIO needs a flash chip with the QE bit
+# set and failed to boot on the v3 demo boards (adopted from v3).
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y

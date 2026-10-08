@@ -49,6 +49,9 @@ typedef uint32_t TickType_t;
 typedef int BaseType_t;
 typedef void *SemaphoreHandle_t;
 #define portMAX_DELAY 0xFFFFFFFFu
+#define pdFALSE 0
+#define pdTRUE 1
+#define portYIELD_FROM_ISR() ((void)0)
 SemaphoreHandle_t xSemaphoreCreateBinary(void);
 SemaphoreHandle_t xSemaphoreCreateMutex(void);
 BaseType_t xSemaphoreTake(SemaphoreHandle_t s, TickType_t t);

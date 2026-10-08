@@ -86,31 +86,27 @@ static void spi_link_task(void *arg)
     (void)arg;
     /* Static buffers: batch and RX payload are ~SPI_SLOT_BYTES each and
      * would overflow a 4096-byte task stack, so they live in .bss. */
-    static uint8_t batch[SPI_SLOT_BYTES - 4];  /* mesh batch → S3 slot payload */
-    static uint8_t rx[SPI_SLOT_BYTES - 4];     /* C6 slot payload */
+    static uint8_t batch[SPI_SLOT_PAYLOAD_MAX];  /* mesh batch → S3 slot payload */
+    static uint8_t rx[SPI_SLOT_PAYLOAD_MAX];     /* C6 slot payload */
 
     while (1) {
-        /* Wake on: (a) S3 queued TX via spi_master_send(), (b) R_C6 rise-
-         * edge ISR. Bounded wait also keeps the old spi_tx_task cadence so
-         * the mesh queue drains to C6 even without other traffic. */
+        /* Wake at once when spi_master_send() queued something, else after
+         * the poll interval. */
         xSemaphoreTake(spi_master_link_signal(),
                        pdMS_TO_TICKS(g_cfg.spi_poll_interval_ms));
 
-        /* Old spi_tx_task duty: drain batched student messages into slot. */
         int n = mesh_master_flush_to_spi(batch, sizeof(batch));
         if (n > 0) {
-            spi_master_send(batch, n);
-            ESP_LOGD(TAG, "SPI TX: %d bytes to C6", n);
+            int rc = spi_master_send(batch, n);
+            ESP_LOGD(TAG, "Student data → C6 SPI: %d bytes, rc=%d", n, rc);
         }
 
-        /* Old spi_rx_task duty: exactly ONE full-duplex slot transfer if
-         * there is anything to send or C6 signalled it has a frame. */
-        if (spi_master_tx_pending() || spi_master_c6_has_data()) {
-            if (spi_master_poll()) {
-                int rlen = spi_master_rx_copy(rx, sizeof(rx));
-                if (rlen > 0) {
-                    handle_c6_frame(rx, rlen);
-                }
+        /* Always clock one slot: the C6 can only hand us a frame inside an
+         * exchange, and waiting for its ready-line edge could stall the link. */
+        if (spi_master_poll()) {
+            int rlen = spi_master_rx_copy(rx, sizeof(rx));
+            if (rlen > 0) {
+                handle_c6_frame(rx, rlen);
             }
         }
     }

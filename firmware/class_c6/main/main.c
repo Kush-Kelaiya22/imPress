@@ -33,6 +33,7 @@
 #include "wifi_client.h"
 #include "ws_client.h"
 #include "ws_command.h"
+#include "student_set.h"
 #include "esp_efuse.h"
 #include "esp_mac.h"
 
@@ -43,7 +44,10 @@ static const char *TAG = "c6_main";
 static char s_mac_str[DEVICE_MAC_STR_LEN] = "";
 static volatile bool s_gateway_ready = false;
 static volatile int64_t s_boot_time_us = 0;
-static volatile int s_student_count = 0;  /* updated from S3 heartbeats */
+/* Students on the mesh, from JOIN/LEAVE (owned by spi2http). Other tasks
+ * read only the mirrored count. */
+static student_set_t s_students;
+static volatile int s_student_count = 0;
 static TaskHandle_t s_spi2http_task;
 
 /* heartbeat_task → spi2http: "append the C6's own heartbeat to the batch".
@@ -60,11 +64,18 @@ static volatile bool s_ws_restart_pending = false;
 /* ── Batch Accumulator ──────────────────────────────────────────────── */
 /* Only ever touched from spi_to_http_task (see s_hb_item_pending). */
 
-#define BATCH_BUF_SIZE  (HTTP_BUF_SIZE - 128)
+/* While Wi-Fi (or the backend) is down the batch keeps accumulating, so it
+ * is bounded: at BATCH_MAX_BUFFERED the oldest heartbeat (else the oldest
+ * item) is dropped. A flush POSTs at most batch_max items, which keeps the
+ * JSON inside http_send_batch()'s HTTP_BUF_SIZE buffer. */
+#define BATCH_MAX_BUFFERED   200
+#define BATCH_RETRY_MS       1000
 
 typedef struct {
     cJSON *items;    /* JSON array being accumulated */
     int64_t last_add_us;
+    int64_t retry_after_us;   /* back-off after a failed POST */
+    uint32_t dropped;         /* items discarded (buffer full or rejected) */
 } batch_acc_t;
 
 static batch_acc_t s_batch = {0};
@@ -75,9 +86,28 @@ static void batch_init(void)
     s_batch.last_add_us = esp_timer_get_time();
 }
 
+static bool item_is_heartbeat(const cJSON *item)
+{
+    const cJSON *t = cJSON_GetObjectItemCaseSensitive(item, "type");
+    return cJSON_IsString(t) && strcmp(t->valuestring, "heartbeat") == 0;
+}
+
 static void batch_add(cJSON *item)
 {
     if (!item) return;
+    if (cJSON_GetArraySize(s_batch.items) >= BATCH_MAX_BUFFERED) {
+        int victim = 0, i = 0;
+        const cJSON *it;
+        cJSON_ArrayForEach(it, s_batch.items) {
+            if (item_is_heartbeat(it)) { victim = i; break; }
+            i++;
+        }
+        cJSON_DeleteItemFromArray(s_batch.items, victim);
+        if (s_batch.dropped++ % 50 == 0) {
+            ESP_LOGW(TAG, "Batch buffer full (%d items, backend unreachable?): "
+                     "dropped %lu so far", BATCH_MAX_BUFFERED, (unsigned long)s_batch.dropped);
+        }
+    }
     cJSON_AddItemToArray(s_batch.items, item);
     s_batch.last_add_us = esp_timer_get_time();
 }
@@ -87,23 +117,45 @@ static bool batch_flush_needed(void)
     int64_t now = esp_timer_get_time();
     int count = cJSON_GetArraySize(s_batch.items);
     int64_t elapsed_ms = (now - s_batch.last_add_us) / 1000;
+    if (count == 0 || now < s_batch.retry_after_us) return false;
     return (count >= (int)g_cfg.batch_max) ||
-           (count > 0 && elapsed_ms >= (int64_t)g_cfg.spi_batch_max_ms);
+           (elapsed_ms >= (int64_t)g_cfg.spi_batch_max_ms);
 }
 
+/* POST one chunk of at most batch_max items. Kept for retry on a network
+ * error or 5xx; dropped on 4xx (a malformed chunk would block the queue). */
 static void batch_flush(void)
 {
-    int count = cJSON_GetArraySize(s_batch.items);
-    if (count == 0) return;
+    cJSON *chunk = cJSON_CreateArray();
+    if (!chunk) return;
+    int n = 0;
+    while (n < (int)g_cfg.batch_max && cJSON_GetArraySize(s_batch.items) > 0) {
+        cJSON_AddItemToArray(chunk, cJSON_DetachItemFromArray(s_batch.items, 0));
+        n++;
+    }
 
-    char *json = cJSON_PrintUnformatted(s_batch.items);
+    char *json = cJSON_PrintUnformatted(chunk);
+    int status = 0;
     if (json) {
-        ESP_LOGI(TAG, "Batch flush %d items → /api/device/batch", count);
-        http_send_batch(json);
+        status = http_send_batch(json);
+        ESP_LOGI(TAG, "Batch flush %d items → /api/device/batch: HTTP %d", n, status);
+        ESP_LOGD(TAG, "Batch data: %s", json);   /* enrollment numbers: debug only */
         free(json);
     }
-    cJSON_Delete(s_batch.items);
-    s_batch.items = cJSON_CreateArray();
+
+    if (status >= 200 && status < 300) {
+        s_batch.retry_after_us = 0;
+    } else if (status >= 400 && status < 500) {
+        s_batch.dropped += n;
+        ESP_LOGW(TAG, "Backend rejected batch (HTTP %d): %d items dropped", status, n);
+    } else {
+        /* put the chunk back in front, in order, and back off */
+        for (int i = n - 1; i >= 0; i--) {
+            cJSON_InsertItemInArray(s_batch.items, 0, cJSON_DetachItemFromArray(chunk, i));
+        }
+        s_batch.retry_after_us = esp_timer_get_time() + BATCH_RETRY_MS * 1000LL;
+    }
+    cJSON_Delete(chunk);
     s_batch.last_add_us = esp_timer_get_time();
 }
 
@@ -124,13 +176,21 @@ static cJSON *msg_to_json(msg_type_t type, const uint8_t *payload, uint16_t len,
         cJSON_AddNumberToObject(j, "device_id", p->device_id);
         cJSON_AddNumberToObject(j, "battery_pct", p->battery_pct);
         cJSON_AddNumberToObject(j, "rssi", p->rssi);
-        /* Update student count from S3's reported value */
-        s_student_count++;
+        /* The S3's own heartbeat (sender 0): if its uptime went backwards it
+         * rebooted without sending LEAVEs, so the online set is stale. */
+        if (sender_device_id == 0 && student_set_root_uptime(&s_students, p->uptime_s)) {
+            ESP_LOGW(TAG, "S3 rebooted: online-student set cleared");
+            s_student_count = 0;
+        }
         break;
     }
     case MSG_STUDENT_JOIN: {
         if (len < sizeof(payload_student_join_t)) break;
         const payload_student_join_t *p = (const payload_student_join_t *)payload;
+        if (student_set_join(&s_students, p->enrollment)) {
+            s_student_count = student_set_count(&s_students);
+            ESP_LOGI(TAG, "Student online: %.10s (total=%d)", p->enrollment, s_student_count);
+        }
         j = cJSON_CreateObject();
         cJSON_AddStringToObject(j, "type", "student_join");
         /* Enrollment number is the primary identity */
@@ -155,8 +215,10 @@ static cJSON *msg_to_json(msg_type_t type, const uint8_t *payload, uint16_t len,
         cJSON_AddStringToObject(j, "device_mac", s_mac_str);
         cJSON_AddNumberToObject(j, "device_id", p->device_id);
         cJSON_AddNumberToObject(j, "reason", p->reason);
-        /* Track mesh population (heartbeat increments per peer) */
-        if (s_student_count > 0) s_student_count--;
+        if (student_set_leave(&s_students, p->enrollment)) {
+            s_student_count = student_set_count(&s_students);
+            ESP_LOGI(TAG, "Student offline: %.10s (total=%d)", p->enrollment, s_student_count);
+        }
         break;
     }
     case MSG_QUIZ_ANSWER: {
@@ -245,24 +307,31 @@ static void process_spi_payload(const uint8_t *buf, int buf_len)
         }
     }
 
-    /* Flush when ready */
-    if (batch_flush_needed()) {
+    /* Flush only when the backend is reachable; otherwise keep accumulating
+     * (bounded, see batch_add). */
+    if (wifi_client_is_connected() && batch_flush_needed()) {
         batch_flush();
     }
 }
+
+/* spi2http polls every 2 ms; with a 100 Hz tick that rounds to 0 ticks and
+ * the task (priority 5) would spin, starve IDLE and trip the task watchdog. */
+#if CONFIG_FREERTOS_HZ < 500
+#error "spi_to_http_task's 2 ms poll needs CONFIG_FREERTOS_HZ >= 500 (sdkconfig.defaults sets 1000)"
+#endif
 
 static void spi_to_http_task(void *arg)
 {
     (void)arg;
     uint8_t buf[SPI_RX_BUF_SIZE];
     batch_init();
+    student_set_init(&s_students);
 
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(50));
-
-        if (!wifi_client_is_connected()) {
-            continue;
-        }
+        /* Reap and re-arm the SPI slot often, Wi-Fi or not: the S3 can only
+         * clock a slot the C6 has armed. The old 50 ms + Wi-Fi gate left the
+         * C6 with no armed slot, dropping commands and student events. */
+        vTaskDelay(pdMS_TO_TICKS(2));
 
         int len = spi_slave_read(buf, sizeof(buf));
         if (len > 0) {
@@ -280,7 +349,7 @@ static void spi_to_http_task(void *arg)
         }
 
         /* Periodic flush check */
-        if (batch_flush_needed()) {
+        if (wifi_client_is_connected() && batch_flush_needed()) {
             batch_flush();
         }
     }
@@ -372,7 +441,8 @@ static void on_ws_command(const char *json)
     uint8_t frame[MSG_MAX_SIZE];
     int fn = ws_command_to_frame(msg, frame, sizeof(frame));
     if (fn > 0) {
-        spi_slave_send(frame, fn);
+        int rc = spi_slave_send(frame, fn);
+        ESP_LOGI(TAG, "Queued %s for S3 over SPI: len=%d rc=%d", evt, fn, rc);
     } else if (fn < 0) {
         ESP_LOGW(TAG, "Malformed '%s' command — dropped", evt);
     } else if (strcmp(evt, "device_command") == 0) {

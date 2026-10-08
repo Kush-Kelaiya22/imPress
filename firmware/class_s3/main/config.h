@@ -30,23 +30,16 @@
 #define NVS_KEY_KEY_LEN     65
 #define NVS_KEY_INIT        "init"
 
-/* ── SPI Bus Configuration (S3 = Master, Quad SPI @ 80 MHz) ── */
+/* ── SPI Bus Configuration (S3 = master, standard full-duplex SPI) ── */
 #define SPI_HOST            SPI2_HOST
 #define PIN_SPI_MOSI        GPIO_NUM_11
 #define PIN_SPI_MISO        GPIO_NUM_13
 #define PIN_SPI_SCLK        GPIO_NUM_12
 #define PIN_SPI_CS          GPIO_NUM_10
-#define PIN_SPI_WP          GPIO_NUM_14   /* Quad WP / IO2 */
-#define PIN_SPI_HD          GPIO_NUM_9    /* Quad HD / IO3 */
-#define SPI_CLOCK_HZ        (80 * 1000 * 1000)  /* 80 MHz quad */
+#define SPI_CLOCK_HZ        (CONFIG_SPI_CLOCK_MHZ * 1000 * 1000)  /* Kconfig, default 10 MHz */
 #define SPI_DMA_CHAN         SPI_DMA_CH_AUTO
 
-/* ── SPI Transfer Sizes ── */
-#define SPI_TX_BUF_SIZE     (1024 * 4)  /* 4 KB TX buffer */
-#define SPI_RX_BUF_SIZE     (1024 * 4)  /* 4 KB RX buffer */
-
-/* ── SPI Slot Protocol (fixed 4096-byte slot, dual-ready handshake) ── */
-#define SPI_SLOT_BYTES      4096  /* fixed slot size, both directions */
+/* ── SPI slot ready lines (slot format: SPI_SLOT_BYTES in protocol.h) ── */
 /* Ready lines, ACTIVE HIGH, idle LOW */
 #define PIN_READY_S3_TO_C6  GPIO_NUM_16  /* S3 drives (output): "S3 frame queued push" */
 #define PIN_READY_C6_TO_S3  GPIO_NUM_15  /* S3 reads (input, pull-down): "C6 frame queued" */

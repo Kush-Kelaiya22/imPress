@@ -59,7 +59,7 @@ flowchart LR
         S3["Hub · ESP32-S3<br/>mesh root · SPI master"]:::hub
         C6["Gateway · ESP32-C6<br/>SPI slave · Wi-Fi"]:::gateway
         ST <-- "ESP-NOW mesh<br/>relayed, de-duplicated" --> S3
-        S3 <-- "SPI 80 MHz<br/>4 KB slots" --> C6
+        S3 <-- "SPI 10 MHz<br/>4 KB slots" --> C6
     end
     C6 <-- "HTTP JSON +<br/>WebSocket" --> BE["FastAPI backend<br/>REST · WebSocket rooms"]:::server
     BE --- DB[("SQLite")]:::store

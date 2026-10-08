@@ -222,6 +222,55 @@ int spi_record_write(uint8_t *out, size_t out_size, uint32_t sender_id,
 int spi_record_read(const uint8_t *buf, size_t buf_len, uint32_t *sender_id,
                     const uint8_t **frame, uint16_t *frame_len);
 
+/* ── SPI slot (S3 <-> C6, both directions) ──────────────────────────────
+ * Every SPI exchange moves exactly one fixed-size slot each way (standard
+ * full-duplex SPI, S3 = master):
+ *   [LEN:2 BE][PAYLOAD:LEN][CRC16:2 BE, crc16_ccitt over PAYLOAD][zero pad]
+ * LEN = 0 (an all-zero slot) means "nothing to send".
+ * Each side queues outgoing payloads in a spi_slot_fifo_t, so back-to-back
+ * frames are never overwritten (they were, with a single latest-wins slot).
+ * Locking is the caller's job; the FIFO itself is plain data.
+ */
+#define SPI_SLOT_BYTES        4096
+#define SPI_SLOT_OVERHEAD     4      /* LEN(2) + CRC(2) */
+#define SPI_SLOT_PAYLOAD_MAX  (SPI_SLOT_BYTES - SPI_SLOT_OVERHEAD)
+
+#define SPI_SLOT_ERR_LEN      (-1)   /* LEN larger than the slot can hold */
+#define SPI_SLOT_ERR_CRC      (-2)   /* CRC mismatch: corrupted transfer */
+#define SPI_SLOT_ERR_SPACE    (-3)   /* caller buffer smaller than LEN */
+
+/** @brief Build a slot (zero-padded). @return 0, or SPI_SLOT_ERR_LEN. */
+int spi_slot_encode(uint8_t *slot, const uint8_t *data, size_t len);
+
+/**
+ * @brief Validate a received slot and copy its payload.
+ * @return payload length (0 = empty slot) or a negative SPI_SLOT_ERR_*.
+ */
+int spi_slot_decode(const uint8_t *slot, uint8_t *out, size_t out_size);
+
+#define SPI_SLOT_FIFO_DEPTH   8
+
+typedef struct {
+    uint8_t  slot[SPI_SLOT_FIFO_DEPTH][SPI_SLOT_BYTES];  /* encoded, ready to clock */
+    uint8_t  head;
+    uint8_t  count;
+    uint32_t dropped;                                    /* pushes refused: FIFO full */
+} spi_slot_fifo_t;
+
+void spi_slot_fifo_init(spi_slot_fifo_t *f);
+
+/** @brief Encode and enqueue. @return 0, SPI_SLOT_ERR_LEN, or -4 when full. */
+int spi_slot_fifo_push(spi_slot_fifo_t *f, const uint8_t *data, size_t len);
+
+/** @brief Copy the oldest slot into out (an all-zero slot when empty).
+ *  @return true if a queued slot was copied. Does not remove it. */
+bool spi_slot_fifo_peek(const spi_slot_fifo_t *f, uint8_t *out);
+
+/** @brief Remove the oldest slot (after it was actually clocked out). */
+void spi_slot_fifo_drop(spi_slot_fifo_t *f);
+
+static inline unsigned spi_slot_fifo_count(const spi_slot_fifo_t *f) { return f->count; }
+
 /* ── Mesh de-duplication ───────────────────────────────────────────────
  * A message relayed through the mesh is the same message at every hop:
  * identify it by (origin sender_id, protocol frame) — NEVER by the mesh

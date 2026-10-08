@@ -1,0 +1,13 @@
+# Changelog: v2.1
+
+`varun/v2.1` = `v2` (`4fce7f7`) + the v2.1 backlog (#26–#44). Each change lands through its own branch and pull request into `varun/v2.1`. `main`, `v2` and `v3` are not modified. Evidence for the plan: [system audit](../engineering/SYSTEM_AUDIT.md) and [v2/v3 comparison](../engineering/V2_V3_COMPARISON.md).
+
+| Issue | Area | Branch / PR | Change | Tests |
+|---|---|---|---|---|
+| [#27](https://github.com/Kush-Kelaiya22/imPress/issues/27) | docs | `docs/v2.1-engineering-audit` / [#45](https://github.com/Kush-Kelaiya22/imPress/pull/45) | System audit and v2/v3 comparison | docs consistency suite |
+| [#29](https://github.com/Kush-Kelaiya22/imPress/issues/29) | firmware | `fix/v2.1-v3-firmware-link` | `v3`'s S3↔C6 link fixes ported, with its regressions removed. **Adopted:** standard full-duplex SPI on both ends (v2's quad half-duplex master never matched the slave driver), 10 MHz default clock (Kconfig `SPI_CLOCK_MHZ`), 8-slot TX FIFOs on both sides (v2 overwrote queued frames), C6 services SPI every 2 ms regardless of Wi-Fi, online-student set from JOIN/LEAVE, single-encoded mesh heartbeats, C6 DIO flash. **Adapted:** shared slot codec/FIFO/CRC in `protocol` instead of two driver copies; C6 RX CRC check restored; S3 removes a payload only after a successful transfer; student set cleared when the S3 reboots; offline batch bounded to 200 items and flushed in `batch_max` chunks (it was truncated past 4 KB) with retry on network/5xx; batch JSON logged at DEBUG only; compile-time guard on the tick rate the 2 ms poll needs. **Rejected:** overlapping `memcpy` in the S3 heartbeat, real-looking `DEFAULT_ENROLLMENT`, `docs.zip`. | `host:protocol` (+4), `host:class_c6` (FIFO order, CRC reject, FIFO full, ready line), `host:class_c6:student_set` (new, 4), `firmware/tests/test_spi_link.py` (new, 13; 11 fail on `v2`, 11 on `v3`), IDF builds |
+
+## Upgrade notes
+
+- **S3 and C6 must be flashed together** for #29: the SPI wire mode changed on both ends. The former WP/HD wires (S3 GPIO14/9 ↔ C6 GPIO3/4) are no longer used.
+- Static RAM after #29 (measured, `idf.py size`): C6 DIRAM 41.5% (was 33.5%), S3 DIRAM 59.9% (was 50.4%).

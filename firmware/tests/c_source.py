@@ -10,7 +10,9 @@ from pathlib import Path
 
 FIRMWARE = Path(__file__).resolve().parents[1]
 
-_FUNC_RE = re.compile(r"^(?:static\s+)?[\w\s\*]+?\b(\w+)\s*\([^;{]*\)\s*\{", re.M)
+# (?!\s): a definition starts at column 0, so an indented macro loop such as
+# "    cJSON_ArrayForEach(it, list) {" is not mistaken for a function.
+_FUNC_RE = re.compile(r"^(?!\s)(?:static\s+)?[\w\s\*]+?\b(\w+)\s*\([^;{]*\)\s*\{", re.M)
 
 
 def strip_comments_and_strings(src: str) -> str:
