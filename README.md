@@ -286,8 +286,9 @@ More: [troubleshooting guide](docs/guides/troubleshooting.md), [known issues](do
 | **Testing** | [Test strategy](docs/testing/TEST_STRATEGY.md) · [Hardware validation](docs/testing/HARDWARE_VALIDATION.md) |
 | **Engineering** | [System audit](docs/engineering/SYSTEM_AUDIT.md) · [v2 / v3 comparison](docs/engineering/V2_V3_COMPARISON.md) · [Database migrations](docs/engineering/DATABASE_MIGRATIONS.md) |
 | **Reference** | [Data model](docs/reference/data-model.md) · [Hardware and wiring](docs/reference/hardware.md) · [Known issues](docs/reference/known-issues.md) |
+| **Project policies** | [Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Version policy and history](Version.md) |
 
-The [documentation index](docs/README.md) describes when to read each page.
+The [documentation index](docs/README.md) describes when to read each page. The **[wiki](https://github.com/Kush-Kelaiya22/imPress/wiki)** covers the same ground as step-by-step guides for administrators, teachers, operators and developers.
 
 ## Repository layout
 
@@ -309,6 +310,9 @@ imPress/
 ├── tests/                  repository, CI and documentation checks
 ├── ui_tests/               Playwright browser checks
 ├── VERSION                 release version (2.1.0)
+├── Version.md              version policy and change history
+├── CONTRIBUTING.md         contributor workflow and engineering rules
+├── CODE_OF_CONDUCT.md      community standards and enforcement
 ├── run_tests.py            unified test runner
 └── .github/workflows/      continuous integration
 ```
@@ -327,14 +331,6 @@ No GitHub release or tag has been published yet, so there is no release badge. T
 
 > [!WARNING]
 > Databases containing user and session data were committed to git history before `v2`. Purge them and rotate the affected passwords before publishing the repository. See the [deployment checklist](docs/guides/deployment.md#4-go-live-checklist).
-
-## Contributing
-
-1. Open or pick an issue, then branch from `varun/v2.1` as `feat/<issue>-<summary>`, `fix/…` or `docs/…`.
-2. Add or update tests next to the code you change, then run `python run_tests.py`.
-3. Keep on-wire formats in `firmware/protocol` and the device contract fixture in sync ([decision D5](docs/design/decisions.md#d5-the-backend--firmware-json-contract-is-a-committed-fixture)).
-4. Update the relevant page in [`docs/`](docs/README.md). Repository checks fail on broken links, undocumented routes or undocumented settings.
-5. Use conventional commit messages. Open a pull request into `varun/v2.1`; the **CI result** check must pass.
 
 ## License
 

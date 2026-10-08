@@ -8,7 +8,8 @@ import pytest
 
 from conftest import ROOT
 
-DOCS = [ROOT / "README.md"] + sorted((ROOT / "docs").rglob("*.md"))
+DOCS = [ROOT / name for name in ("README.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "Version.md")]
+DOCS += sorted((ROOT / "docs").rglob("*.md"))
 
 
 def _strip_code(text):
@@ -97,13 +98,21 @@ def test_readme_is_professional_plain_text():
 README_SECTIONS = ("Overview", "Key capabilities", "Architecture", "Supported hardware", "Minimum requirements",
                    "Prerequisites", "Installation", "Configuration", "Application startup", "Classroom management",
                    "CSV imports", "Device management", "Firmware management", "OTA deployment", "Firmware rollback",
-                   "Development workflow", "Testing", "Troubleshooting", "Release history", "Contributing", "License")
+                   "Development workflow", "Testing", "Troubleshooting", "Release history", "License")
 
 
 def test_readme_has_every_required_section():
     headings = re.findall(r"^#{2,3}\s+(.+)$", (ROOT / "README.md").read_text(), re.M)
     missing = [s for s in README_SECTIONS if not any(h.strip().lower() == s.lower() for h in headings)]
     assert not missing, missing
+
+
+def test_readme_links_to_governance_documents_without_a_contributing_section():
+    text = (ROOT / "README.md").read_text()
+    headings = re.findall(r"^#{2,3}\s+(.+)$", text, re.M)
+    assert not any(h.strip().lower() == "contributing" for h in headings)
+    for path in ("CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "Version.md"):
+        assert f"]({path})" in text
 
 
 def test_readme_badges_reflect_real_data():
