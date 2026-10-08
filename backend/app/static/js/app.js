@@ -2644,6 +2644,25 @@ async function renderQuizCreate(app, params) {
               </div>
             </div>
 
+            <div class="card" id="q-import" style="background:var(--input);margin-bottom:1rem">
+              <div class="flex-between">
+                <h2 style="font-size:1rem;margin:0">Import questions from CSV</h2>
+                <a class="btn btn-sm btn-outline" href="${quizzesApi.templateUrl}" download>Download template</a>
+              </div>
+              <p class="form-hint" style="margin:0.5rem 0 0.75rem">
+                Columns: <strong>question_text</strong>, <strong>option_a</strong>, <strong>option_b</strong>, option_c, option_d,
+                <strong>correct_option</strong> (A–D). UTF-8, up to 500 rows / 1 MB. Nothing is added until you confirm,
+                and you can review every question before creating the quiz.
+              </p>
+              <div class="csv-drop" id="q-csv-drop" role="button" tabindex="0" aria-label="Choose a CSV file of questions">
+                <p style="margin:0 0 0.5rem">Drop a CSV file here or click to browse</p>
+                <input type="file" id="q-csv-file" accept=".csv,text/csv" />
+                <button type="button" class="btn btn-sm btn-outline" id="q-csv-browse">Choose File</button>
+              </div>
+              <progress id="q-csv-progress" class="hidden" max="100" value="0" style="width:100%;margin-top:0.5rem"></progress>
+              <div id="q-csv-result" class="mt-1" aria-live="polite"></div>
+            </div>
+
             <div id="questions-container">
               <div class="card" style="background:var(--input);margin-bottom:1rem" data-qi="0">
                 <h2 style="font-size:1rem">Question 1</h2>
@@ -2671,6 +2690,7 @@ async function renderQuizCreate(app, params) {
   }
 
   renderQuizForm();
+  wireQuestionCsvImport();
 
   // Toggle timing options
   document.getElementById('timing-mode').addEventListener('change', (e) => {
@@ -2684,6 +2704,7 @@ async function renderQuizCreate(app, params) {
 
   document.getElementById('quiz-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const submitBtn = e.target.querySelector('button[type="submit"]');
     const questions = [];
     const cards = document.querySelectorAll('[data-qi]');
     for (const card of cards) {
@@ -2717,14 +2738,112 @@ async function renderQuizCreate(app, params) {
         question_time_limit: timingMode === 'per_question' ? parseInt(document.getElementById('question-time').value) || 30 : 0,
         total_time_limit: timingMode === 'total' ? parseInt(document.getElementById('total-time').value) || 300 : 0,
       };
+      submitBtn.disabled = true;   // no second quiz from a double click
       const quiz = await quizzesApi.create(data);
       showToast('Quiz created!', 'success');
       (quiz.warnings || []).forEach(w => showToast(w, 'info'));   // text the modules will truncate
       navigate(`#/class?id=${classId}`);
     } catch (err) {
+      submitBtn.disabled = false;
       showToast(err.message, 'error');
     }
   });
+}
+
+// ── CSV question import (create-quiz page) ─────────────────────
+
+function wireQuestionCsvImport() {
+  const drop = document.getElementById('q-csv-drop');
+  const input = document.getElementById('q-csv-file');
+  const progress = document.getElementById('q-csv-progress');
+  const result = document.getElementById('q-csv-result');
+
+  document.getElementById('q-csv-browse').onclick = (e) => { e.stopPropagation(); input.click(); };
+  drop.onclick = () => input.click();
+  drop.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } };
+  drop.ondragover = (e) => { e.preventDefault(); drop.style.borderColor = 'var(--primary)'; };
+  drop.ondragleave = () => { drop.style.borderColor = ''; };
+  drop.ondrop = (e) => {
+    e.preventDefault();
+    drop.style.borderColor = '';
+    if (e.dataTransfer.files.length) handle(e.dataTransfer.files[0]);
+  };
+  input.onchange = () => { if (input.files[0]) handle(input.files[0]); input.value = ''; };
+
+  async function handle(file) {
+    if (file.size > 1_000_000) { showToast('The file is larger than 1 MB', 'error'); return; }
+    result.innerHTML = `<p class="text-muted text-sm">Checking ${escHtml(file.name)}…</p>`;
+    progress.value = 0;
+    progress.classList.remove('hidden');
+    try {
+      const report = await quizzesApi.parseCsv(file, (pct) => { progress.value = pct; });
+      renderReport(report);
+    } catch (err) {
+      result.innerHTML = `<p class="text-danger">${escHtml(err.message)}</p>`;   // whole-file problem
+    } finally {
+      progress.classList.add('hidden');
+    }
+  }
+
+  function renderReport(r) {
+    const badge = { valid: 'badge-success', invalid: 'badge-danger', duplicate: 'badge-outline' };
+    const notes = (row) => [
+      ...row.errors.map(e => `<div class="text-danger">${escHtml(e)}</div>`),
+      ...(row.duplicate_of ? [`<div class="text-muted">duplicate of ${escHtml(row.duplicate_of)}, skipped</div>`] : []),
+      ...row.warnings.map(w => `<div class="text-muted">${escHtml(w)}</div>`),
+    ].join('');
+    const canAdd = r.invalid === 0 && r.valid > 0;
+    result.innerHTML = `
+      <div class="flex gap-1" style="flex-wrap:wrap;margin-bottom:0.5rem">
+        <span class="badge badge-outline">${r.total} rows</span>
+        <span class="badge badge-success">${r.valid} valid</span>
+        <span class="badge ${r.invalid ? 'badge-danger' : 'badge-outline'}">${r.invalid} invalid</span>
+        <span class="badge badge-outline">${r.duplicate} duplicate</span>
+      </div>
+      <div class="table-wrap"><table class="table csv-preview">
+        <thead><tr><th>Line</th><th>Status</th><th>Question, options and notes</th></tr></thead>
+        <tbody>${r.rows.map(row => `
+          <tr>
+            <td>${row.line}</td>
+            <td><span class="badge badge-sm ${badge[row.status]}">${row.status}</span></td>
+            <td>
+              <div>${escHtml(row.question_text)}</div>
+              <div class="csv-options">${row.options.map((o, i) => i === row.correct_option
+                ? `<strong>${'ABCD'[i]}. ${escHtml(o)} (correct)</strong>` : `${'ABCD'[i]}. ${escHtml(o)}`).join(' · ')}</div>
+              ${notes(row) ? `<div class="csv-notes">${notes(row)}</div>` : ''}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+      <div class="flex gap-1 mt-1">
+        <button type="button" class="btn btn-primary" id="q-csv-add" ${canAdd ? '' : 'disabled'}>
+          Add ${r.valid} question${r.valid === 1 ? '' : 's'} to this quiz</button>
+        <button type="button" class="btn btn-outline" id="q-csv-discard">Discard</button>
+      </div>
+      ${r.invalid ? `<p class="text-sm text-danger mt-1">Fix the ${r.invalid} invalid row${r.invalid === 1 ? '' : 's'} and upload the file again; nothing has been added.</p>` : ''}`;
+    document.getElementById('q-csv-discard').onclick = () => { result.innerHTML = ''; };
+    document.getElementById('q-csv-add').onclick = () => addRows(r.rows.filter(row => row.status === 'valid'));
+  }
+
+  function addRows(rows) {
+    // drop untouched empty question cards, then append one card per row
+    document.querySelectorAll('#questions-container [data-qi]').forEach(card => {
+      if (!card.querySelector('.q-text').value.trim() && !card.querySelector('.q-options').value.trim()) card.remove();
+    });
+    for (const row of rows) {
+      addQuizQuestion();
+      const card = document.querySelector('#questions-container [data-qi]:last-child');
+      card.querySelector('.q-text').value = row.question_text;
+      card.querySelector('.q-options').value = row.options.map((o, i) => (i === row.correct_option ? '*' : '') + o).join('\n');
+    }
+    document.querySelectorAll('#questions-container [data-qi]').forEach((card, i) => {
+      card.dataset.qi = i;
+      card.querySelector('h2').textContent = `Question ${i + 1}`;
+    });
+    result.innerHTML = '';
+    showToast(`${rows.length} question${rows.length === 1 ? '' : 's'} added. Review them below, then create the quiz.`, 'success');
+    document.getElementById('questions-container').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 window.addQuizQuestion = function () {

@@ -373,6 +373,14 @@ textarea { resize: vertical; min-height: 90px; }
 
 .btn-primary { background: var(--gradient-brand); color: #fff; box-shadow: 0 6px 16px -6px rgba(79, 70, 229, 0.6); }
 .btn-primary:hover { filter: brightness(1.06); transform: translateY(-1px); text-decoration: none; }
+/* Disabled buttons looked exactly like active ones. */
+.btn:disabled, .btn[disabled] { opacity: 0.45; cursor: not-allowed; box-shadow: none; transform: none; filter: none; }
+.csv-preview { table-layout: fixed; }
+.csv-preview th:nth-child(1) { width: 3.5rem; }
+.csv-preview th:nth-child(2) { width: 7rem; }
+.csv-preview td { vertical-align: top; white-space: normal; overflow-wrap: anywhere; }   /* .table td is nowrap */
+.csv-preview .csv-options { margin-top: 0.35rem; color: var(--text-muted); font-size: 0.8rem; }
+.csv-preview .csv-notes { margin-top: 0.35rem; font-size: 0.8rem; }
 
 .btn-success { background: var(--success); color: #fff; }
 .btn-success:hover { filter: brightness(1.06); }

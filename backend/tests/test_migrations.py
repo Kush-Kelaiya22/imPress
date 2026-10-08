@@ -33,6 +33,18 @@ def _indexes(path):
     return {r[0] for r in _q(path, "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'uq_%'")}
 
 
+def _all_versions():
+    from app.migrations import MIGRATIONS
+    return [v for v, *_ in MIGRATIONS]
+
+
+def _model_unique_indexes():
+    """What a fresh database gets from the models: migrated ones must match."""
+    from app.database import Base
+    from app import models  # noqa: F401
+    return {i.name for t in Base.metadata.tables.values() for i in t.indexes if i.unique and i.name.startswith("uq_")}
+
+
 def _backups(path):
     return sorted(p.name for p in path.parent.glob(path.name + ".bak-*"))
 
@@ -72,10 +84,9 @@ def _legacy_db(path):
 
 def test_fresh_database_gets_every_migration_and_no_backup(tmp_path):
     db = tmp_path / "fresh.db"
-    assert _migrate(db) == [1, 2, 3]
-    assert [r[0] for r in _q(db, "SELECT version FROM schema_migrations ORDER BY version")] == [1, 2, 3]
-    from app.migrations import UNIQUE_INDEXES
-    assert _indexes(db) == {name for name, *_ in UNIQUE_INDEXES}
+    assert _migrate(db) == _all_versions()
+    assert [r[0] for r in _q(db, "SELECT version FROM schema_migrations ORDER BY version")] == _all_versions()
+    assert _indexes(db) == _model_unique_indexes()
     assert _backups(db) == []
     assert _migrate(db) == []                         # idempotent: nothing pending
 
@@ -85,10 +96,11 @@ def test_legacy_database_is_backed_up_repaired_and_constrained(tmp_path):
     _legacy_db(db)
     assert _q(db, "PRAGMA foreign_key_check")         # the dirt is really there
 
-    assert _migrate(db) == [1, 2, 3]
+    assert _migrate(db) == _all_versions()
 
+    from app.migrations import LATEST
     backups = _backups(db)
-    assert len(backups) == 1 and backups[0].startswith("impress.db.bak-0-to-3-")
+    assert len(backups) == 1 and backups[0].startswith(f"impress.db.bak-0-to-{LATEST}-")
     assert _q(tmp_path / backups[0], "SELECT COUNT(*) FROM quiz_answers") == [(4,)]   # untouched copy
 
     assert "total_flash" in {r[1] for r in _q(db, "PRAGMA table_info(esp_devices)")}  # baseline column
@@ -100,8 +112,7 @@ def test_legacy_database_is_backed_up_repaired_and_constrained(tmp_path):
     assert _q(db, "SELECT id, selected_option FROM quiz_answers WHERE question_order = 0") == [(10, 2)]
     assert _q(db, "SELECT id FROM poll_votes") == [(20,)]
     assert _q(db, "SELECT id FROM student_enrollments") == [(30,)]
-    from app.migrations import UNIQUE_INDEXES
-    assert _indexes(db) == {name for name, *_ in UNIQUE_INDEXES}
+    assert _indexes(db) == _model_unique_indexes()          # same as a fresh install
 
     assert _migrate(db) == [] and len(_backups(db)) == 1   # second start: no-op, no new backup
 
@@ -123,12 +134,12 @@ def test_duplicate_sections_stop_the_upgrade_with_instructions(tmp_path):
     # once resolved, the next start completes
     with sqlite3.connect(db) as c:
         c.execute("UPDATE class_sessions SET course_section = 'B' WHERE id = 2")
-    assert _migrate(db) == [3]
+    assert _migrate(db) == [v for v in _all_versions() if v >= 3]
 
 
 def test_a_failing_step_rolls_back_its_ddl(tmp_path, monkeypatch):
     db = tmp_path / "impress.db"
-    _migrate(db)                                      # fresh, at version 3
+    _migrate(db)                                      # fresh, at the latest version
 
     async def bad_step(conn):
         from sqlalchemy import text
@@ -138,10 +149,27 @@ def test_a_failing_step_rolls_back_its_ddl(tmp_path, monkeypatch):
 
     from app.migrations import MIGRATIONS
     with pytest.raises(RuntimeError):
-        _migrate(db, steps=MIGRATIONS + [(4, "bad", bad_step)], monkeypatch=monkeypatch)
+        _migrate(db, steps=MIGRATIONS + [(999, "bad", bad_step)], monkeypatch=monkeypatch)
     assert "half_done" not in {r[1] for r in _q(db, "PRAGMA table_info(students)")}
     assert _q(db, "SELECT COUNT(*) FROM sqlite_master WHERE name = 'uq_half_done'") == [(0,)]
-    assert [r[0] for r in _q(db, "SELECT MAX(version) FROM schema_migrations")] == [3]
+    from app.migrations import LATEST                 # the real list; MIGRATIONS is patched
+    assert [r[0] for r in _q(db, "SELECT MAX(version) FROM schema_migrations")] == [LATEST]
+
+
+def test_duplicate_question_positions_are_renumbered(tmp_path):
+    db = tmp_path / "impress.db"
+    _legacy_db(db)
+    with sqlite3.connect(db) as c:
+        c.execute("INSERT INTO quiz_questions (id, quiz_id, order_num, question_text, options, correct_option) "
+                  "VALUES (60, 1, 0, 'first', '[\"a\",\"b\"]', 0), (61, 1, 0, 'second', '[\"a\",\"b\"]', 0), "
+                  "(62, 1, 1, 'third', '[\"a\",\"b\"]', 0)")
+    _migrate(db)
+    assert _q(db, "SELECT question_text, order_num FROM quiz_questions ORDER BY order_num") == [
+        ("first", 0), ("second", 1), ("third", 2)]
+    with pytest.raises(sqlite3.IntegrityError):
+        with sqlite3.connect(db) as c:
+            c.execute("INSERT INTO quiz_questions (quiz_id, order_num, question_text, options, correct_option) "
+                      "VALUES (1, 2, 'clash', '[]', 0)")
 
 
 def test_app_reports_its_schema_version(client):

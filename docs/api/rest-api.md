@@ -200,6 +200,46 @@ stateDiagram-v2
               "total_answers": 3, "option_counts": [0, 2, 1]}]}
 ```
 
+### Importing questions from CSV (#31)
+
+| Method & path | Guard | Notes |
+|---|---|---|
+| `GET /api/quizzes/questions/template.csv` | public | example file (`text/csv`, attachment) |
+| `POST /api/quizzes/questions/parse` | teacher+ | *multipart* `file`. Validates and returns a `QuestionImportReport`; **stores nothing**. Used by the create-quiz page, which loads the valid rows into the form for review. |
+| `POST /api/quizzes/{id}/questions/import?dry_run=true\|false` | class access | *multipart* `file`. Draft quizzes only (409 otherwise). `dry_run` defaults to **true**. With `dry_run=false`: **all-or-nothing**. Any invalid row returns 422 `{"message", "report"}` and nothing is stored; duplicates are skipped; questions are appended after the existing ones. |
+
+**File format.** UTF-8 (a BOM from Excel is fine), comma-separated, the first row is the header.
+
+- **Size limits:** at most **1 MB** (413) and **500 rows** (422).
+- **Column names** are case-insensitive and may come in any order. Unknown columns are rejected, so a column like `marks` is never silently dropped.
+
+| Column | Required | Accepts | Aliases |
+|---|---|---|---|
+| `question_text` | yes | 1–1000 characters; may contain commas and line breaks inside quotes | `question`, `text` |
+| `option_a`, `option_b` | yes | 1–200 characters | `a`, `b`, `option_1`, `option_2` |
+| `option_c`, `option_d` | no | as above; no gaps (D needs C) | `c`, `d`, `option_3`, `option_4` |
+| `correct_option` | yes | `A`–`D` or `1`–`4`, pointing at a filled option | `correct`, `correct_answer`, `answer` |
+
+**Report** (`QuestionImportReport`):
+
+```json
+{"total": 3, "valid": 2, "invalid": 1, "duplicate": 0, "imported": 0, "skipped": 3, "committed": false,
+ "rows": [{"line": 2, "status": "valid", "question_text": "What is 2 + 2?", "options": ["3","4","5","6"],
+           "correct_option": 1, "errors": [], "warnings": [], "duplicate_of": null},
+          {"line": 4, "status": "invalid", "question_text": "Boiling point?", "options": ["90","100"],
+           "correct_option": null, "errors": ["correct_option 'E' must be a letter A–D or a number 1–4"],
+           "warnings": [], "duplicate_of": null}]}
+```
+
+- **Statuses:**
+  - `valid`
+  - `invalid` (with `errors`)
+  - `duplicate` (with `duplicate_of`: `"line N"` or `"already in this quiz"`). Duplicate detection ignores case and extra spaces.
+- **`warnings`:** text a student module will truncate (#49).
+- **Re-sending a file** (a retry or a double click) imports nothing twice: its rows are then `already in this quiz`.
+- **Concurrency:** two imports into one quiz at the same time can't interleave (unique `(quiz_id, order_num)`); the slower one gets 409.
+- **Database error:** 503, nothing stored.
+
 ## Polls: `/api/polls`
 
 | Method & path | Guard | Notes |

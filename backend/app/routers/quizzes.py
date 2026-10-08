@@ -1,12 +1,18 @@
 """Quiz router: create, start, stop, answer — with planned/impromptu modes and timing."""
 
-from fastapi import APIRouter, Depends, HTTPException
+import hashlib
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import commit_or_conflict, get_db
 from ..models import User, ClassSession, Quiz, QuizQuestion, QuizAnswer, EspDevice
-from ..schemas import QuizCreate, QuizResponse, QuizAnswerSubmit, question_warnings
+from ..schemas import QuizCreate, QuizResponse, QuizAnswerSubmit, QuestionImportReport, question_warnings
+from ..services.csv_import import read_upload, text_key
+from ..services.question_import import TEMPLATE, parse_questions
 from ..auth import get_current_user, require_teacher_or_admin
 from ..ws.manager import manager
 from ..activity import log_activity
@@ -44,6 +50,74 @@ def _quiz_response(quiz: Quiz) -> QuizResponse:
         created_at=quiz.created_at,
         started_at=quiz.started_at,
     )
+
+
+# ── CSV question import (#31) ───────────────────────────────────────
+
+@router.get("/questions/template.csv")
+async def question_csv_template():
+    """Example file with every column. Public: it contains no data."""
+    return Response(TEMPLATE, media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="impress-questions-template.csv"'})
+
+
+@router.post("/questions/parse", response_model=QuestionImportReport)
+async def parse_question_csv(
+    file: UploadFile = File(...),
+    user: User = Depends(require_teacher_or_admin),
+):
+    """Validate a question CSV and return a per-row preview. Stores nothing:
+    the create-quiz form loads the valid rows for the teacher to review."""
+    return parse_questions(await read_upload(file))
+
+
+@router.post("/{quiz_id}/questions/import", response_model=QuestionImportReport)
+async def import_question_csv(
+    quiz_id: int,
+    file: UploadFile = File(...),
+    dry_run: bool = Query(True, description="validate only; pass false to store"),
+    user: User = Depends(require_teacher_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Append questions from a CSV to a draft quiz.
+
+    All-or-nothing: if any row is invalid nothing is stored (422 with the
+    report). Rows duplicating a question already in the quiz, or an earlier
+    row, are skipped, so re-sending the same file imports nothing twice.
+    """
+    quiz = await db.get(Quiz, quiz_id)
+    if quiz is None:
+        raise HTTPException(404, "Quiz not found")
+    await _verify_class_access(quiz.class_session_id, user, db)
+    if quiz.status != "draft":
+        raise HTTPException(409, "Questions can only be imported into a draft quiz")
+
+    raw = await read_upload(file)
+    report = parse_questions(raw, {text_key(q.question_text) for q in quiz.questions})
+    if dry_run:
+        return report
+    if report.invalid:
+        raise HTTPException(422, {"message": f"{report.invalid} invalid row(s); nothing was imported",
+                                  "report": report.model_dump()})
+
+    order = max((q.order_num for q in quiz.questions), default=-1)
+    for row in report.rows:
+        if row.status == "valid":
+            order += 1
+            db.add(QuizQuestion(quiz_id=quiz.id, order_num=order, question_text=row.question_text,
+                                options=row.options, correct_option=row.correct_option))
+    await log_activity(db, "quiz.import_questions", user.id, "quiz", quiz.id, {
+        "imported": report.valid, "duplicates_skipped": report.duplicate,
+        "file_sha256": hashlib.sha256(raw).hexdigest(), "filename": file.filename or "",
+    })
+    try:
+        # two imports at once would claim the same order numbers (unique index)
+        await commit_or_conflict(db, "Another import into this quiz finished first; reload and retry")
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(503, "Database error; nothing was imported")
+    report.imported, report.skipped, report.committed = report.valid, report.total - report.valid, True
+    return report
 
 
 # ── Create Quiz ─────────────────────────────────────────────────────
