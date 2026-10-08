@@ -287,7 +287,7 @@ More: [troubleshooting guide](docs/guides/troubleshooting.md), [known issues](do
 | **Engineering** | [System audit](docs/engineering/SYSTEM_AUDIT.md) · [v2 / v3 comparison](docs/engineering/V2_V3_COMPARISON.md) · [Database migrations](docs/engineering/DATABASE_MIGRATIONS.md) |
 | **Reference** | [Data model](docs/reference/data-model.md) · [Hardware and wiring](docs/reference/hardware.md) · [Known issues](docs/reference/known-issues.md) |
 
-The [documentation index](docs/README.md) describes when to read each page.
+The [documentation index](docs/README.md) describes when to read each page. The **[wiki](https://github.com/Kush-Kelaiya22/imPress/wiki)** covers the same ground as step-by-step guides for administrators, teachers, operators and developers.
 
 ## Repository layout
 
