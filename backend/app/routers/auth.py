@@ -11,7 +11,6 @@ from ..schemas import UserLogin, TokenResponse, UserResponse, PasswordChange, Pr
 from ..auth import (
     verify_password,
     get_current_user,
-    get_current_user_light,
     hash_password,
     create_session,
     oauth2_scheme,
@@ -111,7 +110,7 @@ async def session_info(
     Return session metadata without refreshing activity (light dependency).
     Frontend uses this for countdown timers and 5-min warning.
     """
-    from ..auth import validate_session, _sha256_hex
+    from ..auth import validate_session
 
     # Use light validation (no activity refresh)
     session, user, error = await validate_session(db, token, refresh_activity=False)

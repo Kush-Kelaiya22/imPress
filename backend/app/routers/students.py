@@ -8,7 +8,7 @@ from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
-from ..models import User, ClassSession, Student, StudentEnrollment, EspDevice
+from ..models import User, ClassSession, Student, StudentEnrollment
 from ..schemas import (
     StudentCreate, StudentUpdate, StudentResponse, StudentRegister, BulkStudentRegister,
     CsvImportResult, CsvImportError,
@@ -205,7 +205,6 @@ async def hard_delete_student(
     Permanently delete a student record and its related rows.
     Requires admin (removing records is irreversible).
     """
-    from ..auth import require_admin  # local import to keep signature simple
     if user.role not in ("admin", "super_admin"):
         raise HTTPException(403, "Only admins can permanently delete a student record")
 

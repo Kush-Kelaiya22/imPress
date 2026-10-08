@@ -221,7 +221,20 @@ def test_pytest_children_are_unbuffered(monkeypatch):
     assert seen["PYTHONUNBUFFERED"] == "1"
 
 
-def test_frontend_suite_does_not_write_a_lockfile():
-    # a test run must leave the checkout clean (the project has no package-lock.json)
-    frontend = {s.name: s for s in run_tests.discover()}["frontend"]
-    assert "--no-package-lock" in " ".join(frontend.cmd)
+def test_frontend_suite_does_not_write_a_lockfile(tmp_path, monkeypatch):
+    # a test run must leave the checkout clean: npm ci with a lockfile (never
+    # rewrites it), --no-package-lock without one
+    cmd = " ".join({s.name: s for s in run_tests.discover()}["frontend"].cmd)
+    assert "npm ci" in cmd if (ROOT / "frontend/package-lock.json").exists() else "--no-package-lock" in cmd
+    monkeypatch.setattr(run_tests, "ROOT", tmp_path)
+    (tmp_path / "frontend").mkdir()
+    cmd = " ".join({s.name: s for s in run_tests.discover()}["frontend"].cmd)
+    assert "--no-package-lock" in cmd and "npm ci" not in cmd
+
+
+def test_coverage_report_is_parsed_and_shown(tmp_path):
+    xml = tmp_path / "coverage-backend.xml"
+    xml.write_text('<?xml version="1.0" ?><coverage line-rate="0.8734" branch-rate="0"></coverage>')
+    assert run_tests.parse_coverage(xml) == 87.3
+    r = run_tests.SuiteResult("backend", "d", "PASS", 1.0, passed=3, coverage=87.3)
+    assert "| `backend` (backend/app) | 87.3% |" in run_tests.markdown_report([r], 1.0)

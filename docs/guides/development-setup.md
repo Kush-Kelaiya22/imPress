@@ -15,7 +15,8 @@
 ```bash
 cd backend
 python -m venv .venv && source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements-dev.txt                      # runtime deps + pytest/httpx
+pip install -r requirements-dev.txt                      # runtime deps + pytest, httpx, ruff, pip-audit
+# (CI installs the exact, hash-pinned set: pip install --require-hashes -r requirements-lock.txt)
 
 cat > .env <<'EOF'
 IMPRESS_DEBUG=true                       # allows the published default secrets locally

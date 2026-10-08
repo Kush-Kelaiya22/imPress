@@ -11,7 +11,7 @@ from ..models import EspDevice, ClassSession, Attendance, StudentEnrollment, Stu
     Quiz, QuizAnswer, Poll, PollVote
 from ..schemas import DeviceRegister, DeviceHeartbeat, DeviceStatusPing, DeviceAttendance, \
     DeviceDataBatch, DeviceFirmwareCheck, DeviceOtaApplied, OtaStatusResponse
-from ..config import settings, api_key_ok
+from ..config import api_key_ok
 from ..services.presence import mark_online, _push_after_commit
 from ..services.firmware_store import get_firmware_path
 from ..timeutil import istnow, istnow_aware

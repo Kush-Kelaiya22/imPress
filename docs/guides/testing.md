@@ -73,6 +73,7 @@ With `--with-idf --with-frontend` the same run adds four builds: about 1.5 min p
 | `--slowest N` | show the N slowest individual tests (default 10) |
 | `--json FILE` | machine-readable report (per suite and per test case, with durations) |
 | `--junit-dir DIR` | keep pytest JUnit XML files |
+| `--coverage DIR` | measure backend line coverage (pytest-cov); Cobertura XML in `DIR`, total shown per suite and in the Markdown summary |
 | `--markdown FILE` | Markdown report; written to `$GITHUB_STEP_SUMMARY` automatically in Actions |
 | `--no-color` | plain output (`NO_COLOR` is honoured too) |
 
@@ -182,44 +183,62 @@ These protect the pipeline and the docs from silently drifting:
 
 | File | Checks |
 |---|---|
-| `test_ci_workflow.py` | triggers (push, PR, manual); least-privilege permissions; concurrency cancellation; every job has a timeout; actions pinned to major versions; **every runner suite is wired into CI**; **every firmware project is in the build matrix**; one IDF version everywhere; the result gate depends on every job; JUnit reports uploaded |
+| `test_ci_workflow.py` | triggers (push on long-lived branches, every PR, manual); least-privilege permissions; concurrency cancellation; every job has a timeout; **actions pinned to commit SHAs with a release comment; Docker images pinned by digest**; **hash-locked Python install; frontend `npm ci` from its lockfile; ruff; pip-audit and npm audit; backend coverage; firmware SHA256SUMS**; **every runner suite is wired into CI**; **every firmware project is in the build matrix**; one IDF version everywhere; the result gate depends on every job; JUnit reports uploaded |
 | `test_repo_hygiene.py` | no generated or compiled files tracked; no tracked file matches `.gitignore`; runtime paths ignored; first-party shell scripts are executable, have a shebang and are LF; `.gitattributes` rules; the runner finds every host suite |
 | `test_docs_consistency.py` | every internal link and anchor resolves; code fences balanced and Mermaid types valid; **every API route appears in the API docs**; **every backend setting appears in the configuration guide**; the README has no emoji and keeps its core sections |
-| `test_run_tests.py` | runner discovery and selection; JUnit and host-output parsing; SKIP on missing tools; **missing-package preflight** (requirements parsing with `-r` includes, one FAIL with the install command); failure reporting; Markdown report; **live status line, CI heartbeat, ANSI and partial-line handling, `--timeout`, Ctrl-C kills the whole process group, interrupted run prints the report and exits 130**; `docker run --init` and the daemon-down SKIP; frontend writes no lockfile; an end-to-end JSON report; exit code 2 on an unknown suite |
+| `test_run_tests.py` | runner discovery and selection; JUnit and host-output parsing; SKIP on missing tools; **missing-package preflight** (requirements parsing with `-r` includes, one FAIL with the install command); failure reporting; Markdown report; **live status line, CI heartbeat, ANSI and partial-line handling, `--timeout`, Ctrl-C kills the whole process group, interrupted run prints the report and exits 130**; `docker run --init` and the daemon-down SKIP; frontend uses `npm ci` (never rewrites the lockfile); coverage parsing; an end-to-end JSON report; exit code 2 on an unknown suite |
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push, every pull request and on demand (`workflow_dispatch`).
+`.github/workflows/ci.yml` runs on every pull request, on pushes to the long-lived branches (`main`, `v2`, `v3`, `varun/**`) and on demand (`workflow_dispatch`). Feature branches are built through their pull request, so a push isn't built twice.
 
 ```mermaid
 flowchart LR
-    T["push · PR · manual"] --> R["Repository and CI checks"]
-    T --> B["Backend tests"]
+    T["PR · push to long-lived branch · manual"] --> R["Repository and CI checks<br/>actionlint · ruff · docs"]
+    T --> A["Dependency audit<br/>pip-audit · npm audit"]
+    T --> B["Backend tests<br/>+ coverage"]
     T --> S["Firmware structural"]
     T --> H["Firmware host (gcc + ASan/UBSan)"]
-    T --> I["ESP-IDF v6.1 build ×3<br/>size report + firmware artifacts"]
-    T --> F["Frontend build"]
-    R & B & S & H & I & F --> G{"CI result<br/>(single required check)"}
+    T --> I["ESP-IDF v6.1 build ×3<br/>size report · images · SHA256SUMS"]
+    T --> F["Frontend build<br/>npm ci"]
+    R & A & B & S & H & I & F --> G{"CI result<br/>(single required check)"}
 ```
 
 | Job | Runs | Artifacts |
 |---|---|---|
-| Repository and CI checks | byte-compile sources; `run_tests.py --suite repo` | JUnit XML |
-| Backend tests | `run_tests.py --suite backend` (Python 3.12) | JUnit XML |
+| Repository and CI checks | install the hash-locked set; actionlint; `ruff check` (pyflakes rules); byte-compile; `run_tests.py --suite repo` | JUnit XML |
+| Dependency audit | `pip-audit --strict` on `backend/requirements-lock.txt`; `npm audit --audit-level=high` | – |
+| Backend tests | `run_tests.py --suite backend --coverage reports` (Python 3.12) | JUnit XML, `coverage-backend.xml` |
 | Firmware structural | `run_tests.py --suite firmware-static` | – |
 | Firmware host | `run_tests.py --suite host` (gcc) | – |
-| ESP-IDF v6.1 build | `idf.py build` + `idf.py size` for `class_c6`, `class_s3`, `student` | `.bin` images (7 days) |
-| Frontend build | `run_tests.py --suite frontend` (Node 20) | – |
+| ESP-IDF v6.1 build | `idf.py build` + `idf.py size` for `class_c6`, `class_s3`, `student`; `sha256sum` of every image | `.bin` images + `SHA256SUMS` (7 days) |
+| Frontend build | `run_tests.py --suite frontend`: `npm ci` + `vite build` (Node 20) | – |
 | **CI result** | fails unless every job above succeeded | – |
 
 Pipeline properties:
 - **`permissions: contents: read`**: least privilege.
+- **Pinned supply chain:**
+  - Every action is referenced by commit SHA, with the release in a trailing comment (`# v7.0.1`).
+  - The IDF and actionlint images are referenced by digest.
+  - `run_tests.py` uses the same IDF digest locally.
+- **Deterministic dependencies:**
+  - **CI** installs `backend/requirements-lock.txt` with `--require-hashes`.
+  - **Frontend:** CI runs `npm ci` from `frontend/package-lock.json`.
+  - **Developers** can keep installing the ranges in `requirements*.txt`.
 - **`concurrency`**: a newer push cancels the running pipeline for the same ref.
 - **Per-job `timeout-minutes`**: a hang can't hold a runner.
-- **pip caching.**
-- **The runner's report appears in each job's summary page.**
+- **The runner's report appears in each job's summary page.** That includes the coverage table.
 
 Mark **CI result** as the required status check in branch protection.
+
+### Updating pinned dependencies
+
+| What | How |
+|---|---|
+| Python packages | Edit `backend/requirements*.txt`, then regenerate the lock (`pip install uv`, then `uv pip compile --generate-hashes --python-version 3.12 --python-platform x86_64-unknown-linux-gnu --output-file backend/requirements-lock.txt backend/requirements-dev.txt`). Commit both. |
+| Frontend packages | `cd frontend && npm install <pkg>@<ver>` with Node 20 (it updates `package-lock.json`). Commit both. |
+| An action | Look up the release's commit (`gh api repos/<owner>/<action>/commits/<tag> --jq .sha`), replace the SHA, update the `# vX.Y.Z` comment. |
+| The IDF image | `docker buildx imagetools inspect espressif/idf:<tag>` gives the index digest. Update `ci.yml` and `IDF_IMAGE` in `run_tests.py` together (a repository test checks they match). |
 
 ## What is *not* automatically tested
 

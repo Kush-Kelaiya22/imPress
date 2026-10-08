@@ -1,0 +1,10 @@
+# Tool configuration only; the backend is not packaged from here.
+
+[tool.ruff]
+target-version = "py312"
+extend-exclude = ["firmware/*/managed_components", "frontend/node_modules"]
+
+[tool.ruff.lint]
+# pyflakes (F: undefined names, unused imports/variables, redefinitions) plus
+# syntax/IO errors (E9). Low-noise rules that catch real bugs.
+select = ["F", "E9"]
