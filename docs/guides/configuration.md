@@ -16,7 +16,8 @@ Environment variables with prefix **`IMPRESS_`**, or a `.env` file in the workin
 | `IMPRESS_SESSION_IDLE_MINUTES` | `60` | Idle timeout. |
 | `IMPRESS_SESSION_HARD_MINUTES` | `360` | Absolute session lifetime. |
 | `IMPRESS_SESSION_WARNING_MINUTES` | `5` | `session-status.warning_active` window. |
-| `IMPRESS_DEVICE_API_KEY` | public default | Must be set in production; must equal every gateway's key. |
+| `IMPRESS_DEVICE_API_KEY` | public default | The shared **provisioning** key: must be set in production and equal every device's `api_key`. Devices register with it and are issued their own key (#66). |
+| `IMPRESS_DEVICE_KEYS_REQUIRED` | `false` | `true`: the shared key works for registration only, so every device must use its own key. Firmware older than v2.1 per-device keys then stops working. |
 | `IMPRESS_INITIAL_ADMIN_PASSWORD` | empty | First-run admin password; empty = random, logged once. |
 | `IMPRESS_FIRMWARE_DIR` | `./firmware_bins` | OTA image store. |
 | `IMPRESS_WS_REQUIRE_AUTH` | `true` | Disable only for isolated debugging. |
@@ -39,7 +40,8 @@ Fixed internal timings (code constants): presence sweep 15 s, offline after 30 s
 | `WIFI_MAX_RETRY` | 10 | – | |
 | `BACKEND_HOST` | `192.168.137.1` | `backend_h` (≤ 127) | IP or hostname |
 | `BACKEND_PORT` | 8000 | `backend_p` (u16, 0 ignored) | |
-| `DEVICE_API_KEY` | `impress-device-key-2024` | `api_key` (≤ 127) | sent as the `X-API-Key` header (HTTP and WS) |
+| `DEVICE_API_KEY` | `impress-device-key-2024` | `api_key` (≤ 127) | the shared provisioning key: sent as `X-API-Key` until the device is issued its own |
+| — | — | `dev_key` | the device's own key from `/register` (#66); once present it is sent instead of `api_key`. Erased when the backend answers 401 (an admin reset it) |
 | `CLASS_SESSION_ID` | 0 (= auto) | `class_id` (i32) | updated from register / WS assignment |
 | `HEARTBEAT_INTERVAL_S` | 15 | – | 5–300 |
 | `WS_PING_INTERVAL_S` | 30 | – | 10–120 |
@@ -57,7 +59,8 @@ Kconfig menu **imPress S3 Class Module Configuration** → NVS namespace **`s3_c
 | `WIFI_SSID` / `WIFI_PASSWORD` | `impress-hotspot` / `impress123` | `wifi_ssid` / `wifi_pass` | used only for the OTA hop |
 | `WIFI_MAX_RETRY` | 5 | – | |
 | `BACKEND_HOST` / `BACKEND_PORT` | `192.168.1.100` / 8000 | `backend_host` / `backend_port` | OTA hop target; **set to the same server as the C6** |
-| `DEVICE_API_KEY` | `impress-device-key-2024` | `api_key` | |
+| `DEVICE_API_KEY` | `impress-device-key-2024` | `api_key` | shared provisioning key |
+| — | — | `dev_key` | the hub's own key, issued when it registers during its OTA hop (#66) |
 | `HEARTBEAT_INTERVAL_MS` | 5000 | – | S3 → C6 heartbeat + student sweep |
 | `STUDENT_TIMEOUT_MS` | 60000 | – | silence before `STUDENT_LEAVE` |
 | `SPI_POLL_INTERVAL_MS` | 50 | – | max wait between link checks |

@@ -89,6 +89,7 @@ erDiagram
 | student_enrollment_id, device_id | | legacy / diagnostics |
 | firmware_version, pending_version, ota_status, ota_requested_at, verified_at | | OTA state: `idle` \| `downloading` \| `applied` \| `failed` |
 | student_count, free_heap, total_flash | int | gateway telemetry |
+| api_key_hash, key_issued_at, key_confirmed_at | str(64) / datetime, nullable | the device's own key (#66, migration step 6): SHA-256 only; active once `key_confirmed_at` is set |
 | uptime_s, reset_reason, boot_count, min_free_heap, s3_link_ok, s3_uptime_s, diag_at | int / str / bool / datetime, nullable | latest gateway diagnostics (#39, migration step 5); NULL = not reported by the firmware. Health states are computed from them, not stored |
 
 ### `students`

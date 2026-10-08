@@ -1051,6 +1051,8 @@ def _device_response(dev: EspDevice) -> DeviceResponse:
         total_flash=dev.total_flash or 0,
         health=state,
         health_reasons=reasons,
+        key_state="active" if dev.key_confirmed_at else "issued" if dev.api_key_hash else "shared",
+        key_confirmed_at=dev.key_confirmed_at,
         uptime_s=dev.uptime_s,
         reset_reason=dev.reset_reason,
         boot_count=dev.boot_count,
@@ -1152,7 +1154,8 @@ async def admin_toggle_module_access(
     user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Enable/disable a module — a disabled module stops accepting heartbeat/attendance."""
+    """Enable/disable a module. A disabled module's device calls are refused,
+    whichever key they use (#66)."""
     result = await db.execute(select(EspDevice).where(EspDevice.id == device_id))
     dev = result.scalar_one_or_none()
     if not dev:
@@ -1161,6 +1164,27 @@ async def admin_toggle_module_access(
     dev.is_active = body.is_active
     await log_activity(db, "module.access", user.id, "device", device_id,
                        {"is_active": body.is_active, "mac": dev.mac_address})
+    await db.commit()
+    await db.refresh(dev)
+    return _device_response(dev)
+
+
+@router.post("/modules/{device_id}/reset-key", response_model=DeviceResponse)
+async def admin_reset_device_key(
+    device_id: int,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Forget a device's own key (#66): it stops working at once. The device
+    registers again with the shared key and is issued a new one. Use it for a
+    reflashed device (its NVS was erased) or a key that may have leaked."""
+    dev = await db.get(EspDevice, device_id)
+    if not dev:
+        raise HTTPException(404, "Module not found")
+    had_key = dev.api_key_hash is not None
+    dev.api_key_hash = dev.key_issued_at = dev.key_confirmed_at = None
+    await log_activity(db, "module.key_reset", user.id, "device", device_id,
+                       {"mac": dev.mac_address, "had_key": had_key})
     await db.commit()
     await db.refresh(dev)
     return _device_response(dev)

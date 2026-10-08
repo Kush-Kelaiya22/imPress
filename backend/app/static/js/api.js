@@ -246,6 +246,9 @@ const modulesApi = {
   async get(deviceId) {
     return apiRequest(`/admin/modules/${deviceId}`);
   },
+  async resetKey(deviceId) {
+    return apiRequest(`/admin/modules/${deviceId}/reset-key`, { method: 'POST' });
+  },
   async setAccess(deviceId, isActive) {
     return apiRequest(`/admin/modules/${deviceId}/access`, {
       method: 'POST',

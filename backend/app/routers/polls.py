@@ -11,7 +11,7 @@ from ..auth import get_current_user, require_teacher_or_admin
 from ..ws.manager import manager
 from ..activity import log_activity
 from ..timeutil import istnow
-from .device import _verify_api_key
+from ..device_auth import DeviceCaller, authorize, device_caller
 from .classes import _has_access
 
 router = APIRouter(prefix="/api/polls", tags=["polls"])
@@ -213,11 +213,12 @@ async def end_poll(
 
 # ── Vote ────────────────────────────────────────────────────────────
 
-@router.post("/{poll_id}/vote", dependencies=[Depends(_verify_api_key)])
+@router.post("/{poll_id}/vote")
 async def vote_poll(
     poll_id: int,
     body: PollVoteSubmit,
     db: AsyncSession = Depends(get_db),
+    caller: DeviceCaller = Depends(device_caller),
 ):
     result = await db.execute(select(Poll).where(Poll.id == poll_id))
     poll = result.scalar_one_or_none()
@@ -228,8 +229,10 @@ async def vote_poll(
     if body.selected_option >= len(poll.options):
         raise HTTPException(422, "selected_option out of range for this poll")
     # device_id is the de-dup key, so it must be a real registered device.
-    if await db.get(EspDevice, body.device_id) is None:
+    device = await db.get(EspDevice, body.device_id)
+    if device is None:
         raise HTTPException(404, "Device not registered")
+    await authorize(db, caller, device.mac_address)          # #66: only for itself
 
     # Prevent duplicate votes from same device
     existing = await db.execute(

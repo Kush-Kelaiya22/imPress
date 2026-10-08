@@ -301,6 +301,7 @@ stateDiagram-v2
 | `GET /api/admin/modules` · `GET /api/admin/modules/{id}` | admin | `DeviceResponse` (identity, presence, telemetry, OTA state, linked class, and since #39 `health`, `health_reasons` and the latest diagnostics; see [health states](device-api.md#health-states)) |
 | `POST /api/admin/modules/{id}/access` | admin | `{is_active}` enable/disable a module |
 | `POST /api/admin/modules/{id}/verify` | admin | stamps `verified_at` |
+| `POST /api/admin/modules/{id}/reset-key` | admin | forgets the device's own key (#66): it stops working at once (`401`); the device registers again with the shared key and is issued a new one. `DeviceResponse.key_state`: `shared` \| `issued` \| `active` |
 | `POST /api/admin/modules/{node_id}/link-device` · `POST /api/admin/modules/{id}/unlink` | admin | set/clear `gateway_id` relations |
 | `GET /api/admin/student-modules?class_id=&gateway_id=&state=connected\|seen&q=` | admin | the student module inventory (#40), most recently seen first; `q` matches the device ID (hex) or enrollment, partially. Rows as in the [presence snapshot](device-api.md#presence-snapshot). Teachers see their own class's modules in that snapshot |
 | `GET /api/admin/classes/{id}/devices` | admin | `{node, student_devices, student_modules}`: the class gateway, `EspDevice`s linked to it, and the inventory rows for the class |

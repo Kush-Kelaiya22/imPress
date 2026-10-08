@@ -29,6 +29,7 @@
 #define NVS_KEY_API_KEY     "api_key"     /* str 128 */
 #define NVS_KEY_CLASS_ID    "class_id"    /* i32 */
 #define NVS_KEY_BOOT_COUNT  "boot_count"  /* i32: boots since first flash (#39) */
+#define NVS_KEY_DEV_KEY     "dev_key"     /* str 128: this device's own key from /register (#66) */
 #define NVS_KEY_SSID_LEN    33
 #define NVS_KEY_PASS_LEN    65
 #define NVS_KEY_HOST_LEN    128
@@ -75,7 +76,8 @@ typedef struct {
     char     wifi_pass[NVS_KEY_PASS_LEN];
     char     backend_host[NVS_KEY_HOST_LEN];
     uint16_t backend_port;
-    char     api_key[NVS_KEY_KEY_LEN];
+    char     api_key[NVS_KEY_KEY_LEN];   /* the key every request sends: dev_key if issued, else prov_key */
+    char     prov_key[NVS_KEY_KEY_LEN];  /* the site's shared key, used to register (#66) */
     int32_t  class_id;
     uint32_t boot_count;     /* this boot's number, from NVS (#39) */
     /* Timing (seconds, from Kconfig — no NVS override needed) */
@@ -91,6 +93,14 @@ typedef struct {
  *        Populate with init_nvs_config() before using any subsystem.
  */
 extern c6_config_t g_cfg;
+
+/* Per-device key (#66). The backend issues it in the /register response; it
+ * replaces the shared key for every request. If the backend refuses it (an
+ * admin reset it), clear it: requests fall back to the shared key and the
+ * next registration is issued a new one. */
+void cfg_set_device_key(const char *key);
+void cfg_clear_device_key(void);
+bool cfg_has_device_key(void);
 
 /**
  * @brief Load persisted config from NVS, falling back to Kconfig defaults.

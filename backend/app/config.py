@@ -32,6 +32,10 @@ class Settings(BaseSettings):
 
     # ── ESP Device Registration ──
     DEVICE_API_KEY: str = DEFAULT_DEVICE_API_KEY
+    # Per-device keys (#66): devices register with DEVICE_API_KEY and get their
+    # own key. True = the shared key works for registration only (firmware
+    # older than per-device keys then stops working).
+    DEVICE_KEYS_REQUIRED: bool = False
 
     # ── First-run super admin ──
     # Empty → a random password is generated and logged ONCE at first start.

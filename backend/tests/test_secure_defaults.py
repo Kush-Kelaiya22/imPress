@@ -84,5 +84,5 @@ def test_device_ws_accepts_key_header_and_legacy_query(client):
 
 def test_device_http_key_checked(client):
     body = {"mac_address": "AA:BB:CC:00:00:01", "device_type": "c6", "device_name": "x"}
-    assert client.post("/api/device/register", headers={"X-API-Key": "impress-device-key-2024"}, json=body).status_code == 403
+    assert client.post("/api/device/register", headers={"X-API-Key": "impress-device-key-2024"}, json=body).status_code == 401
     assert client.post("/api/device/register", headers={"X-API-Key": DEVICE_KEY}, json=body).status_code == 200

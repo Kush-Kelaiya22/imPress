@@ -28,7 +28,7 @@ def test_protected_routes_need_a_session(client):
 
 def test_device_routes_need_the_device_key(client):
     body = {"mac_address": "AA:BB:CC:00:00:99", "device_type": "c6", "device_name": "gw"}
-    assert client.post("/api/device/register", headers={"X-API-Key": "wrong"}, json=body).status_code == 403
+    assert client.post("/api/device/register", headers={"X-API-Key": "wrong"}, json=body).status_code == 401   # 401 since #66: the firmware drops a reset device key on 401
     r = client.post("/api/device/register", headers=DEVICE, json=body)
     assert r.status_code == 200 and r.json()["status"] == "registered"
 

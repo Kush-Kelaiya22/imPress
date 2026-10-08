@@ -6,7 +6,7 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from .manager import manager
-from ..config import settings, api_key_ok
+from ..config import settings
 from ..database import async_session
 from ..models import EspDevice, ClassSession
 from ..services.presence import mark_online, _push_after_commit
@@ -14,6 +14,21 @@ from ..timeutil import istnow
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+async def _device_key_ok(key: str | None) -> bool:
+    """The shared key (unless IMPRESS_DEVICE_KEYS_REQUIRED) or an active-able
+    per-device key of an enabled device (#66)."""
+    from ..database import async_session
+    from ..device_auth import caller_for_key
+    async with async_session() as db:
+        caller = await caller_for_key(db, key)
+        if caller is None:
+            return False
+        if caller.shared:
+            return not settings.DEVICE_KEYS_REQUIRED
+        await db.commit()                       # first use activates the key
+        return caller.device.is_active is not False
 
 
 async def _touch_device_on_message(class_id: int, msg: dict | None) -> None:
@@ -100,7 +115,7 @@ async def class_websocket(websocket: WebSocket, class_id: int):
     if settings.WS_REQUIRE_AUTH:
         if role == "device":
             key = websocket.headers.get("x-api-key") or websocket.query_params.get("api_key")
-            if not api_key_ok(key):
+            if not await _device_key_ok(key):
                 await websocket.close(code=4401, reason="invalid device api_key")
                 return
         elif role == "teacher":

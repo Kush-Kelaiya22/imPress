@@ -10,7 +10,7 @@ A review of the v2.1 changes against the brief's checklist: access control, file
 | Role-based authorization on the server | ✅ | `require_admin` / `require_teacher_or_admin` on every admin, firmware, deployment, import and inventory route; `test_role_escalation.py`, `test_admin_users.py`, `test_cofaculty_access.py`, `test_results_access.py` |
 | Session handling | ✅ (from `v2`) | opaque tokens stored hashed, idle and absolute expiry, revocation: `test_auth_sessions.py`, `test_session_token_storage.py` |
 | WebSocket authentication | ✅ (from `v2`) | teacher session token or device key; role-targeted broadcasts: `test_ws_auth.py` |
-| Device authentication | ⚠️ shared key | every device route needs `X-API-Key`, and a wrong key is refused (`test_device_routes_reject_a_wrong_key`). All devices share **one** key: [#66](https://github.com/Kush-Kelaiya22/imPress/issues/66) |
+| Device authentication | ✅ per-device keys (#66) | every device route needs `X-API-Key`; a wrong key is refused (`test_device_routes_reject_a_wrong_key`). Devices are issued their own key at registration; once used it is the only key for that MAC and works for no other (`test_device_keys.py`, 12 tests); admins can reset or disable one device |
 | CSV import permissions | ✅ | question import needs class access; course and section import is admin only (`test_class_import.py::test_admin_only`) |
 | Firmware upload, approval, deprecation, deletion | ✅ | admin only (`test_firmware_registry.py::test_admin_only`, `test_firmware_manager.py::test_admin_only`) |
 | OTA deployment and rollback | ✅ | admin only (`test_deployments.py::test_admin_only`); a downgrade needs an explicit confirmation (`test_rollback_needs_explicit_confirmation`) |

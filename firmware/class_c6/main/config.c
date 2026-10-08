@@ -34,6 +34,7 @@ void init_nvs_config(void)
     snprintf(g_cfg.backend_host, sizeof(g_cfg.backend_host), "%s", CFG_BACKEND_HOST);
     g_cfg.backend_port    = CFG_BACKEND_PORT;
     snprintf(g_cfg.api_key, sizeof(g_cfg.api_key), "%s", CFG_API_KEY);
+    snprintf(g_cfg.prov_key, sizeof(g_cfg.prov_key), "%s", CFG_API_KEY);
     g_cfg.class_id        = CFG_CLASS_ID;
     g_cfg.hb_interval_s   = CFG_HB_INTERVAL_S;
     g_cfg.ws_ping_s       = CFG_WS_PING_S;
@@ -78,6 +79,12 @@ void init_nvs_config(void)
         g_cfg.backend_port = port;
     }
     _read_str(h, NVS_KEY_API_KEY, g_cfg.api_key, sizeof(g_cfg.api_key));
+    snprintf(g_cfg.prov_key, sizeof(g_cfg.prov_key), "%s", g_cfg.api_key);
+    char dev_key[NVS_KEY_KEY_LEN] = "";
+    _read_str(h, NVS_KEY_DEV_KEY, dev_key, sizeof(dev_key));
+    if (dev_key[0]) {
+        snprintf(g_cfg.api_key, sizeof(g_cfg.api_key), "%s", dev_key);
+    }
     int32_t cid = 0;
     if (nvs_get_i32(h, NVS_KEY_CLASS_ID, &cid) == ESP_OK) {
         g_cfg.class_id = cid;
@@ -112,3 +119,37 @@ void nvs_save_class_id(int32_t class_id)
     g_cfg.class_id = class_id;
     ESP_LOGI(TAG, "Class ID saved to NVS: %ld", (long)class_id);
 }
+
+/* ── Per-device key (#66) ───────────────────────────────────────────── */
+
+static void _store_dev_key(const char *key)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) {
+        return;
+    }
+    nvs_set_str(h, NVS_KEY_DEV_KEY, key);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+void cfg_set_device_key(const char *key)
+{
+    if (!key || !key[0] || strlen(key) >= sizeof(g_cfg.api_key)) return;
+    _store_dev_key(key);
+    snprintf(g_cfg.api_key, sizeof(g_cfg.api_key), "%s", key);
+    ESP_LOGI(TAG, "Device key stored; it replaces the shared key");
+}
+
+void cfg_clear_device_key(void)
+{
+    _store_dev_key("");
+    snprintf(g_cfg.api_key, sizeof(g_cfg.api_key), "%s", g_cfg.prov_key);
+    ESP_LOGW(TAG, "Device key refused by the backend: back to the shared key");
+}
+
+bool cfg_has_device_key(void)
+{
+    return g_cfg.prov_key[0] && strcmp(g_cfg.api_key, g_cfg.prov_key) != 0;
+}
+

@@ -48,5 +48,5 @@ def test_only_the_pushed_version_downloads(client, device):
 
 def test_download_requires_device_key(client, device):
     device("1.1.0")
-    assert dl(client, "1.1.0", headers={"X-API-Key": "wrong"}).status_code == 403
+    assert dl(client, "1.1.0", headers={"X-API-Key": "wrong"}).status_code == 401
     assert dl(client, "1.1.0", headers={}).status_code in (401, 403, 422)

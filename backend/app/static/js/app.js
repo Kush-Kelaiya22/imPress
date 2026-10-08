@@ -2159,6 +2159,11 @@ function _diagnosticsBody(d) {
       ? `<span class="badge badge-success">up</span> S3 uptime ${escHtml(formatUptime(d.s3_uptime_s))}`
       : '<span class="badge badge-danger">down</span>'],
     ['Reported', v(d.diag_at, x => new Date(x).toLocaleString())],
+    ['Device key', {
+      active: '<span class="badge badge-success">own key</span> in use since ' + escHtml(new Date(d.key_confirmed_at).toLocaleString()),
+      issued: '<span class="badge badge-outline">issued</span> not used yet; the shared key still works',
+      shared: '<span class="badge">shared key</span> no own key yet (registers to get one)',
+    }[d.key_state || 'shared']],
   ];
   return `<table class="table"><tbody>${rows.map(([k, val]) =>
     `<tr><th style="width:40%">${k}</th><td>${val}</td></tr>`).join('')}</tbody></table>`;
@@ -2176,6 +2181,7 @@ window._showDiagnostics = async (id) => {
         firmware predates v2.1 don't report the diagnostics.</p>
       <div class="flex gap-1 mt-1">
         <button class="btn btn-outline" id="diag-refresh">Refresh</button>
+        <button class="btn btn-outline" id="diag-reset-key" title="Forget this device's own key: it re-registers and gets a new one">Reset key</button>
         <button class="btn btn-primary" id="diag-close">Close</button>
       </div>
     </div>`;
@@ -2194,6 +2200,16 @@ window._showDiagnostics = async (id) => {
     }
   };
   modal.querySelector('#diag-refresh').onclick = load;
+  modal.querySelector('#diag-reset-key').onclick = async () => {
+    if (!confirm('Reset this device\'s key? Its current key stops working at once; the device registers again and is issued a new one.')) return;
+    try {
+      await modulesApi.resetKey(id);
+      showToast('Device key reset', 'success');
+      await load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
   await load();
 };
 

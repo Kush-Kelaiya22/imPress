@@ -163,9 +163,12 @@ static void _get_mac(char *out, size_t sz)
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
-static int _http_post(const char *url, const char *json)
+static int _http_post_body(const char *url, const char *json, char *out, size_t out_size)
 {
     char resp_buf[512];
+    size_t out_len = 0;
+    int r;
+    if (out && out_size) out[0] = '\0';
     esp_http_client_config_t config = {
         .url        = url,
         .method     = HTTP_METHOD_POST,
@@ -183,13 +186,41 @@ static int _http_post(const char *url, const char *json)
         int wlen = esp_http_client_write(client, json, strlen(json));
         if (wlen > 0) {
             esp_http_client_fetch_headers(client);
-            while (esp_http_client_read(client, resp_buf, sizeof(resp_buf) - 1) > 0) {
+            while ((r = esp_http_client_read(client, resp_buf, sizeof(resp_buf) - 1)) > 0) {
+                for (int i = 0; out && i < r && out_len + 1 < out_size; i++) {
+                    out[out_len++] = resp_buf[i];
+                    out[out_len] = '\0';
+                }
             }
             status = esp_http_client_get_status_code(client);
         }
         esp_http_client_close(client);
     }
     esp_http_client_cleanup(client);
+    if (status == 401 && cfg_has_device_key()) {
+        cfg_clear_device_key();          /* an admin reset it (#66); re-register */
+    }
+    return status;
+}
+
+static int _http_post(const char *url, const char *json)
+{
+    return _http_post_body(url, json, NULL, 0);
+}
+
+/* Register; with the shared key the backend issues this hub its own key
+ * (#66). A reset key gets 401, is dropped, and the retry gets a new one. */
+static int _register(const char *url, const char *json)
+{
+    char resp[320];
+    int status = _http_post_body(url, json, resp, sizeof(resp));
+    if (status == 401 && !cfg_has_device_key()) {
+        status = _http_post_body(url, json, resp, sizeof(resp));
+    }
+    char key[sizeof(g_cfg.api_key)];
+    if (status == 200 && json_get_string(resp, "device_key", key, sizeof(key)) > 0) {
+        cfg_set_device_key(key);
+    }
     return status;
 }
 
@@ -435,7 +466,7 @@ static void _ota_task(void *arg)
              "{\"mac_address\":\"%s\",\"device_type\":\"%s\","
              "\"device_name\":\"imPress S3\",\"firmware_version\":\"%s\"}",
              mac, DEVICE_TYPE, FIRMWARE_VERSION);
-    _http_post(reg_url, reg);
+    _register(reg_url, reg);
 
     char hb_url[256];
     _url(hb_url, sizeof(hb_url), "/api/device/heartbeat");

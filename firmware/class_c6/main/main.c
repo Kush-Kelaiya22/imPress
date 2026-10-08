@@ -403,6 +403,10 @@ static void heartbeat_task(void *arg)
 
         if (!wifi_client_is_connected()) continue;
 
+        if (http_reregister_pending()) {          /* our device key was reset (#66) */
+            http_register_device(s_mac_str, DEVICE_TYPE);
+        }
+
         /* Send heartbeat to backend with real telemetry */
         bool s3_ok = s_s3_seen &&
             (xTaskGetTickCount() - s_s3_seen_tick) < pdMS_TO_TICKS(S3_LINK_TIMEOUT_MS);
