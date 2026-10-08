@@ -23,7 +23,7 @@ Base URL: `http(s)://<host>:<port>`. All bodies are JSON unless marked *multipar
 | 401 | Missing/invalid token, or an expired session: `detail: "SESSION_EXPIRED"` + header `X-Session-Code: idle|hard` |
 | 403 | Authenticated but not allowed (role, class ownership, disabled account at login, wrong device key) |
 | 404 | Entity not found |
-| 409 | Conflict (quiz without a current question) |
+| 409 | Conflict: quiz without a current question; a section that already exists for the course; a lost race on an enrollment |
 | 422 | Request body/params failed validation |
 
 ---
@@ -102,7 +102,7 @@ CSV import response (used by both user and student imports):
 
 | Method & path | Guard | Notes |
 |---|---|---|
-| `POST /api/admin/classes` | admin | `ClassCreate` (below). The primary teacher = `teacher_ids[0]` or `teacher_id` or the caller. Returns `ClassResponse` with schedule **warnings**. Created **inactive**. |
+| `POST /api/admin/classes` | admin | `ClassCreate` (below). The primary teacher = `teacher_ids[0]` or `teacher_id` or the caller. Returns `ClassResponse` with schedule **warnings**. Created **inactive**. **409** if `(course_id, course_section)` is already taken (also on `PUT`). |
 | `GET /api/admin/classes` | admin | all classes |
 | `PUT /api/admin/classes/{id}` | admin | `ClassUpdate` (partial) |
 | `DELETE /api/admin/classes/{id}` | admin | |
@@ -132,7 +132,7 @@ CSV import response (used by both user and student imports):
 | `GET /api/classes/{id}/presence` | teacher+ | live device snapshot ([device API](device-api.md#presence-snapshot)) |
 | `POST /api/classes/{id}/activate` · `POST /api/classes/{id}/deactivate` | teacher+ | toggles `is_active` (gateways auto-link only to active classes) |
 | `POST /api/classes/join` | teacher+ | `{code}`; the caller becomes **co-faculty** (idempotent) and the primary teacher is never replaced (#19); unknown → 404, inactive → 400 |
-| `DELETE /api/classes/{id}` | teacher+ | primary teacher or admin |
+| `DELETE /api/classes/{id}` | teacher+ | primary teacher or admin; deletes the class with its quizzes, polls, answers, votes, attendance and enrollments (same as the admin delete) |
 | `GET /api/devices/live` · `/api/devices/tree` | teacher+ | device presence across the caller's classes |
 
 `ClassResponse` adds `teacher_name, is_active, course_code, course_name, exam_date, exam_start_time, exam_end_time, reading_week_start, teacher_ids, faculty_names, student_count, quiz_count, poll_count, warnings`.
@@ -148,7 +148,7 @@ CSV import response (used by both user and student imports):
 | `GET /api/students/` | teacher+ | `?search=` matches roll number or name (case-insensitive substring) |
 | `GET /api/students/{id}` · `PUT` | teacher+ | partial update (`StudentUpdate`) |
 | `DELETE /api/students/{id}` | teacher+ | **soft** delete (`is_active=false`) |
-| `DELETE /api/students/{id}/hard-delete` | admin only (403 for teachers) | permanently removes the student, their enrollments and attendance rows |
+| `DELETE /api/students/{id}/hard-delete` | admin only (403 for teachers) | permanently removes the student, their enrollments and attendance rows; their quiz answers and poll votes are kept **anonymised** so results keep their totals |
 | `GET /api/students/{id}/classes` | teacher+ | `[{enrollment_id, class_id, course_code, course_name, subject, course_section, term, year, meeting_schedule, location, teacher_name, is_active}]` |
 | `POST /api/students/import` | teacher+ | *multipart* CSV, below |
 | `POST /api/students/classes/{id}/import-students` | teacher+ | same CSV, plus enroll into the class |
@@ -229,6 +229,6 @@ stateDiagram-v2
 
 | Method & path | Guard | Notes |
 |---|---|---|
-| `GET /health` | public | `{"status":"healthy"}` |
+| `GET /health` | public | `{"status":"healthy","schema_version":3}` (applied database migration) |
 | `GET /{any other path}` | public | the SPA (`templates/index.html`) |
 | `GET /static/*` | public | SPA assets |

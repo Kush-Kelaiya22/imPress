@@ -38,13 +38,12 @@ DEVICE = {"X-API-Key": DEVICE_KEY}
 
 async def _reset_db():
     # Delete the file rather than drop_all(): the schema has a foreign-key cycle
-    # (class_sessions / esp_devices / student_enrollments) that SQLite can't sort.
-    from app.database import Base, engine
+    # (class_sessions / esp_devices / student_enrollments) that SQLite can't
+    # sort. The app's own startup (init_db → migrations) then builds the schema
+    # exactly as on a fresh install.
+    from app.database import engine
     await engine.dispose()
     (_TMP / "test.db").unlink(missing_ok=True)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    await engine.dispose()
 
 
 # Fire-and-forget DB tasks the app spawns (presence pushes, WS presence

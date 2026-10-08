@@ -27,7 +27,7 @@ None. Every issue opened so far (#1–#25) is fixed on its own branch and merged
 | Mesh security | ESP-NOW frames are unauthenticated; a rogue device can claim any enrollment number. | Per-class key + HMAC over frames ([security model](../design/security-model.md)). |
 | Mesh frame size | `MSG_MAX_SIZE` (246) + 6-byte header = 252 > ESP-NOW v1's 250. Every message actually sent is ≤ 220 bytes. | Cap mesh payloads at 238, or require ESP-NOW v2. |
 | SPI link | No flow control: an exchange the S3 clocks while the C6 has no slot armed (e.g. during a 10 s HTTP POST) is lost. | A "slot armed" handshake, or let the C6 re-arm from a dedicated task. |
-| Backend scale | One process (in-memory WS rooms), SQLite single writer, no Alembic. | Redis pub/sub for WS, PostgreSQL + Alembic for growth. |
+| Backend scale | One process (in-memory WS rooms), SQLite single writer. Migrations are an in-repo runner (`migrations.py`), SQLite-specific. | Redis pub/sub for WS; PostgreSQL would need its migrations ported (or Alembic). |
 | Fire-and-forget tasks | Presence pushes are untracked `create_task`s; dropped on shutdown. | Harmless today (the next heartbeat re-pushes); track them if they become important. |
 | Student battery | `battery_pct` is hard-coded to 100 on student modules. | Read the ADC. |
 | React UI | `Classes` page creates classes with a name only; the API also requires `code` (→ 422). | Use the vanilla admin UI, or add a code field. |

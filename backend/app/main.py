@@ -176,7 +176,9 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy"}
+    from .database import engine
+    from .migrations import schema_version
+    return {"status": "healthy", "schema_version": await schema_version(engine)}
 
 
 # ── Frontend (catch-all SPA route — must be last) ────────────────────

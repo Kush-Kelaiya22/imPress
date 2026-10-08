@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..database import get_db
+from ..database import commit_or_conflict, get_db
 from ..models import EspDevice, ClassSession, Attendance, StudentEnrollment, Student, ActivityLog, \
     Quiz, QuizAnswer, Poll, PollVote
 from ..schemas import DeviceRegister, DeviceHeartbeat, DeviceStatusPing, DeviceAttendance, \
@@ -595,7 +595,10 @@ async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db
                 participation.append(event)
                 processed += 1
 
-    await db.commit()
+    # A concurrent batch carrying the same answers can commit first; the unique
+    # indexes reject ours. 503 makes the gateway retry, and the retry skips
+    # what is already stored.
+    await commit_or_conflict(db, "Concurrent duplicate submission; retry", status=503)
     for event in participation:
         await _broadcast_participation(db, event)
     # Push the refreshed presence to any connected teachers.

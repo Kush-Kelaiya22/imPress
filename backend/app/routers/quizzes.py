@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..database import get_db
+from ..database import commit_or_conflict, get_db
 from ..models import User, ClassSession, Quiz, QuizQuestion, QuizAnswer, EspDevice
 from ..schemas import QuizCreate, QuizResponse, QuizAnswerSubmit
 from ..auth import get_current_user, require_teacher_or_admin
@@ -292,7 +292,7 @@ async def submit_answer(
         response_time_ms=body.response_time_ms,
     )
     db.add(answer)
-    await db.commit()
+    await commit_or_conflict(db, "Already answered this question", status=400)   # lost a race with an identical request
 
     # Broadcast updated answer count
     count_result = await db.execute(

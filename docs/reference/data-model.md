@@ -1,6 +1,6 @@
 # Data model
 
-Source: `backend/app/models.py` (SQLAlchemy). Tables are created on startup; new columns on existing SQLite files are added by `database._migrate_columns()`. All `DateTime` values are **naive IST**.
+Source: `backend/app/models.py` (SQLAlchemy). Tables are created on startup and existing files are upgraded by versioned migrations (`schema_migrations` table, see [database migrations](../engineering/DATABASE_MIGRATIONS.md)). **Foreign keys are enforced** (`PRAGMA foreign_keys=ON` on every connection). All `DateTime` values are **naive IST**.
 
 ## Entity-relationship diagram
 
@@ -64,7 +64,7 @@ erDiagram
 | created_by | FK users | |
 | device_id | FK esp_devices | the room's **gateway** (one per class) |
 | is_active | bool, default **false** | gateways auto-link only to active classes |
-| course_id, course_section, term (Monsoon/Winter/Summer), year | | |
+| course_id, course_section, term (Monsoon/Winter/Summer), year | | `(course_id, course_section)` unique when both are set (`uq_class_sessions_course_section`, API returns 409) |
 | start_date, end_date, exam_start_date, exam_end_date | date | |
 | meeting_schedule | JSON `[{day, start, end}]` | clash checks in `schedule.py` |
 | location, capacity | | |
@@ -92,6 +92,7 @@ erDiagram
 `id, roll_number (32, unique; API enforces 10 alphanumerics, upper-cased), student_name, email, phone, program, enrollment_year, graduation_year, device_mac, is_active (soft delete), registered_at, registered_by`
 
 ### `student_enrollments`
+One per (class, student): unique index `uq_student_enrollments_class_student`.
 `id, class_session_id, student_id, enrolled_by, enrolled_at, is_active`
 
 ### `quizzes` / `quiz_questions` / `quiz_answers`
@@ -101,13 +102,13 @@ erDiagram
 | quiz_questions | `id, quiz_id, order_num (0-based), question_text, options JSON, correct_option` |
 | quiz_answers | `id, quiz_id, question_order, device_id (direct route), student_id (mesh route), selected_option, response_time_ms, submitted_at` |
 
-**Uniqueness is enforced in code**, not by DB constraints: one answer per (quiz, question, student) for mesh answers and per (quiz, question, device) for the direct route.
+**Uniqueness is enforced by the database** (unique indexes `uq_quiz_answers_quiz_question_student` and `uq_quiz_answers_quiz_question_device`) as well as by the routes: one answer per (quiz, question, student) for mesh answers and per (quiz, question, device) for the direct route.
 
 ### `polls` / `poll_votes`
 | Table | Columns |
 |---|---|
 | polls | `id, class_session_id, title (256), options JSON (2–6), poll_mode (live/planned), status (draft/active/closed), is_live, created_at, started_at, ended_at` |
-| poll_votes | `id, poll_id, device_id, student_id, selected_option, submitted_at`; one per (poll, student) or (poll, device), in code |
+| poll_votes | `id, poll_id, device_id, student_id, selected_option, submitted_at`; one per (poll, student) and per (poll, device), enforced by unique indexes |
 
 ### `attendance`
 `id, class_session_id, device_id, student_enrollment_id, check_in_time, is_present`. Upserted per (class, enrollment).
@@ -117,9 +118,13 @@ erDiagram
 
 Common `action` values: `auth.login`, `auth.change_password`, `user.create|update|deactivate|reset_password`, `class.create|activate|deactivate|delete|device_auto_linked|status_update`, `quiz.create|start|stop`, `poll.create|start|end`, `student.connect|disconnect|csv_import`, `esp_device.online|offline`, `module.ota`, `module.ota.prompt`, `firmware.upload`.
 
+### `schema_migrations`
+`version` (PK), `name`, `applied_at`: one row per applied migration step. `GET /health` reports the highest version as `schema_version`.
+
 ## Lifecycle rules worth knowing
 
 - **Deleting a user** is soft (`is_active = false`).
-- **Deleting a student** is soft by default; *hard-delete* (admin) also removes their enrollments and attendance.
+- **Deleting a student** is soft by default. *Hard-delete* (admin) removes the student, their enrollments and attendance, and **anonymises** their answers and votes (`student_id = NULL`) so finished results keep their totals.
+- **Deleting a class** (teacher or admin) removes its quizzes, questions, answers, polls, votes, attendance, enrollments and co-faculty links, and unlinks student modules tied to those enrollments. The gateway node row is kept.
 - **Expired or revoked sessions** are deleted every 5 minutes.
 - **Presence history** is not stored, only transitions (`esp_device.online/offline` in the activity log).

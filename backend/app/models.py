@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models for imPress."""
 
 from sqlalchemy import (
-    Column, Integer, String, Boolean, DateTime, Date, ForeignKey, Text, JSON, Table
+    Column, Integer, String, Boolean, DateTime, Date, ForeignKey, Text, JSON, Table, Index, text
 )
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -53,6 +53,12 @@ class Course(Base):
 
 class ClassSession(Base):
     __tablename__ = "class_sessions"
+    # One class per (course, section label). Classes outside a course, or
+    # without a section label, are not constrained. (migrations step 3)
+    __table_args__ = (
+        Index("uq_class_sessions_course_section", "course_id", "course_section", unique=True,
+              sqlite_where=text("course_id IS NOT NULL AND course_section <> ''")),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(128), nullable=False)
@@ -166,6 +172,9 @@ class Student(Base):
 
 class StudentEnrollment(Base):
     __tablename__ = "student_enrollments"
+    __table_args__ = (
+        Index("uq_student_enrollments_class_student", "class_session_id", "student_id", unique=True),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     class_session_id = Column(Integer, ForeignKey("class_sessions.id"), nullable=False)
@@ -218,6 +227,12 @@ class QuizQuestion(Base):
 
 class QuizAnswer(Base):
     __tablename__ = "quiz_answers"
+    # One answer per question per student (mesh path) and per device (HTTP
+    # path). NULLs are distinct in SQLite, so answers of unknown origin pass.
+    __table_args__ = (
+        Index("uq_quiz_answers_quiz_question_student", "quiz_id", "question_order", "student_id", unique=True),
+        Index("uq_quiz_answers_quiz_question_device", "quiz_id", "question_order", "device_id", unique=True),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False)
@@ -256,6 +271,10 @@ class Poll(Base):
 
 class PollVote(Base):
     __tablename__ = "poll_votes"
+    __table_args__ = (
+        Index("uq_poll_votes_poll_student", "poll_id", "student_id", unique=True),
+        Index("uq_poll_votes_poll_device", "poll_id", "device_id", unique=True),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     poll_id = Column(Integer, ForeignKey("polls.id"), nullable=False)

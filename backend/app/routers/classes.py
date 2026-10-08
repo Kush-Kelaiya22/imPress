@@ -12,6 +12,7 @@ from ..auth import require_teacher_or_admin
 from ..activity import log_activity
 from ..schedule import find_schedule_conflicts
 from ..services.presence import presence_snapshot
+from ..services.records import delete_class_records, ensure_section_free
 
 router = APIRouter(prefix="/api/classes", tags=["classes"])
 
@@ -128,6 +129,7 @@ async def create_class(
         start_date=body.start_date, end_date=body.end_date,
     )
 
+    await ensure_section_free(db, body.course_id, body.course_section)
     cls = ClassSession(
         name=body.name,
         subject=getattr(body, "subject", ""),
@@ -270,7 +272,7 @@ async def delete_class(
         raise HTTPException(403, "Only the primary teacher or admin can delete this class")
 
     await log_activity(db, "class.delete", user.id, "class", class_id, {"name": cls.name})
-    await db.delete(cls)
+    await delete_class_records(db, class_id)
     await db.commit()
     return {"status": "deleted"}
 
