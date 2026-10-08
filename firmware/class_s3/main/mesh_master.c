@@ -223,12 +223,10 @@ static void on_espnow_recv(const esp_now_recv_info_t *info,
             .rssi        = info->rx_ctrl ? info->rx_ctrl->rssi : 0,
             .uptime_s    = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS / 1000),
         };
-        uint8_t hb_buf[MSG_MAX_SIZE];
-        int hb_len = msg_encode(MSG_HEARTBEAT, (const uint8_t *)&hb,
-                                sizeof(hb), hb_buf, sizeof(hb_buf));
-        if (hb_len > 0) {
-            mesh_master_broadcast(MSG_HEARTBEAT, hb_buf, hb_len);
-        }
+        /* mesh_master_broadcast() performs msg_encode() itself.  Passing an
+         * already encoded frame here double-encodes the heartbeat and makes
+         * the student receive a malformed heartbeat payload. */
+        mesh_master_broadcast(MSG_HEARTBEAT, (const uint8_t *)&hb, sizeof(hb));
     }
 }
 

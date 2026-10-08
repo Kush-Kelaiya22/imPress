@@ -38,7 +38,7 @@
 #define PIN_SPI_CS          GPIO_NUM_10
 #define PIN_SPI_WP          GPIO_NUM_14   /* Quad WP / IO2 */
 #define PIN_SPI_HD          GPIO_NUM_9    /* Quad HD / IO3 */
-#define SPI_CLOCK_HZ        (80 * 1000 * 1000)  /* 80 MHz quad */
+#define SPI_CLOCK_HZ        (10 * 1000 * 1000)  /* 10 MHz quad */
 #define SPI_DMA_CHAN         SPI_DMA_CH_AUTO
 
 /* ── SPI Transfer Sizes ── */

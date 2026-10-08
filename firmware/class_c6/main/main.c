@@ -43,7 +43,79 @@ static const char *TAG = "c6_main";
 static char s_mac_str[DEVICE_MAC_STR_LEN] = "";
 static volatile bool s_gateway_ready = false;
 static volatile int64_t s_boot_time_us = 0;
-static volatile int s_student_count = 0;  /* updated from S3 heartbeats */
+
+#define MAX_ONLINE_STUDENTS 300
+
+static char s_online_enrollments[MAX_ONLINE_STUDENTS][11];
+static volatile int s_student_count = 0;
+
+static bool student_is_online(const char *enroll)
+{
+    for (int i = 0; i < s_student_count; i++) {
+        if (strcmp(s_online_enrollments[i], enroll) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void student_joined(const char *enroll)
+{
+    if (!enroll || !enroll[0]) {
+        return;
+    }
+
+    if (student_is_online(enroll)) {
+        return;
+    }
+
+    if (s_student_count >= MAX_ONLINE_STUDENTS) {
+        ESP_LOGW(TAG, "Student list full — cannot add %s", enroll);
+        return;
+    }
+
+    strncpy(s_online_enrollments[s_student_count], enroll, 10);
+    s_online_enrollments[s_student_count][10] = '\0';
+    s_student_count++;
+
+    ESP_LOGI(TAG,
+             "Student online: %s (total=%d)",
+             enroll,
+             s_student_count);
+}
+
+static void student_left(const char *enroll)
+{
+    if (!enroll || !enroll[0]) {
+        return;
+    }
+
+    for (int i = 0; i < s_student_count; i++) {
+        if (strcmp(s_online_enrollments[i], enroll) == 0) {
+
+            for (int j = i; j < s_student_count - 1; j++) {
+                memcpy(s_online_enrollments[j],
+                       s_online_enrollments[j + 1],
+                       sizeof(s_online_enrollments[j]));
+            }
+
+            memset(s_online_enrollments[s_student_count - 1],
+                   0,
+                   sizeof(s_online_enrollments[s_student_count - 1]));
+
+            s_student_count--;
+
+            ESP_LOGI(TAG,
+                     "Student offline: %s (total=%d)",
+                     enroll,
+                     s_student_count);
+
+            return;
+        }
+    }
+}
+
 static TaskHandle_t s_spi2http_task;
 
 /* heartbeat_task → spi2http: "append the C6's own heartbeat to the batch".
@@ -94,14 +166,31 @@ static bool batch_flush_needed(void)
 static void batch_flush(void)
 {
     int count = cJSON_GetArraySize(s_batch.items);
-    if (count == 0) return;
+
+    if (count == 0) {
+        return;
+    }
 
     char *json = cJSON_PrintUnformatted(s_batch.items);
+
     if (json) {
-        ESP_LOGI(TAG, "Batch flush %d items → /api/device/batch", count);
-        http_send_batch(json);
+        ESP_LOGI(TAG,
+                 "Batch flush %d items → /api/device/batch",
+                 count);
+
+        ESP_LOGI(TAG,
+                 "Batch data: %s",
+                 json);
+
+        int rc = http_send_batch(json);
+
+        ESP_LOGI(TAG,
+                 "Batch HTTP result: %d",
+                 rc);
+
         free(json);
     }
+
     cJSON_Delete(s_batch.items);
     s_batch.items = cJSON_CreateArray();
     s_batch.last_add_us = esp_timer_get_time();
@@ -124,24 +213,25 @@ static cJSON *msg_to_json(msg_type_t type, const uint8_t *payload, uint16_t len,
         cJSON_AddNumberToObject(j, "device_id", p->device_id);
         cJSON_AddNumberToObject(j, "battery_pct", p->battery_pct);
         cJSON_AddNumberToObject(j, "rssi", p->rssi);
-        /* Update student count from S3's reported value */
-        s_student_count++;
+        /* Student count is maintained from JOIN/LEAVE, not heartbeats. */
         break;
     }
     case MSG_STUDENT_JOIN: {
         if (len < sizeof(payload_student_join_t)) break;
-        const payload_student_join_t *p = (const payload_student_join_t *)payload;
+
+        const payload_student_join_t *p =
+            (const payload_student_join_t *)payload;
+
+        student_joined(p->enrollment);
+
         j = cJSON_CreateObject();
+
         cJSON_AddStringToObject(j, "type", "student_join");
-        /* Enrollment number is the primary identity */
         cJSON_AddStringToObject(j, "enrollment_number", p->enrollment);
-        /* This gateway relays the mesh event — used for attribution/student_count */
         cJSON_AddStringToObject(j, "device_mac", s_mac_str);
-        cJSON_AddStringToObject(j, "class_code",
-            /* class_code will be injected by the batch POST helper */
-            "");
-        /* Legacy fields kept for diagnostics */
+        cJSON_AddStringToObject(j, "class_code", "");
         cJSON_AddNumberToObject(j, "device_id", p->device_id);
+
         break;
     }
     case MSG_STUDENT_LEAVE: {
@@ -155,8 +245,8 @@ static cJSON *msg_to_json(msg_type_t type, const uint8_t *payload, uint16_t len,
         cJSON_AddStringToObject(j, "device_mac", s_mac_str);
         cJSON_AddNumberToObject(j, "device_id", p->device_id);
         cJSON_AddNumberToObject(j, "reason", p->reason);
-        /* Track mesh population (heartbeat increments per peer) */
-        if (s_student_count > 0) s_student_count--;
+        student_left(p->enrollment);
+        ESP_LOGI(TAG, "Student offline: %s (total=%d)", p->enrollment, s_student_count);
         break;
     }
     case MSG_QUIZ_ANSWER: {
@@ -245,8 +335,9 @@ static void process_spi_payload(const uint8_t *buf, int buf_len)
         }
     }
 
-    /* Flush when ready */
-    if (batch_flush_needed()) {
+    /* Flush only when the gateway can reach the backend.  Keep the batch
+     * accumulated while WiFi is temporarily down. */
+    if (wifi_client_is_connected() && batch_flush_needed()) {
         batch_flush();
     }
 }
@@ -258,11 +349,11 @@ static void spi_to_http_task(void *arg)
     batch_init();
 
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(50));
-
-        if (!wifi_client_is_connected()) {
-            continue;
-        }
+        /* Reap/re-arm SPI frequently even when WiFi is down.  The S3 is the
+         * SPI master and cannot clock another slot until this transaction is
+         * re-armed.  The old 50 ms + WiFi gate could leave the C6 with no
+         * queued SPI transaction, dropping poll commands and student events. */
+        vTaskDelay(pdMS_TO_TICKS(2));
 
         int len = spi_slave_read(buf, sizeof(buf));
         if (len > 0) {
@@ -280,7 +371,7 @@ static void spi_to_http_task(void *arg)
         }
 
         /* Periodic flush check */
-        if (batch_flush_needed()) {
+        if (wifi_client_is_connected() && batch_flush_needed()) {
             batch_flush();
         }
     }
@@ -372,7 +463,8 @@ static void on_ws_command(const char *json)
     uint8_t frame[MSG_MAX_SIZE];
     int fn = ws_command_to_frame(msg, frame, sizeof(frame));
     if (fn > 0) {
-        spi_slave_send(frame, fn);
+        int rc = spi_slave_send(frame, fn);
+        ESP_LOGI(TAG, "Queued %s for S3 over SPI: len=%d rc=%d", evt, fn, rc);
     } else if (fn < 0) {
         ESP_LOGW(TAG, "Malformed '%s' command — dropped", evt);
     } else if (strcmp(evt, "device_command") == 0) {

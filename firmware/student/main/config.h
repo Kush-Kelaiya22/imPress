@@ -28,7 +28,7 @@
 #define NVS_EMAIL_LEN       65
 /* Placeholder enrollment written on first boot — REPLACE at provisioning.
  * Exactly 10 alphanumeric chars (matches backend ENROLL_RE). */
-#define DEFAULT_ENROLLMENT  "0000000000"
+#define DEFAULT_ENROLLMENT  "AU24401230"
 
 /* ── Mesh Configuration ── */
 #define MESH_WIFI_CHANNEL   1       /* must match S3 */

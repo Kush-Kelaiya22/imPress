@@ -83,34 +83,29 @@ static void handle_c6_frame(const uint8_t *buf, int len)
 
 static void spi_link_task(void *arg)
 {
+    static uint8_t batch[SPI_SLOT_BYTES - 4];
+    static uint8_t rx[SPI_SLOT_BYTES - 4];
+
     (void)arg;
-    /* Static buffers: batch and RX payload are ~SPI_SLOT_BYTES each and
-     * would overflow a 4096-byte task stack, so they live in .bss. */
-    static uint8_t batch[SPI_SLOT_BYTES - 4];  /* mesh batch → S3 slot payload */
-    static uint8_t rx[SPI_SLOT_BYTES - 4];     /* C6 slot payload */
 
     while (1) {
-        /* Wake on: (a) S3 queued TX via spi_master_send(), (b) R_C6 rise-
-         * edge ISR. Bounded wait also keeps the old spi_tx_task cadence so
-         * the mesh queue drains to C6 even without other traffic. */
-        xSemaphoreTake(spi_master_link_signal(),
-                       pdMS_TO_TICKS(g_cfg.spi_poll_interval_ms));
+        vTaskDelay(pdMS_TO_TICKS(g_cfg.spi_poll_interval_ms));
 
-        /* Old spi_tx_task duty: drain batched student messages into slot. */
         int n = mesh_master_flush_to_spi(batch, sizeof(batch));
+
         if (n > 0) {
-            spi_master_send(batch, n);
-            ESP_LOGD(TAG, "SPI TX: %d bytes to C6", n);
+            int rc = spi_master_send(batch, n);
+
+            ESP_LOGI(TAG,
+                     "Student data → C6 SPI: %d bytes, rc=%d",
+                     n, rc);
         }
 
-        /* Old spi_rx_task duty: exactly ONE full-duplex slot transfer if
-         * there is anything to send or C6 signalled it has a frame. */
-        if (spi_master_tx_pending() || spi_master_c6_has_data()) {
-            if (spi_master_poll()) {
-                int rlen = spi_master_rx_copy(rx, sizeof(rx));
-                if (rlen > 0) {
-                    handle_c6_frame(rx, rlen);
-                }
+        if (spi_master_poll()) {
+            int rlen = spi_master_rx_copy(rx, sizeof(rx));
+
+            if (rlen > 0) {
+                handle_c6_frame(rx, rlen);
             }
         }
     }
@@ -137,14 +132,21 @@ static void heartbeat_task(void *arg)
             .uptime_s     = (uint32_t)(xTaskGetTickCount() *
                                        portTICK_PERIOD_MS / 1000),
         };
-        static uint8_t encoded[MSG_MAX_SIZE];            /* static: 2 KB task stack can't hold these */
-        int n = msg_encode(MSG_HEARTBEAT, (const uint8_t *)&status,
-                           sizeof(status), encoded, sizeof(encoded));
+        
+        static uint8_t slot[SPI_RECORD_HEADER_SIZE + MSG_MAX_SIZE];
+
+        int n = msg_encode(MSG_HEARTBEAT,
+                        (const uint8_t *)&status,
+                        sizeof(status),
+                        slot + SPI_RECORD_HEADER_SIZE,
+                        MSG_MAX_SIZE);
+
         if (n > 0) {
-            /* C6's SPI parser only understands the batch record format. */
-            static uint8_t slot[SPI_RECORD_HEADER_SIZE + MSG_MAX_SIZE];
-            int len = spi_record_write(slot, sizeof(slot), 0 /* S3 root id */,
-                                       encoded, (uint16_t)n);
+            int len = spi_record_write(slot, sizeof(slot),
+                                    0,
+                                    slot + SPI_RECORD_HEADER_SIZE,
+                                    (uint16_t)n);
+
             if (len > 0) {
                 spi_master_send(slot, len);
             }
