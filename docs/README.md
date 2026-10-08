@@ -34,6 +34,9 @@ This folder is the long-form documentation for imPress. The [project README](../
 | ↳ [Known issues](reference/known-issues.md) | open observations not yet fixed |
 | ↳ [Changelog: v2](reference/changelog-v2.md) | what the audit fixed (#1–#25) |
 | ↳ [Changelog: v2.1](reference/changelog-v2.1.md) | what v2.1 changes, issue by issue, with upgrade notes |
+| **[Testing](testing/)** | understand what is tested and what isn't |
+| ↳ [Test strategy](testing/TEST_STRATEGY.md) | test layers, coverage, faults covered, rules for new tests |
+| ↳ [Hardware validation](testing/HARDWARE_VALIDATION.md) | bench checks per feature and their status (all *not run* so far) |
 | **[Hardware](hardware/)** | choose boards for a classroom |
 | ↳ [Classroom node requirements](hardware/CLASSROOM_NODE_REQUIREMENTS.md) | measured footprints; minimum, reduced-flash and high-capacity configurations; pending bench figures |
 | ↳ [Device compatibility](hardware/DEVICE_COMPATIBILITY.md) | which image runs where, what OTA can and can't change, firmware ↔ backend version mixes |
