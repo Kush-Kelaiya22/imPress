@@ -21,6 +21,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 SHOTS = Path(__file__).parent / "screenshots"
 ADMIN_PASSWORD = "ui-admin-pw"
+DEVICE_KEY = "ui-device-key"
 
 
 def _free_port():
@@ -43,6 +44,25 @@ class Api:
         with urllib.request.urlopen(req, json.dumps(body).encode() if body is not None else None) as r:
             return json.loads(r.read() or b"null")
 
+    def upload(self, path, filename, data: bytes):
+        """multipart/form-data POST of one file field named 'file'."""
+        boundary = "----impress-ui-test"
+        body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n"
+                f"Content-Type: application/octet-stream\r\n\r\n").encode() + data + f"\r\n--{boundary}--\r\n".encode()
+        req = urllib.request.Request(self.base + path, data=body, method="POST")
+        req.add_header("content-type", f"multipart/form-data; boundary={boundary}")
+        req.add_header("authorization", f"Bearer {self.token}")
+        with urllib.request.urlopen(req) as r:
+            return json.loads(r.read())
+
+    def device(self, path, body):
+        """A device call (X-API-Key), e.g. registration or an OTA status report."""
+        req = urllib.request.Request(self.base + path, data=json.dumps(body).encode(), method="POST")
+        req.add_header("content-type", "application/json")
+        req.add_header("x-api-key", DEVICE_KEY)
+        with urllib.request.urlopen(req) as r:
+            return json.loads(r.read() or b"null")
+
 
 @pytest.fixture
 def server():
@@ -50,7 +70,7 @@ def server():
     tmp = Path(tempfile.mkdtemp(prefix="impress-ui-"))
     port = _free_port()
     env = {**os.environ, "IMPRESS_DATABASE_URL": f"sqlite+aiosqlite:///{tmp}/ui.db", "IMPRESS_DEBUG": "false",
-           "IMPRESS_JWT_SECRET": "ui-secret-not-default", "IMPRESS_DEVICE_API_KEY": "ui-device-key",
+           "IMPRESS_JWT_SECRET": "ui-secret-not-default", "IMPRESS_DEVICE_API_KEY": DEVICE_KEY,
            "IMPRESS_INITIAL_ADMIN_PASSWORD": ADMIN_PASSWORD, "IMPRESS_FIRMWARE_DIR": str(tmp / "fw")}
     log = open(tmp / "server.log", "w")
     proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(port),

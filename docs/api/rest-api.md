@@ -327,6 +327,19 @@ stateDiagram-v2
 
 Images are stored as `<FIRMWARE_DIR>/<sha256>.bin`, a name derived from the content and never from user input. A target+version names exactly one set of bytes (immutable). At startup, valid `<type>-<version>.bin` files from the pre-v2.1 store are adopted (`legacy: true`); invalid ones are logged and no longer served.
 
+## Firmware deployments (#38)
+
+| Method & path | Guard | Notes |
+|---|---|---|
+| `POST /api/admin/deployments?dry_run=` | admin | `{artifact_id, device_ids?, class_id?, device_type?, running_version?, all_compatible?, strategy?, allow_downgrade?, idempotency_key?}`. At least one selector; they narrow each other. The image must be **approved** (409). `dry_run=true` returns `{included: [{device_id, mac_address, stage, from_version}], excluded: [{device_id, mac_address, reason}]}`. Otherwise returns `{deployment, excluded, replayed}` and starts the canary at once. **409** if no selected device can take the image (with `excluded`). The same `idempotency_key` returns the earlier deployment with `replayed: true`. |
+| `GET /api/admin/deployments` | admin | newest first: `[{id, artifact_id, target, version, kind (update\|rollback), state (running\|paused\|completed\|cancelled), note, strategy, total, counts: {state: n}, stages, created_at, started_at, finished_at}]` |
+| `GET /api/admin/deployments/{id}` | admin | the same, plus `targets: [{device_id, mac_address, device_name, device_type, stage, state, attempts, from_version, final_version, error, error_code, started_at, updated_at, finished_at, is_connected}]` |
+| `POST /api/admin/deployments/{id}/pause` · `POST /api/admin/deployments/{id}/resume` · `POST /api/admin/deployments/{id}/cancel` | admin | **pause:** running → paused. **resume:** paused → running; failures that paused it are accepted. **cancel:** devices still `waiting`/`queued`/`precheck` are cancelled, the rest finish. 409 from the wrong state |
+
+`strategy`: `{canary: 1, batch_size: 5, max_concurrent: 5, max_failures: 0, max_attempts: 2, timeout_s: 900}`. States and rules are in the [OTA architecture](../firmware/OTA_ARCHITECTURE.md).
+
+`POST /api/admin/modules/{id}/ota {version, allow_downgrade?}` is a one-device deployment, with the same exclusions: `409` with the reason.
+
 ## Misc
 
 | Method & path | Guard | Notes |

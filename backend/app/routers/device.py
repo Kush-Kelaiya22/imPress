@@ -10,10 +10,11 @@ from ..database import commit_or_conflict, get_db
 from ..models import EspDevice, ClassSession, Attendance, StudentEnrollment, Student, ActivityLog, \
     Quiz, QuizAnswer, Poll, PollVote
 from ..schemas import DeviceRegister, DeviceHeartbeat, DeviceStatusPing, DeviceAttendance, \
-    DeviceDataBatch, DeviceFirmwareCheck, DeviceOtaApplied, OtaStatusResponse
+    DeviceDataBatch, DeviceFirmwareCheck, DeviceOtaApplied, DeviceOtaStatus, OtaStatusResponse
 from ..config import api_key_ok
 from ..services.presence import mark_online, _push_after_commit
 from ..services.firmware_store import artifact_file, resolve as resolve_firmware
+from ..services import deployments as deployment_engine
 from ..timeutil import istnow, istnow_aware
 from ..ws.manager import manager
 
@@ -44,6 +45,10 @@ async def register_device(body: DeviceRegister, db: AsyncSession = Depends(get_d
         )
         db.add(device)
         await db.flush()
+    # The version the device runs (it was accepted and silently dropped before;
+    # deployments need it for "already running" and downgrade checks).
+    if body.firmware_version and body.firmware_version != "0.0.0":
+        device.firmware_version = body.firmware_version[:32]
 
     # Presence: log when this classroom ESP comes online.
     await mark_online(db, device)
@@ -200,34 +205,64 @@ async def firmware_check(body: DeviceFirmwareCheck, db: AsyncSession = Depends(g
         device.pending_version
         and device.pending_version != device.firmware_version
     )
+    sha256, size, dep_id = "", 0, None
+    if update_available:
+        target = await deployment_engine.active_target(db, device)
+        if target is not None:
+            if target.state == "queued":
+                await deployment_engine.report(db, device, "precheck")
+            artifact = target.deployment.artifact
+            sha256, size, dep_id = artifact.sha256, artifact.size, target.deployment_id
     await db.commit()
     return OtaStatusResponse(
         update_available=update_available,
         version=device.pending_version if update_available else "",
         ota_status=device.ota_status or "idle",
         current_version=device.firmware_version,
+        sha256=sha256, size=size, deployment_id=dep_id,
     )
 
 
 @router.post("/firmware/applied", dependencies=[Depends(_verify_api_key)])
 async def firmware_applied(body: DeviceOtaApplied, db: AsyncSession = Depends(get_db)):
-    """Node reports it finished applying the pushed update (R8)."""
+    """Pre-v2.1 'update applied' report. It now goes through the deployment
+    state machine: success only with the expected version (#34)."""
     result = await db.execute(
         select(EspDevice).where(EspDevice.mac_address == body.mac_address)
     )
     device = result.scalar_one_or_none()
     if not device:
         raise HTTPException(404, "Device not registered")
-
-    version = body.version or device.pending_version
-    if version:
-        device.firmware_version = version
-    device.pending_version = ""
-    device.ota_status = "applied"
     device.is_connected = True
     device.last_seen = istnow()
+    target = await deployment_engine.report(db, device, "success", body.version)
+    if target is None:                             # no deployment: the pre-v2.1 behaviour
+        version = body.version or device.pending_version
+        if version:
+            device.firmware_version = version
+        device.pending_version, device.ota_status = "", "applied"
     await db.commit()
-    return {"status": "ok", "firmware_version": device.firmware_version}
+    return {"status": "ok", "firmware_version": device.firmware_version, "ota_status": device.ota_status}
+
+
+@router.post("/ota/status", dependencies=[Depends(_verify_api_key)])
+async def ota_status(body: DeviceOtaStatus, db: AsyncSession = Depends(get_db)):
+    """A device reports OTA progress: precheck → downloading → verifying →
+    installing → rebooting → health_check → success | rolled_back | failed.
+    Only forward moves are accepted (409 otherwise); repeating the current
+    state is a no-op, so retries and duplicates are harmless."""
+    device = (await db.execute(select(EspDevice).where(EspDevice.mac_address == body.mac_address))).scalar_one_or_none()
+    if device is None:
+        raise HTTPException(404, "Device not registered")
+    device.last_seen = istnow()
+    try:
+        target = await deployment_engine.report(db, device, body.state, body.version, body.error, body.error_code)
+    except deployment_engine.TransitionError as e:
+        raise HTTPException(409, str(e))
+    if target is None:
+        raise HTTPException(409, "No update is in progress for this device")
+    await db.commit()
+    return {"status": "ok", "state": target.state, "deployment_id": target.deployment_id}
 
 
 @router.get("/firmware/download", dependencies=[Depends(_verify_api_key)])
@@ -258,6 +293,8 @@ async def firmware_download(mac_address: str, version: str,
     if artifact is None:
         raise HTTPException(404, f"No registered {device.device_type} firmware {version}")
     path = artifact_file(artifact)
+    await deployment_engine.observe_download(db, device)     # at least 'downloading' now
+    await db.commit()
     return FileResponse(path, media_type="application/octet-stream",
                         filename=f"{artifact.project}-{artifact.version}.bin",
                         headers={"X-Firmware-SHA256": artifact.sha256})
@@ -466,34 +503,30 @@ async def _broadcast_participation(db: AsyncSession, event: dict) -> None:
 
 
 async def _record_ota_result(db: AsyncSession, msg: dict) -> bool:
-    """An S3's OTA outcome, relayed by its C6 (#33).
-
-    The S3 reports after rebooting into the new image (applied), after the
-    bootloader reverted it (rolled_back), or when an attempt failed before
-    any reboot (failed + esp_err_t). Success is recorded only for 'applied'
-    with the version that was pushed: a reboot alone proves nothing.
-    """
+    """An S3's OTA outcome, relayed by its C6 (#33): applied after the reboot,
+    rolled_back, or failed (+ esp_err_t). Feeds the deployment state machine
+    (#34): 'applied' only counts as success with the expected version."""
     mac = (msg.get("mac_address") or "").strip()
     version = str(msg.get("version") or "").strip()[:32]
     result = msg.get("result")
-    if not mac or result not in ("applied", "rolled_back", "failed"):
+    state = {"applied": "success", "rolled_back": "rolled_back", "failed": "failed"}.get(result)
+    if not mac or state is None:
         return False
     device = (await db.execute(select(EspDevice).where(EspDevice.mac_address == mac))).scalar_one_or_none()
     if device is None:
         return False
-    expected = device.pending_version or ""
-    if result == "applied":
-        device.firmware_version = version            # what really runs
-        device.ota_status = "applied" if (not expected or version == expected) else "failed"
-        device.pending_version = ""
-    elif result == "rolled_back":
-        device.ota_status = "rolled_back"
-        device.pending_version = ""                  # don't offer the bad image again
-    else:
-        device.ota_status = "failed"                 # transient: pending kept for a retry
+    error = msg.get("error") or 0
+    try:
+        target = await deployment_engine.report(db, device, state, version,
+                                                error=f"esp_err_t {error}" if error else "",
+                                                error_code=error if isinstance(error, int) and error else None)
+    except deployment_engine.TransitionError:
+        return False
+    if target is None and result == "applied":      # no update in progress: still record what runs
+        device.firmware_version = version
     db.add(ActivityLog(action="module.ota_result", entity_type="device", entity_id=device.id, details={
-        "mac": mac, "result": result, "version": version, "expected": expected,
-        "error": msg.get("error", 0), "gateway_mac": msg.get("device_mac", "")}))
+        "mac": mac, "result": result, "version": version, "error": error,
+        "gateway_mac": msg.get("device_mac", ""), "deployment_id": target.deployment_id if target else None}))
     return True
 
 

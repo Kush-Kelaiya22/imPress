@@ -56,7 +56,7 @@ def _route_paths():
     import importlib
     from fastapi.routing import APIRoute
     paths = set()
-    for name in ("auth", "admin", "classes", "quizzes", "polls", "device", "courses", "students", "firmware"):
+    for name in ("auth", "admin", "classes", "quizzes", "polls", "device", "courses", "students", "firmware", "deployments"):
         mod = importlib.import_module(f"app.routers.{name}")
         for router in (mod.router, getattr(mod, "live_router", None)):
             for r in getattr(router, "routes", []):

@@ -27,7 +27,7 @@ from ..schemas import (
     CsvImportResult, CsvImportError,
 )
 from ..services.firmware_store import normalize_version, resolve as resolve_firmware
-from ..services.mesh_bridge import send_command_to_devices
+from ..services import deployments as deployment_engine
 from ..timeutil import istnow
 from ..auth import require_admin, require_teacher_or_admin
 from ..activity import log_activity
@@ -1155,38 +1155,17 @@ async def admin_push_ota(
         raise HTTPException(404, f"No uploaded {dt or 'device'} firmware {version}; upload it first")
     if artifact.status != "approved":
         raise HTTPException(409, f"{dt} firmware {version} is {artifact.status}; only approved images can be pushed")
-    body.version = version
-
-    dev.pending_version = body.version
-    dev.ota_status = "downloading"
-    dev.ota_requested_at = istnow()
+    # One-device deployment (#38): same state machine, timeouts and result
+    # tracking as a bulk rollout; prompts the device (or the S3's C6) now.
+    dep, excluded = await deployment_engine.create_deployment(
+        db, artifact, [dev], user_id=user.id, strategy={"canary": 1}, allow_downgrade=body.allow_downgrade)
+    if dep is None:
+        raise HTTPException(409, excluded[0]["reason"])
+    await deployment_engine.advance(db, dep)
     await log_activity(db, "module.ota", user.id, "device", device_id,
-                       {"to_version": body.version, "mac": dev.mac_address})
-    await db.commit()
+                       {"to_version": version, "mac": dev.mac_address, "deployment_id": dep.id})
+    await commit_or_conflict(db, "This device was added to another deployment at the same time; retry")
     await db.refresh(dev)
-
-    # S3 hub: prompt its paired C6 so the prompt travels C6 → SPI → S3 → WiFi OTA.
-    if (dev.device_type or "").lower() == "s3" and dev.gateway_id:
-        c6_rs = await db.execute(select(EspDevice).where(EspDevice.id == dev.gateway_id))
-        c6 = c6_rs.scalar_one_or_none()
-        cls_id = None
-        if c6 and c6.class_session:
-            cls_id = c6.class_session.id
-        elif dev.class_session:
-            cls_id = dev.class_session.id
-
-        if cls_id:
-            await send_command_to_devices(
-                cls_id,
-                "ota_update",
-                {"device_type": "s3", "version": body.version,
-                 "mac_address": dev.mac_address},
-            )
-            await log_activity(db, "module.ota.prompt", user.id, "device",
-                               dev.gateway_id, {"to_class": cls_id,
-                                                "version": body.version})
-            await db.commit()
-
     return _device_response(dev)
 
 
