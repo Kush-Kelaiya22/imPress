@@ -91,6 +91,13 @@ async def add_diagnostics_columns(conn: AsyncConnection) -> None:
     await _add_columns(conn, _DIAGNOSTICS_COLUMNS)
 
 
+async def add_firmware_signer(conn: AsyncConnection) -> None:
+    """Signed firmware (#66): who signed each image. Images registered before
+    this step were parsed by a version that refused anything after the
+    image, so none of them is signed."""
+    await _add_columns(conn, {"firmware_artifacts": {"signer": "VARCHAR(64) DEFAULT ''"}})
+
+
 async def add_device_keys(conn: AsyncConnection) -> None:
     """Per-device keys (#66): the hash of each device's own key."""
     await _add_columns(conn, {"esp_devices": {"api_key_hash": "VARCHAR(64)", "key_issued_at": "DATETIME",
@@ -192,6 +199,7 @@ MIGRATIONS: list[tuple[int, str, Step]] = [
     (4, "unique_question_order", unique_question_order),
     (5, "add_diagnostics_columns", add_diagnostics_columns),
     (6, "add_device_keys", add_device_keys),
+    (7, "add_firmware_signer", add_firmware_signer),
 ]
 
 LATEST = MIGRATIONS[-1][0]

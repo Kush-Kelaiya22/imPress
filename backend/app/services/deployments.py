@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import ActivityLog, ClassSession, DeploymentTarget, EspDevice, FirmwareArtifact, FirmwareDeployment
 from ..timeutil import istnow
+from .firmware_signing import site_key_digest
 from .mesh_bridge import send_command_to_devices
 
 log = logging.getLogger(__name__)
@@ -94,6 +95,9 @@ async def exclusion_reason(db: AsyncSession, artifact: FirmwareArtifact, device:
         return "no over-the-air path to student modules yet (update over serial)"
     if not device.is_active:
         return "device is disabled"
+    site = site_key_digest()
+    if site and artifact.signer != site:
+        return "image is not signed with the site firmware key (#66)"
     if device.firmware_version == artifact.version:
         return f"already running {artifact.version}"
     current, target = semver(device.firmware_version), semver(artifact.version)

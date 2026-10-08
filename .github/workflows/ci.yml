@@ -161,6 +161,25 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  firmware-signed:
+    # The signed-app profile (#66) with a throwaway key made for this run:
+    # it builds, and the backend's verifier accepts the result and names the key.
+    name: ESP-IDF v6.1 signed build (class_c6)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: espressif/idf:v6.1@sha256:81893c71bb5e570088901f21def8684c25cd2a9020281bd01b843a7655edb18c
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Throwaway signing key, signed build, verification
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh" >/dev/null
+          scripts/firmware_key.sh "$RUNNER_TEMP/key"
+          IMPRESS_SIGNING_KEY="$RUNNER_TEMP/key/signing_key.pem" scripts/build_signed.sh class_c6
+          python3 scripts/verify_firmware.py firmware/class_c6/build/signed/impress_class_c6.bin \
+            --key "$RUNNER_TEMP/key/signing_key.pub"
+          grep -q '^CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT=y' firmware/class_c6/build/signed/sdkconfig
+
   frontend:
     name: Frontend build
     runs-on: ubuntu-latest
@@ -231,7 +250,7 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [repo, security, backend, firmware-static, firmware-host, firmware-build, frontend, ui, install-smoke]
+    needs: [repo, security, backend, firmware-static, firmware-host, firmware-build, firmware-signed, frontend, ui, install-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

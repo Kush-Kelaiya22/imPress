@@ -181,3 +181,15 @@ def test_real_build_output_parses(project, target, chip):
     info = parse_image(path.read_bytes())
     version = (FIRMWARE_SRC / project / "version.txt").read_text().strip()
     assert (info.target, info.chip, info.version) == (target, chip, version)
+
+
+@pytest.mark.parametrize("project", ["class_c6", "class_s3"])
+def test_real_signed_build_output_parses(project):
+    """A scripts/build_signed.sh build (#66), when one exists locally."""
+    from app.services.firmware_image import SLOT_BYTES, parse_image
+    path = FIRMWARE_SRC / project / "build" / "signed" / f"impress_{project}.bin"
+    if not path.exists():
+        pytest.skip(f"no local signed build of {project}")
+    info = parse_image(path.read_bytes())
+    assert len(info.signers) == 1 and info.size <= SLOT_BYTES[info.target]
+

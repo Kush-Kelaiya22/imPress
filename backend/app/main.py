@@ -32,6 +32,10 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Create tables and seed a default super admin on startup."""
     check_secure(settings)
+    from .services.firmware_signing import site_key_digest
+    signing_key = site_key_digest()          # an unreadable key stops startup here, not at the first upload
+    if signing_key:
+        logger.info("Firmware must be signed with key %s… (IMPRESS_FIRMWARE_SIGNING_KEY)", signing_key[:16])
     if insecure_settings(settings):
         logger.warning("DEBUG mode with default secrets %s — never deploy like this",
                        insecure_settings(settings))

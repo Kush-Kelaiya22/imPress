@@ -34,7 +34,7 @@ A review of the v2.1 changes against the brief's checklist: access control, file
 |---|---|
 | Compatibility checks | ✅ an image is registered for exactly one target (chip and project from the image) and offered only to devices of that type; the device's `esp_ota_end` rejects a foreign chip |
 | Integrity | ✅ the SHA-256 is checked at upload and given to the device with the offer; the gateway compares it before installing (#34) and the bootloader checks the appended hash |
-| **Authenticity** | ❌ **images are not signed.** A device installs any image that passes the integrity checks. Tracked in [#66](https://github.com/Kush-Kelaiya22/imPress/issues/66); the procedure is in the [OTA guide](../guides/ota-updates.md#signing-images) |
+| **Authenticity** | ✅ (#66) signed images: devices on the signed profile verify every update in `esp_ota_end()`; the backend verifies the RSA-PSS signature at upload against `IMPRESS_FIRMWARE_SIGNING_KEY` and never deploys other images. Verified against real `espsecure` output (`test_firmware_signing.py`, 18 tests) and in CI (`firmware-signed`). Opt-in, because the key is each site's own |
 | Transport | ⚠️ device traffic is plain HTTP; TLS is recommended at the reverse proxy for browsers, and for devices in [#66](https://github.com/Kush-Kelaiya22/imPress/issues/66) |
 | Replay and stale offers | ✅ a device is offered only its deployment's version; the state machine is forward-only, so a replayed or out-of-order report is ignored (`test_progress_is_forward_only_and_duplicates_are_harmless`); success needs the expected version |
 | Downgrade policy | ✅ refused unless the operator confirms (`allow_downgrade`); recorded as a rollback deployment |

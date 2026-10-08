@@ -86,17 +86,53 @@ The **Deployments** list shows progress and refreshes itself while a rollout run
 
 ## Signing images
 
-Recommended for production. Without signing, anyone holding the device key and able to plant a file in the store, or to MITM the HTTP download, could ship code to hubs.
+Recommended for production (#66). Unsigned, a device installs any image that passes the integrity checks. That means anyone who can get a file accepted (an admin account, the shared key on an older backend, or a machine in the middle of the HTTP download) could ship code to hubs and gateways. Signed, each device checks every update against **your** public key in `esp_ota_end()`, and the backend refuses images that aren't signed with it before any device sees them.
 
-1. Generate a key **outside the repository** (it is git-ignored, but keep it offline anyway):
-   ```bash
-   espsecure.py generate_signing_key --version 2 secure_boot_signing_key.pem
-   ```
-2. `idf.py menuconfig` → *Security features*:
-   - **Require signed app images** (`CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT`) for signature checks on OTA without burning eFuses, **or**
-   - **Secure Boot v2** for full chain-of-trust (irreversible eFuse burn; plan carefully).
-3. Set the signing key path, rebuild and flash **over serial once**. From then on `esp_ota_end()` rejects unsigned or mis-signed images.
-4. Keep the key in a secrets manager; CI should sign release builds, not developer laptops.
+The scheme is ESP-IDF's "signed app images without hardware Secure Boot" (RSA-3072, Secure Boot V2 format):
+- **Bootloader and eFuses:** the bootloader is not changed and no eFuse is burned.
+- **Rollout:** a fleet moves to signed images with one ordinary OTA update, and can be moved back the same way.
+- **What it protects against:** network attackers, not someone with physical access and a serial cable. That requires hardware Secure Boot, which is irreversible: see the ESP-IDF Secure Boot V2 guide.
+
+### 1. Create the site's key (once)
+```bash
+scripts/firmware_key.sh                     # → ~/.impress/firmware-signing/
+```
+| File | Keep it |
+|---|---|
+| `signing_key.pem` | **private**: offline, backed up, never in the repository. Losing it means devices that trust it can only be updated over serial. |
+| `signing_key.pub` | public: give it to the backend |
+
+The script prints the key's digest, the value `espsecure digest-sbv2-public-key` gives. The Firmware page shows the first 16 characters of each image's signer.
+
+### 2. Tell the backend
+```ini
+# backend/.env
+IMPRESS_FIRMWARE_SIGNING_KEY=/home/impress/.impress/firmware-signing/signing_key.pub
+```
+After a restart:
+- Uploads must be signed with this key. An unsigned image, or one signed with another key, is refused (422) with the key's digest in the message.
+- Images uploaded earlier without the signature stay in the registry but are **excluded from deployments** ("image is not signed with the site firmware key"), and the Firmware page marks them in red.
+- An unreadable key file stops the server at startup.
+
+### 3. Build signed images
+```bash
+IMPRESS_SIGNING_KEY=~/.impress/firmware-signing/signing_key.pem scripts/build_signed.sh class_c6
+IMPRESS_SIGNING_KEY=~/.impress/firmware-signing/signing_key.pem scripts/build_signed.sh class_s3
+scripts/verify_firmware.py firmware/class_c6/build/signed/impress_class_c6.bin --key ~/.impress/firmware-signing/signing_key.pub
+```
+`build_signed.sh` starts from the project's committed `sdkconfig`, so partitions, flash mode and size, rollback and the rest are unchanged. It adds `firmware/sdkconfig.defaults.signed` and the key path, and builds into `firmware/<project>/build/signed/`. The normal build is untouched. Student modules are not signed: they have no over-the-air updates.
+
+### 4. Deploy
+Upload `build/signed/impress_<project>.bin` and deploy it as usual. **From the moment a device runs a signed-profile image, it refuses unsigned images and images signed with any other key** (`esp_ota_end` fails, and the device reports `failed`). The device that installs the *first* signed-profile image doesn't check it yet. Only the images after it are checked, so this first deployment should come from a trusted machine.
+
+### Key rotation and turning it off
+- **Rotate:** a device checks updates against the key that signed the image it is running. ESP-IDF allows up to three signature blocks per image (`espsecure sign-data --version 2 --append-signatures`), so an image built with the new key can also carry the old key's signature:
+  1. Deploy that doubly signed image.
+  2. Switch `IMPRESS_FIRMWARE_SIGNING_KEY` to the new public key. The backend accepts an image if any of its signatures is from the site key.
+
+  **This hasn't been tried with imPress hardware yet**: rehearse it on one bench device before a fleet.
+- **Turn it off:** sign a normal (unsigned-profile) build with the current key (`espsecure sign-data --version 2 --keyfile signing_key.pem`), deploy it, then clear `IMPRESS_FIRMWARE_SIGNING_KEY`.
+- **Key lost:** the devices can only be updated over serial ([recovery procedure](../firmware/RECOVERY_PROCEDURE.md#4-a-device-cant-update-at-all-reflash-over-serial)).
 
 ## Transport security
 

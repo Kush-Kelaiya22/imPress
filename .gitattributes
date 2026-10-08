@@ -34,6 +34,7 @@ Kconfig*    text
 *.pdf     binary
 *.woff    binary
 *.woff2   binary
+backend/tests/fixtures/signing/*.img  binary
 
 # GitHub language stats: vendored ESP-IDF registry components aren't ours.
 firmware/class_c6/managed_components/** linguist-vendored

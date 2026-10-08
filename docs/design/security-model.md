@@ -54,18 +54,18 @@ flowchart LR
 | T5 | Duplicate or forged answers via the gateway path | Backend validates active quiz/poll, question, option, known student; one row per student (#6) | ✅ |
 | T6 | Cross-origin requests from malicious sites | CORS restricted to `CORS_ORIGINS` (#11); bearer tokens are not cookies, so CSRF doesn't apply | ✅ |
 | T7 | Secrets in logs | SQL echo off by default; the C6 no longer logs the API key (#11) | ✅ |
-| T8 | Malicious firmware via OTA | Download only of the version an admin pushed to that device (#13); app **rollback** on boot failure (#13) | ⚠️ partial: images are not **signed** and are fetched over HTTP; see residual risks |
+| T8 | Malicious firmware via OTA | Download only of the version an admin pushed to that device (#13); app **rollback** on boot failure (#13); **signed images** (#66): with the signed-app profile each device verifies every update's RSA-3072 signature against the site key in `esp_ota_end()`, and with `IMPRESS_FIRMWARE_SIGNING_KEY` the backend refuses unsigned or foreign images at upload | ✅ with the signed profile and site key in use (both opt-in: the key is each site's own). Physical attacks need hardware Secure Boot (not enabled) |
 | T9 | Radio spoofing: a rogue device sends answers with someone else's enrollment number | Answers count only for enrolled students and only once each. **No cryptographic protection on air.** | ⚠️ accepted risk |
 | T10 | Radio flooding / jamming | De-dup and bounded queues keep nodes alive; jamming can't be prevented in 2.4 GHz | ⚠️ accepted risk |
 | T11 | Path traversal via firmware version/type | Stored files are named by their SHA-256 only (`artifact_path` refuses anything else); versions are strict semver; tested | ✅ |
-| T14 | Wrong, corrupt or foreign image offered to devices | Uploads are parsed as ESP-IDF app images (chip, project, semver version, appended SHA-256, slot size) and registered immutably (#35); downloads come from the registry, for the device's own type, with `X-Firmware-SHA256` | ✅ (authenticity still needs signing, T8) |
+| T14 | Wrong, corrupt or foreign image offered to devices | Uploads are parsed as ESP-IDF app images (chip, project, semver version, appended SHA-256, slot size) and registered immutably (#35); downloads come from the registry, for the device's own type, with `X-Firmware-SHA256` | ✅ (authenticity: T8) |
 | T12 | Teacher takes over another teacher's class with its join code | Joining by code only adds co-faculty; the primary teacher is never replaced (#19) | ✅ |
 | T13 | Reading other classes' questions, answers and results by enumerating ids | Quiz/poll details and results require class access (#20) | ✅ |
 | T15 | Impersonating a device with the shared key (a leaked key, or one read from any device's flash) | Per-device keys (#66): a device registers with the shared key and is issued its own; once used, only that key can act for its MAC, and only for that MAC. Admins can reset one device's key or disable one device without touching the others. `IMPRESS_DEVICE_KEYS_REQUIRED=true` limits the shared key to registration | ✅ (an unclaimed or reset device can still be claimed by whoever holds the shared key first) |
 
 ## Residual risks and recommended hardening
 
-1. **Sign OTA images.** Enable `CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT` (or Secure Boot v2) with an offline key. See the [OTA guide](../guides/ota-updates.md#signing-images).
+1. ~~Sign OTA images~~: done in #66 (T8): `scripts/firmware_key.sh`, `scripts/build_signed.sh`, `IMPRESS_FIRMWARE_SIGNING_KEY`. See the [OTA guide](../guides/ota-updates.md#signing-images). Hardware Secure Boot V2 (irreversible) remains an option against physical attackers.
 2. **TLS everywhere:** a reverse proxy for the backend, plus `cert_pem` in the firmware HTTP clients.
 3. ~~Per-device API keys~~: done in #66 (T15). Turn on `IMPRESS_DEVICE_KEYS_REQUIRED` once every device runs firmware with per-device keys.
 4. **Message authentication on the mesh** (e.g. a per-class key and HMAC over the frame) if answer spoofing becomes a concern. ESP-NOW also supports encrypted unicast peers, but not encrypted broadcast.

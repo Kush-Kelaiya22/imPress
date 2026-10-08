@@ -10,8 +10,10 @@ Layout (ESP-IDF v5/v6, esp_app_format):
     32  esp_app_desc_t (256 B): magic 0xABCD5432, secure_version, reserv1[2],
         version[32] @48, project_name[32] @80, time[16] @112, date[16] @128,
         idf_ver[32] @144, app_elf_sha256[32] @176
-    ... segments, checksum byte ...
-    end SHA-256 of everything before it (when hash_appended == 1)
+    ... segments (8-byte header + data each), zero padding, checksum byte
+        ending a 16-byte block ...
+    SHA-256 of everything before it (when hash_appended == 1)
+    optional: 0xFF padding + a 4096-byte signature sector (#66, firmware_signing.py)
 """
 
 from __future__ import annotations
@@ -20,6 +22,8 @@ import hashlib
 import re
 import struct
 from dataclasses import dataclass
+
+from .firmware_signing import SignatureError, verify_signature
 
 IMAGE_MAGIC = 0xE9
 APP_DESC_MAGIC = 0xABCD5432
@@ -56,6 +60,7 @@ class ImageInfo:
     elf_sha256: str      # hex of the ELF hash the build embedded
     sha256: str          # hex of the whole file
     size: int
+    signers: tuple[str, ...] = ()   # Secure Boot V2 key digests of its signatures; () if unsigned (#66)
 
 
 def _cstr(b: bytes) -> str:
@@ -89,8 +94,13 @@ def parse_image(data: bytes) -> ImageInfo:
 
     if data[23] != 1:
         raise ImageError("image has no appended SHA-256, so its integrity can't be checked")
-    if hashlib.sha256(data[:-32]).digest() != data[-32:]:
+    end = image_end(data)
+    if end > len(data) or hashlib.sha256(data[:end - 32]).digest() != data[end - 32:end]:
         raise ImageError("image is corrupt or truncated (appended SHA-256 does not match)")
+    try:
+        signers = verify_signature(data, end)
+    except SignatureError as exc:
+        raise ImageError(f"bad signature: {exc}") from None
     if len(data) > SLOT_BYTES[target]:
         raise ImageError(f"image is {len(data)} bytes; the {target} OTA slot holds {SLOT_BYTES[target]}")
 
@@ -98,5 +108,17 @@ def parse_image(data: bytes) -> ImageInfo:
         target=target, chip=chip, project=project, version=version,
         idf_version=_cstr(data[144:176]),
         build_date=f"{_cstr(data[128:144])} {_cstr(data[112:128])}".strip(),
-        elf_sha256=data[176:208].hex(), sha256=hashlib.sha256(data).hexdigest(), size=len(data))
+        elf_sha256=data[176:208].hex(), sha256=hashlib.sha256(data).hexdigest(), size=len(data), signers=signers)
+
+
+def image_end(data: bytes) -> int:
+    """Length of the app image itself (segments, checksum, appended SHA-256),
+    without any signature sector after it."""
+    pos = 24
+    for _ in range(data[1]):
+        if pos + 8 > len(data):
+            raise ImageError("image is truncated (segment header past the end)")
+        pos += 8 + struct.unpack_from("<I", data, pos + 4)[0]
+    pos = (pos // 16 + 1) * 16                 # the checksum byte ends a 16-byte block
+    return pos + (32 if data[23] == 1 else 0)
 

@@ -84,3 +84,18 @@ def test_push_dialog_without_approved_images_points_to_the_firmware_page(server,
     page.locator("button", has_text="Push OTA").click()
     expect(page.locator(".modal")).to_contain_text("No approved s3 firmware yet")
     expect(page.locator("#ota-go")).to_have_count(0)
+
+
+def test_signature_status_is_shown(server, page):
+    # #66: a real espsecure-signed image (backend/tests/fixtures/signing) and an unsigned one
+    base, api = server
+    signed = (ROOT / "backend/tests/fixtures/signing/c6_2.2.0_signed_a.img").read_bytes()
+    api.upload("/api/admin/firmware", "signed.bin", signed)
+    api.upload("/api/admin/firmware", "plain.bin", make_image("impress_class_s3", "2.2.0"))
+    login(page, base)
+    page.wait_for_url("**/#/admin*")
+    page.goto(base + "/#/admin/firmware")
+    rows = page.locator("tr[data-fw]")
+    expect(rows).to_have_count(2)
+    texts = [rows.nth(i).inner_text() for i in range(2)]
+    assert sum("unsigned" in t for t in texts) == 1 and sum("signed" in t and "unsigned" not in t for t in texts) == 1
