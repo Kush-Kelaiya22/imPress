@@ -214,6 +214,9 @@ class Quiz(Base):
 
 class QuizQuestion(Base):
     __tablename__ = "quiz_questions"
+    __table_args__ = (
+        Index("uq_quiz_questions_quiz_order", "quiz_id", "order_num", unique=True),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False)

@@ -68,7 +68,9 @@ def _route_paths():
 def test_every_api_route_is_documented(monkeypatch):
     monkeypatch.setenv("IMPRESS_DEBUG", "true")
     docs = " ".join((ROOT / f"docs/api/{f}").read_text() for f in ("rest-api.md", "device-api.md"))
-    documented = {re.sub(r"\{[^}]+\}", "{}", p).rstrip("/") for p in re.findall(r"(/api/[A-Za-z0-9_/{}\-]+)", docs)}
+    # paths may contain dots (template.csv); a sentence-ending period is not part of one
+    documented = {re.sub(r"\{[^}]+\}", "{}", p).rstrip(".").rstrip("/")
+                  for p in re.findall(r"(/api/[A-Za-z0-9_/{}.\-]+)", docs)}
     missing = sorted(p for p in _route_paths() if p not in documented)
     assert missing == [], f"undocumented routes: {missing}"
 

@@ -144,11 +144,28 @@ async def add_unique_constraints(conn: AsyncConnection) -> None:
         await conn.execute(text(f"CREATE UNIQUE INDEX IF NOT EXISTS {name} ON {table} ({key}){partial}"))
 
 
+async def unique_question_order(conn: AsyncConnection) -> None:
+    """One question per position in a quiz (#31: concurrent CSV imports into
+    one quiz must not interleave). Quiz creation always numbered 0..n-1, but
+    any duplicate positions are renumbered in (order_num, id) order first."""
+    quizzes = (await conn.execute(text(
+        "SELECT quiz_id FROM quiz_questions GROUP BY quiz_id, order_num HAVING COUNT(*) > 1"))).all()
+    for (quiz_id,) in set(quizzes):
+        ids = [r[0] for r in (await conn.execute(text(
+            "SELECT id FROM quiz_questions WHERE quiz_id = :q ORDER BY order_num, id"), {"q": quiz_id})).all()]
+        for pos, qid in enumerate(ids):
+            await conn.execute(text("UPDATE quiz_questions SET order_num = :p WHERE id = :i"), {"p": pos, "i": qid})
+        log.warning("quiz %s: renumbered %d questions to remove duplicate positions", quiz_id, len(ids))
+    await conn.execute(text(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_quiz_questions_quiz_order ON quiz_questions (quiz_id, order_num)"))
+
+
 # Append-only. (version, name, step)
 MIGRATIONS: list[tuple[int, str, Step]] = [
     (1, "add_v2_columns", add_v2_columns),
     (2, "repair_dangling_references", repair_dangling_references),
     (3, "add_unique_constraints", add_unique_constraints),
+    (4, "unique_question_order", unique_question_order),
 ]
 
 LATEST = MIGRATIONS[-1][0]

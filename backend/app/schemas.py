@@ -281,6 +281,30 @@ class QuizQuestionCreate(BaseModel):
         return self
 
 
+class QuestionImportRow(BaseModel):
+    line: int                          # line in the CSV file (header = 1)
+    status: str                        # valid | invalid | duplicate
+    question_text: str
+    options: list[str]
+    correct_option: Optional[int] = None
+    errors: list[str] = []
+    warnings: list[str] = []
+    duplicate_of: Optional[str] = None   # "line N" | "already in this quiz"
+
+
+class QuestionImportReport(BaseModel):
+    """All-or-nothing: any invalid row means nothing is imported; duplicates
+    are skipped. `committed` is true only when questions were stored."""
+    total: int
+    valid: int
+    invalid: int
+    duplicate: int
+    imported: int
+    skipped: int
+    committed: bool = False
+    rows: list[QuestionImportRow]
+
+
 class QuizCreate(BaseModel):
     class_session_id: int
     title: str = Field(min_length=1, max_length=128)

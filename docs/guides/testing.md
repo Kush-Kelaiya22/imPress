@@ -196,6 +196,7 @@ python run_tests.py --with-ui            # or: pytest ui_tests
 | File | Checks |
 |---|---|
 | `test_navigation.py` | a page the user left before it finished loading never paints over the page they moved to (#51); normal navigation and in-page re-renders still work |
+| `test_csv_questions.py` | template download; a file with invalid rows shows the reasons, readable without horizontal scrolling, and the add button is (visibly) disabled; a valid file fills the form and creates the quiz; an unusable file shows why (#31) |
 
 ## Repository and CI checks (`tests/`)
 

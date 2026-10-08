@@ -47,6 +47,39 @@ async function apiRequest(path, options = {}) {
   return await res.json();
 }
 
+/** Multipart upload with progress (fetch can't report upload progress).
+ *  Resolves with the JSON body; rejects with err.status / err.body set. */
+function uploadFile(path, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE}${path}`);
+    const token = getToken();
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => {
+      if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded * 100) / e.total));
+    };
+    xhr.onerror = () => reject(new Error('Network error: the upload did not reach the server'));
+    xhr.onload = () => {
+      let body;
+      try { body = JSON.parse(xhr.responseText); } catch { body = { detail: xhr.statusText }; }
+      if (xhr.status === 401) {
+        clearToken();
+        window.location.hash = '#/login';
+        return reject(new Error('Unauthorized'));
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        const d = body.detail;
+        const msg = typeof d === 'string' ? d : (d && d.message) || 'Upload failed';
+        return reject(Object.assign(new Error(msg), { status: xhr.status, body }));
+      }
+      resolve(body);
+    };
+    const form = new FormData();
+    form.append('file', file);
+    xhr.send(form);
+  });
+}
+
 // ── Auth ────────────────────────────────────────────────────────
 
 const authApi = {
@@ -344,6 +377,13 @@ const classesApi = {
 // ── Quizzes ─────────────────────────────────────────────────────
 
 const quizzesApi = {
+  templateUrl: `${API_BASE}/quizzes/questions/template.csv`,
+
+  /** Validate a question CSV; returns a per-row report, stores nothing. */
+  parseCsv(file, onProgress) {
+    return uploadFile('/quizzes/questions/parse', file, onProgress);
+  },
+
   async create(data) {
     return apiRequest('/quizzes/', {
       method: 'POST',
