@@ -31,7 +31,10 @@ This folder is the long-form documentation for imPress. The [project README](../
 | ↳ [Data model](reference/data-model.md) | every table, column and relationship |
 | ↳ [Hardware](reference/hardware.md) | boards, pins, wiring, partitions |
 | ↳ [Known issues](reference/known-issues.md) | open observations not yet fixed |
-| ↳ [Changelog: v2](reference/changelog-v2.md) | what the audit fixed (#1–#18) |
+| ↳ [Changelog: v2](reference/changelog-v2.md) | what the audit fixed (#1–#25) |
+| **[Engineering](engineering/)** | see the evidence behind the v2.1 work |
+| ↳ [System audit](engineering/SYSTEM_AUDIT.md) | the v2 baseline: architecture map, device matrix, measured footprints, defects, test baseline |
+| ↳ [v2/v3 comparison](engineering/V2_V3_COMPARISON.md) | what `v3` changed, why its CI failed, what v2.1 adopts or rejects |
 
 ## Conventions used in these docs
 
