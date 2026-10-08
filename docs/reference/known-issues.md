@@ -22,8 +22,6 @@ None. Every issue opened so far (#1–#25) is fixed on its own branch and merged
 |---|---|---|
 | OTA / transport | Signed images and device TLS exist (#66) but are **off by default**, because each needs the site's own key or certificate. A fleet left on the defaults installs unsigned images over plain HTTP. | Turn both on before production: [signing images](../guides/ota-updates.md#signing-images), [TLS for devices](../guides/deployment.md#tls-for-devices). Hardware Secure Boot (against physical attackers) is not enabled. |
 | OTA | Student modules have no over-the-air path (ESP-NOW ≤ 250-byte frames, no Wi-Fi provisioning); they update over serial. The S3 and C6 update over the air (#33, #34). | A Wi-Fi hop like the S3's, with credentials provisioned at enrollment, or a chunked ESP-NOW transfer with per-chunk acks. |
-| Device auth | One shared `DEVICE_API_KEY` for every gateway. | Per-device keys with rotation/revocation. |
-| Firmware transport | The C6 uses `http://` and `ws://`. | `cert_pem` + `https`/`wss` once the server has TLS. |
 | Mesh security | ESP-NOW frames are unauthenticated; a rogue device can claim any enrollment number. | Per-class key + HMAC over frames ([security model](../design/security-model.md)). |
 | Mesh frame size | `MSG_MAX_SIZE` (246) + 6-byte header = 252 > ESP-NOW v1's 250. Every message actually sent is ≤ 220 bytes. | Cap mesh payloads at 238, or require ESP-NOW v2. |
 | SPI link | No flow control: an exchange the S3 clocks while the C6 has no slot armed (e.g. during a 10 s HTTP POST) is lost. | A "slot armed" handshake, or let the C6 re-arm from a dedicated task. |
@@ -38,7 +36,6 @@ None. Every issue opened so far (#1–#25) is fixed on its own branch and merged
 | File | Warning |
 |---|---|
 | `firmware/class_c6/main/wifi_client.c` | unused `s_adc`, `s_adc_ready` (when `BATTERY_ADC_EN=n`) |
-| `firmware/class_s3/main/config.c` | unused function `_nvs_write_str` |
 | `firmware/student/main/mesh_espnow.c` | unused variable `s_student_id` |
 
 ## Not yet verified on hardware

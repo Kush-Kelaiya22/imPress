@@ -117,4 +117,5 @@ def test_readme_badges_reflect_real_data():
         # a hand-written shields badge must not claim a status (passing, coverage, version, license)
         if "img.shields.io/badge/" in url:
             assert not re.search(r"(?i)(pass|fail|success|coverage|release|version-|license|tests-)", url), url
-    assert any("branch=varun%2Fv2.1" in b for b in badges)          # the integration branch's CI
+    ci = [b for b in badges if "/actions/workflows/" in b]
+    assert len(ci) == 1 and "branch=varun%2Fv2.1" in ci[0], ci     # one CI badge: the integration branch

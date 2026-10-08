@@ -50,7 +50,7 @@ flowchart LR
 | ESP-NOW and an AP connection fight over the radio channel: the radio must sit on the AP's channel to stay associated. | The **root** (S3) stays on the mesh channel full time; a **separate radio** (C6) does Wi-Fi. They talk over **SPI**. |
 | The hub must forward bursts (everyone answers within seconds). | Standard SPI (10 MHz default) with a fixed **4096-byte slot** carries up to 136 answer records per exchange, about 2,700 answers/s at the 50 ms poll. |
 | The backend must know a single place per room. | The C6 registers as the class **gateway**; the backend links one gateway per class. |
-| Firmware in the field must be updatable. | The S3 has dual OTA slots and **app rollback**; the backend hosts images and prompts updates through the gateway. |
+| Firmware in the field must be updatable. | The hub and the gateway have dual OTA slots and **app rollback**; the backend hosts validated images and runs staged deployments ([OTA architecture](../firmware/OTA_ARCHITECTURE.md)). Student modules are updated over USB. |
 
 ## Deployment topology
 

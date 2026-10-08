@@ -6,8 +6,7 @@
 Live quizzes and polls with one-tap answers, delivered over an ESP-NOW mesh, with no Wi-Fi on student devices.</p>
 
 <p>
-<a href="https://github.com/Kush-Kelaiya22/imPress/actions/workflows/ci.yml?query=branch%3Avarun%2Fv2.1"><img alt="CI (varun/v2.1)" src="https://github.com/Kush-Kelaiya22/imPress/actions/workflows/ci.yml/badge.svg?branch=varun%2Fv2.1"></a>
-<a href="https://github.com/Kush-Kelaiya22/imPress/actions/workflows/ci.yml?query=branch%3Av2"><img alt="CI (v2)" src="https://github.com/Kush-Kelaiya22/imPress/actions/workflows/ci.yml/badge.svg?branch=v2"></a>
+<a href="https://github.com/Kush-Kelaiya22/imPress/actions/workflows/ci.yml?query=branch%3Avarun%2Fv2.1"><img alt="CI" src="https://github.com/Kush-Kelaiya22/imPress/actions/workflows/ci.yml/badge.svg?branch=varun%2Fv2.1"></a>
 <a href="https://github.com/Kush-Kelaiya22/imPress/commits/varun/v2.1"><img alt="Last commit (varun/v2.1)" src="https://img.shields.io/github/last-commit/Kush-Kelaiya22/imPress/varun%2Fv2.1"></a>
 <a href="https://github.com/Kush-Kelaiya22/imPress/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/Kush-Kelaiya22/imPress"></a>
 </p>
@@ -31,7 +30,7 @@ Live quizzes and polls with one-tap answers, delivered over an ESP-NOW mesh, wit
 </div>
 
 > [!NOTE]
-> This is **v2.1** (`VERSION` 2.1.0), developed on the `varun/v2.1` integration branch from `v2`. It adds CSV imports, a firmware registry with staged OTA deployments and rollback, an OTA client for the gateway, device diagnostics, a student module inventory, versioned database migrations and a tested install path. See the [v2.1 changelog](docs/reference/changelog-v2.1.md). The badges show CI for `varun/v2.1` and `v2` separately.
+> This is **v2.1** (`VERSION` 2.1.0), developed on the `varun/v2.1` integration branch from `v2`. It adds CSV imports, a firmware registry with staged OTA deployments and rollback, an OTA client for the gateway, device diagnostics, a student module inventory, versioned database migrations and a tested install path. See the [v2.1 changelog](docs/reference/changelog-v2.1.md). The CI badge shows the `varun/v2.1` branch.
 
 ---
 
@@ -49,6 +48,7 @@ Student modules never join Wi-Fi. They form an **ESP-NOW mesh** and relay each o
 | Mesh networking | Multi-hop ESP-NOW relaying (TTL 5) with de-duplication at the student, hub and server layers: one press is one answer |
 | Classroom management | Courses and sections, timetable clash warnings, CSV import of students, staff, **questions, courses and sections**, enrollment, attendance, co-faculty |
 | Access control | `super_admin` > `admin` > `teacher`; server-side sessions with idle and absolute expiry; one class-access rule everywhere |
+| Device security | **per-device keys** issued at registration (reset and revoke one device without touching the others); **signed firmware** verified on the device and at upload; **HTTPS/WSS** for device traffic. Signing and TLS are opt-in site settings: see [OTA updates](docs/guides/ota-updates.md#signing-images) and [TLS for devices](docs/guides/deployment.md#tls-for-devices) |
 | Device fleet | Live presence per class, **health states with diagnostics**, an **inventory of student modules** each gateway has seen |
 | Firmware | A validated, immutable **firmware registry**; approval before use; **staged OTA deployments** (canary, batches, retries, timeouts) to hubs and gateways; **automatic rollback** on devices; operator rollback |
 
