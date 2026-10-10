@@ -20,6 +20,8 @@ The checks below are planned as GitHub issues. Each issue has numbered test case
 | 10 | [#93](https://github.com/Kush-Kelaiya22/imPress/issues/93): range, power, brownout, buttons | H17, H18 |
 | 11 | [#91](https://github.com/Kush-Kelaiya22/imPress/issues/91): hub variants (no PSRAM, 8 MB quad flash) | H15, H16 |
 
+These issues are in the release milestone (`v2.1.0`) with the `testing` label. While one of them is open, the release is marked **Beta**; when the last one closes it becomes **Stable** automatically ([releases](../guides/releases.md#beta-and-stable)).
+
 ## How to record a result
 
 Replace *not run* with:

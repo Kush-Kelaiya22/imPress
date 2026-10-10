@@ -715,6 +715,12 @@ and link to its issue or pull request. Do not describe a proposal as delivered.
 This section is a change history; it does not assert that a GitHub release or
 tag exists.
 
+No unreleased changes yet.
+
+#### 2.1.0
+
+The changes in version 2.1.0, from `varun/v2.1`. The release workflow publishes `v2.1.0` from the commit that merges this section together with [`docs/releases/v2.1.0.md`](docs/releases/v2.1.0.md); the history table below records the release once it is verified ([releases](docs/guides/releases.md)).
+
 - **Documentation ([PR #74](https://github.com/Kush-Kelaiya22/imPress/pull/74)):** Added the GitHub wiki link to the README and integrated the initial contribution guidance, version policy, and Code of Conduct.
 - **Governance ([PR #75](https://github.com/Kush-Kelaiya22/imPress/pull/75)):** Expanded the contributor handbook with issue triage, labels, branch ownership, review, testing, and release guidance; strengthened the Code of Conduct; consolidated version history and removed the separate version-policy document.
 - **Quiz and poll lifecycle ([#76](https://github.com/Kush-Kelaiya22/imPress/issues/76)):** A completed quiz or closed poll can no longer be restarted with its old answers or votes (`409`), a draft can no longer be stopped or ended, and repeating stop/end on a finished quiz or poll is a no-op.
@@ -722,6 +728,7 @@ tag exists.
 - **Quiz timing ([#73](https://github.com/Kush-Kelaiya22/imPress/issues/73)):** Timed quizzes now advance (`per_question`) and end (`total`) on a durable server-side timer; the class page offers Next in every timing mode; late answers are refused on both answer paths; student modules show a countdown and ignore presses after it. Adds schema migration 8 (`quizzes.question_started_at`).
 - **Documentation ([#79](https://github.com/Kush-Kelaiya22/imPress/issues/79)):** Rewrote the README architecture diagram and two other flowcharts in portable mermaid syntax so they render on GitHub; fixed two state diagrams that failed on mermaid 10; listed migration steps 4–7 in the database migration guide; linked the governance entry to PR #75.
 - **Maintenance ([#77](https://github.com/Kush-Kelaiya22/imPress/issues/77)):** Removed the unused `services/participation.py`, whose question broadcast read a field that does not exist; the routers' broadcasts are the only implementation of the device frame contract.
+- **Releases and packaging ([#96](https://github.com/Kush-Kelaiya22/imPress/issues/96)):** Added the release workflow (a release per `VERSION`, tagged on the tested commit, with firmware, documentation and bundle zip files; Beta while test issues in its milestone are open, Stable otherwise, re-checked on issue changes), the backend container image on GHCR, and the 2.1.0 release notes.
 
 #### Recorded product version and development history
 
@@ -770,11 +777,15 @@ Releases require an identified release owner and an agreed source integration br
 
 Do not mark a release as published before its tag or release record actually exists. An integration PR, passing CI run, or updated `VERSION` file is not a release by itself.
 
-### 15.2 Rollback and recovery
+### 15.2 Automation
+
+The release workflow carries out steps 11–13 after a reviewed pull request adds `docs/releases/v<VERSION>.md` (the sign-off) and CI passes on the merge commit. It tags that exact commit, builds and publishes the files, and marks the release **Beta** while open issues labelled `testing` are in the milestone `v<VERSION>`, **Stable** otherwise. It never moves a tag or replaces a published release. Step 13 (verification) stays a human task. Details: [releases](docs/guides/releases.md).
+
+### 15.3 Rollback and recovery
 
 For server releases, document backup, migration, compatibility, and recovery steps. For device releases, document image approval, signing keys, target-board checks, canary deployment, rollback prerequisites, and recovery from an interrupted update. Some firmware or bootloader/security changes may not be reversible over the air; explain that **before** deployment. Never promise OTA rollback without verifying the supported recovery path.
 
-### 15.3 Post-release follow-up
+### 15.4 Post-release follow-up
 
 Check deployment health, known issues, device enrollment, OTA status, and reported regressions. Link new regressions to the published release and earlier related issues. A patch release should use the approved version process rather than editing an existing published artifact without traceability.
 
