@@ -348,6 +348,22 @@ void display_show_question(const char *question, const char *options[],
     display_flush();
 }
 
+/**
+ * @brief Draw "Ns left" on the bottom row over the current question
+ *        (questions use rows 0-5 for up to four options). 0 clears the row.
+ */
+void display_show_countdown(int seconds_left)
+{
+    if (!s_initialized) return;
+    memset(&s_framebuffer[(SSD1306_PAGES - 1) * SSD1306_WIDTH], 0, SSD1306_WIDTH);
+    if (seconds_left > 0) {
+        char line[24];
+        snprintf(line, sizeof(line), "%ds left", seconds_left);
+        draw_string(0, SSD1306_PAGES - 1, line, false);
+    }
+    display_flush();
+}
+
 void display_show_result(const char *text)
 {
     if (!s_initialized) return;

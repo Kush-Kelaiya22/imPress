@@ -57,15 +57,25 @@ Student modules never join Wi-Fi. They form an **ESP-NOW mesh** and relay each o
 ```mermaid
 flowchart LR
     subgraph Room["Classroom"]
-        ST["Student modules<br/>ESP32 · buttons A-D"]:::student
-        S3["Hub · ESP32-S3<br/>mesh root · SPI master"]:::hub
-        C6["Gateway · ESP32-C6<br/>SPI slave · Wi-Fi"]:::gateway
-        ST <-- "ESP-NOW mesh<br/>relayed, de-duplicated" --> S3
-        S3 <-- "SPI 10 MHz<br/>4 KB slots" --> C6
+        ST["Student modules<br/>ESP32 · buttons A-D"]
+        S3["Hub · ESP32-S3<br/>mesh root · SPI master"]
+        C6["Gateway · ESP32-C6<br/>SPI slave · Wi-Fi"]
+        ST <-->|"ESP-NOW mesh<br/>relayed, de-duplicated"| S3
+        S3 <-->|"SPI 10 MHz<br/>4 KB slots"| C6
     end
-    C6 <-- "HTTP JSON +<br/>WebSocket" --> BE["FastAPI backend<br/>REST · WebSocket rooms"]:::server
-    BE --- DB[("SQLite")]:::store
-    T["Teachers and admins<br/>browser"]:::user <-- "HTTPS / WSS" --> BE
+    BE["FastAPI backend<br/>REST · WebSocket rooms"]
+    DB[("SQLite")]
+    T["Teachers and admins<br/>browser"]
+    C6 <-->|"HTTP JSON +<br/>WebSocket"| BE
+    BE --- DB
+    T <-->|"HTTPS / WSS"| BE
+
+    class ST student
+    class S3 hub
+    class C6 gateway
+    class BE server
+    class DB store
+    class T user
 
     classDef student fill:#DDF4FF,stroke:#0969DA,color:#0A3069
     classDef hub fill:#FFF1E5,stroke:#BC4C00,color:#762C00

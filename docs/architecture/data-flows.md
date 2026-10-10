@@ -45,7 +45,7 @@ sequenceDiagram
     ST->>ST: mesh_rx_task → on_mesh_message → OLED shows question, state QUIZ_ACTIVE
 ```
 
-`POST /next` repeats steps 1–9 with the next `question_order`. Stopping, or calling `next` past the last question, sends `quiz_end`, which students turn into `MSG_QUIZ_END` and go back to `IDLE`. Polls use the same path with `poll_start` / `poll_end`.
+`POST /next`, or the server's quiz timer for a `per_question` quiz (#73), repeats steps 1–9 with the next `question_order`; a timed question also shows a countdown from `time_limit_s` on the student module, which ignores presses after it. Stopping, calling `next` past the last question, or a `total` quiz running out of time sends `quiz_end`, which students turn into `MSG_QUIZ_END` and go back to `IDLE`. Polls use the same path with `poll_start` / `poll_end`.
 
 ## 3. A student answers → the teacher's count goes up
 

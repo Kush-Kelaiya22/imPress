@@ -102,7 +102,7 @@ One per (class, student): unique index `uq_student_enrollments_class_student`.
 ### `quizzes` / `quiz_questions` / `quiz_answers`
 | Table | Columns |
 |---|---|
-| quizzes | `id, class_session_id, title, status (draft/active/completed), quiz_mode (planned/impromptu), timing_mode (per_question/total/manual), question_time_limit, total_time_limit, current_question, is_live, created_at, started_at, ended_at` |
+| quizzes | `id, class_session_id, title, status (draft/active/completed), quiz_mode (planned/impromptu), timing_mode (per_question/total/manual), question_time_limit, total_time_limit, current_question, is_live, created_at, started_at, question_started_at (when the current question went live; per-question timer, #73), ended_at` |
 | quiz_questions | `id, quiz_id, order_num (0-based), question_text, options JSON, correct_option` |
 | quiz_answers | `id, quiz_id, question_order, device_id (direct route), student_id (mesh route), selected_option, response_time_ms, submitted_at` |
 

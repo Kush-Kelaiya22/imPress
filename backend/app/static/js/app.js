@@ -2823,14 +2823,14 @@ async function renderClassDetail(app, params) {
                   <strong>${escHtml(q.title)}</strong>
                   <div class="text-sm text-muted">
                     <span class="badge badge-sm ${q.quiz_mode === 'impromptu' ? 'badge-warning' : 'badge-outline'}">${q.quiz_mode}</span>
-                    <span class="badge badge-sm ${q.timing_mode === 'manual' ? 'badge-outline' : 'badge-info'}">${q.timing_mode.replace('_', ' ')}</span>
+                    <span class="badge badge-sm ${q.timing_mode === 'manual' ? 'badge-outline' : 'badge-info'}">${q.timing_mode.replace('_', ' ')}${quizTimeLimit(q)}</span>
                     <span class="badge badge-sm ${q.status === 'active' ? 'badge-success' : q.status === 'completed' ? 'badge-primary' : 'badge-outline'}">${q.status}</span>
                   </div>
                 </div>
-                <div class="flex gap-1">
+                <div class="flex gap-1" id="quiz-actions-${q.id}">
                   ${q.status === 'draft' ? `<button class="btn btn-sm btn-success" onclick="startQuiz(${q.id})">▶ Start</button>` : ''}
                   ${q.status === 'active' ? `
-                    ${q.timing_mode === 'manual' ? `<button class="btn btn-sm btn-primary" onclick="nextQuestion(${q.id})">Next →</button>` : ''}
+                    <button class="btn btn-sm btn-primary" onclick="nextQuestion(${q.id})">Next →</button>
                     <button class="btn btn-sm btn-danger" onclick="stopQuiz(${q.id})">⏹ Stop</button>
                   ` : ''}
                   ${q.status === 'completed' ? `<a href="#/quiz-results?id=${q.id}" class="btn btn-sm btn-outline">Results</a>` : ''}
@@ -3132,6 +3132,9 @@ async function renderClassDetail(app, params) {
     }
   });
   classSocket.on('quiz_ended', (data) => {
+    // A timed quiz can end on the server's timer (#73): swap Next/Stop for Results.
+    const actions = document.getElementById(`quiz-actions-${data.quiz_id}`);
+    if (actions) actions.innerHTML = `<a href="#/quiz-results?id=${data.quiz_id}" class="btn btn-sm btn-outline">Results</a>`;
     const feed = document.getElementById('live-feed');
     if (feed) {
       const line = document.createElement('p');
@@ -3231,6 +3234,16 @@ window.stopQuiz = async function (quizId) {
     router();
   } catch (err) { showToast(err.message, 'error'); }
 };
+
+// " · 30s/question" or " · 5m total" for a timed quiz's badge; "" for manual/no limit.
+function quizTimeLimit(q) {
+  if (q.timing_mode === 'per_question' && q.question_time_limit) return ` · ${q.question_time_limit}s/question`;
+  if (q.timing_mode === 'total' && q.total_time_limit) {
+    const t = q.total_time_limit;
+    return ` · ${t % 60 ? `${t}s` : `${t / 60}m`} total`;
+  }
+  return '';
+}
 
 window.nextQuestion = async function (quizId) {
   try {

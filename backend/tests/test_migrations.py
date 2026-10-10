@@ -64,6 +64,7 @@ def _legacy_db(path):
         for name in [r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE name LIKE 'uq_%'")]:
             c.execute(f"DROP INDEX {name}")
         c.execute("ALTER TABLE esp_devices DROP COLUMN total_flash")
+        c.execute("ALTER TABLE quizzes DROP COLUMN question_started_at")      # pre-#73
         c.executescript("""
             INSERT INTO users (id, username, email, hashed_password, role) VALUES (1, 'admin', 'a@x', 'h', 'super_admin');
             INSERT INTO courses (id, code, name) VALUES (1, 'CS101', 'Intro');
@@ -106,6 +107,7 @@ def test_legacy_database_is_backed_up_repaired_and_constrained(tmp_path):
     assert _q(tmp_path / backups[0], "SELECT COUNT(*) FROM quiz_answers") == [(4,)]   # untouched copy
 
     assert "total_flash" in {r[1] for r in _q(db, "PRAGMA table_info(esp_devices)")}  # baseline column
+    assert "question_started_at" in {r[1] for r in _q(db, "PRAGMA table_info(quizzes)")}   # step 8
     assert _q(db, "PRAGMA foreign_key_check") == []
     assert _q(db, "SELECT student_id FROM quiz_answers WHERE id = 13") == [(None,)]   # nullable → NULL
     assert _q(db, "SELECT COUNT(*) FROM attendance WHERE id = 40") == [(0,)]          # orphan removed

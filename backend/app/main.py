@@ -56,6 +56,10 @@ async def lifespan(app: FastAPI):
     from .services.deployments import deployments_loop
     deployment_task = asyncio.create_task(deployments_loop())
 
+    # Quiz timing (#73): advances per-question quizzes, ends total-timed ones.
+    from .services.quiz_timer import quiz_timer_loop
+    quiz_timer_task = asyncio.create_task(quiz_timer_loop())
+
     # Seed default super admin if no users exist
     async with async_session() as db:
         result = await db.execute(select(User).limit(1))
@@ -86,6 +90,11 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         deployment_task.cancel()
+        quiz_timer_task.cancel()
+        try:
+            await quiz_timer_task
+        except asyncio.CancelledError:
+            pass
         session_task.cancel()
         try:
             await session_task
