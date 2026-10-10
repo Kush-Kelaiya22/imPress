@@ -715,6 +715,7 @@ and link to its issue or pull request. Do not describe a proposal as delivered.
 This section is a change history; it does not assert that a GitHub release or
 tag exists.
 
+- **Release page ([#102](https://github.com/Kush-Kelaiya22/imPress/issues/102)):** The test-issue table and the badges are drawn by the workflow as static images (open, closed: completed, closed: not planned; *N of M closed*), so they never show *invalid* when shields.io is rate-limited; the footnote link reads clearly.
 - **Releases ([#100](https://github.com/Kush-Kelaiya22/imPress/issues/100)):** Every push to the default branch that passes CI is published as the next patch release (`PATCH` = first-parent commits since the line's `.0` tag, stamped into the app, image and firmware); release notes are one template per line with the merged pull requests; the release page's status section has badges, an alert and a table of the test issues with a live status badge each; the line milestone (`v2.1`) gates all of the line's releases.
 - **Documentation ([#96](https://github.com/Kush-Kelaiya22/imPress/issues/96) follow-up):** Recorded the published v2.1.0 release in the version history; the prebuilt-firmware steps use esptool 5 command names.
 
