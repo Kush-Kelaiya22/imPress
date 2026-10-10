@@ -28,6 +28,7 @@ on every issue change.
     scripts/release.py sync [--tag varun/v2.1.4]     # Beta/Stable (gh CLI, GH_TOKEN)
     scripts/release.py channels                      # JSON: per owner, newest stable and beta
     scripts/release.py check-changelog               # CHANGELOG.md structure (exit 1 on problems)
+    scripts/release.py page TAG notes.md --sha SHA --out body.md   # the complete first page (status + text)
 """
 
 from __future__ import annotations
@@ -329,10 +330,14 @@ def releases(repo: str) -> list[dict]:
 _MILESTONE = re.compile(r"^(?:(?P<owner>[a-z0-9-]+)/)?v(?P<line>\d+\.\d+)(?:\.(?P<patch>\d+))?$")
 
 
+def _rev(ref: str) -> str:
+    return ref if re.fullmatch(r"[0-9a-f]{7,40}", ref) else f"refs/tags/{ref}"
+
+
 def is_ancestor(older: str, newer: str, root: Path = ROOT) -> bool:
-    """Is tag `older` an ancestor of tag `newer` (or the same commit)?"""
+    """Is tag `older` an ancestor of `newer` (a tag or a commit SHA), or the same commit?"""
     try:
-        subprocess.run(["git", "merge-base", "--is-ancestor", f"refs/tags/{older}", f"refs/tags/{newer}"],
+        subprocess.run(["git", "merge-base", "--is-ancestor", _rev(older), _rev(newer)],
                        cwd=root, check=True, capture_output=True)
         return True
     except subprocess.CalledProcessError:
@@ -455,6 +460,15 @@ def channels(repo: str) -> dict:
     return {"aliases": image_aliases(rels), "legacy": legacy_images(rels)}
 
 
+def initial_page(repo: str, tag: str, sha: str, notes: str, root: Path = ROOT) -> tuple[str, str]:
+    """The complete page of a release about to be published: its status section (computed against the
+    release commit, since the tag does not exist yet) on top of `notes`. Returns (status, body)."""
+    milestones = gh_json(f"repos/{repo}/milestones?state=all")
+    issues = test_issues(repo, tag, milestones, ancestor=lambda older, _new: is_ancestor(older, sha, root))
+    status = status_of(issues)
+    return status, apply_status(notes, status_block(tag, status, issues, repo))
+
+
 # ── CLI ─────────────────────────────────────────────────────────────────────
 
 def main(argv: list[str] | None = None) -> int:
@@ -473,6 +487,12 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--tag")
     sub.add_parser("channels")
     sub.add_parser("check-changelog")
+    i = sub.add_parser("page")
+    i.add_argument("tag")
+    i.add_argument("notes", type=Path)
+    i.add_argument("--sha", required=True)
+    i.add_argument("--out", type=Path, required=True)
+    i.add_argument("--root", type=Path, default=ROOT)
     a = ap.parse_args(argv)
     repo = os.environ.get("GITHUB_REPOSITORY", "Kush-Kelaiya22/imPress")
 
@@ -490,6 +510,10 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(sync(repo, a.tag)))
     elif a.cmd == "channels":
         print(json.dumps(channels(repo)))
+    elif a.cmd == "page":
+        status, body = initial_page(repo, a.tag, a.sha, a.notes.read_text(), a.root)
+        a.out.write_text(body)
+        print(json.dumps({"status": status, "title": title_for(a.tag, status), "prerelease": status == "beta"}))
     elif a.cmd == "check-changelog":
         problems = check_changelog((ROOT / "CHANGELOG.md").read_text())
         for problem in problems:

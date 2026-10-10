@@ -258,11 +258,15 @@ jobs:
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" -q .object.sha)" = "$SHA"
       - name: Publish
         run: |
-          # Published as a pre-release; the status job adds the status section and sets
-          # Beta or Stable a few seconds later.
-          gh release create "$TAG" --verify-tag --prerelease --title "$TAG (Beta)" \
-            --notes-file notes.md dist/*.zip dist/SHA256SUMS.txt
-          echo "Published $TAG at $SHA" >> "$GITHUB_STEP_SUMMARY"
+          # The complete page from the start: status section (badges, Beta/Stable box,
+          # test issues), install guide and changes. Editable later: the status job only
+          # replaces the marked status section.
+          meta=$(python3 "$RUNNER_TEMP/release.py" page "$TAG" notes.md --sha "$SHA" --out body.md --root .)
+          flags=()
+          [ "$(jq -r .prerelease <<<"$meta")" = true ] && flags+=(--prerelease)
+          gh release create "$TAG" --verify-tag "${flags[@]}" --title "$(jq -r .title <<<"$meta")" \
+            --notes-file body.md dist/*.zip dist/SHA256SUMS.txt
+          echo "Published $TAG at $SHA: $(jq -r .status <<<"$meta")" >> "$GITHUB_STEP_SUMMARY"
 
   status:
     name: Release status

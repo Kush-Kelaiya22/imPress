@@ -163,7 +163,9 @@ The **status section** at the top (between `<!-- release-status:start -->` and `
 | Box | **Warning** (Beta: how many test issues are open) or **Note** (Stable) |
 | Table | every release test issue, open ones first: **No.** (link), **Issue** (title), **Assigned to**, **Status** (*open*, *closed: completed*, *closed: not planned*) |
 
-It is redrawn within about a minute of any change to a test issue, and checked daily. The badges are static images drawn from the workflow's data, so they always load. The workflow replaces only this section; other edits to the page are kept.
+The page is **complete when GitHub Actions publishes it**: status section, summary, changes, install guide and troubleshooting, with the right title and Beta/Stable flag. The status is computed against the release commit before the tag exists. After that, the status section is redrawn within about a minute of any change to a test issue, and checked daily. The badges are static images drawn from the workflow's data, so they always load.
+
+**Editing a published page:** edit the release on GitHub as usual. Everything outside the status section (between the `release-status` markers) is yours and is kept. The status section is overwritten on the next issue change, so don't edit inside it.
 
 ## What a release contains
 

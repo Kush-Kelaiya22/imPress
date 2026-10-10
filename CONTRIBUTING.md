@@ -809,7 +809,7 @@ The release workflow carries out steps 11–13 for every push to an integration 
 
 ### 15.3 Release page structure
 
-Every release page has the same structure, so readers find the same thing in the same place. The workflow writes section 1; sections 2–12 come from the line's template (`docs/releases/vMAJOR.MINOR.md`), and section 3 from `CHANGELOG.md`. A new line's template keeps these headings, in this order (`tests/test_release.py` checks them).
+Every release page has the same structure, so readers find the same thing in the same place. The page is complete when GitHub Actions publishes it, and maintainers may edit sections 2–12 afterwards on GitHub (the workflow keeps those edits). The workflow writes section 1, and keeps it current; sections 2–12 come from the line's template (`docs/releases/vMAJOR.MINOR.md`), and section 3 from `CHANGELOG.md`. A new line's template keeps these headings, in this order (`tests/test_release.py` checks them).
 
 | # | Section | Content | Keep it |
 |---|---|---|---|

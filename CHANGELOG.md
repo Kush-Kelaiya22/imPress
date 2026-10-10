@@ -15,6 +15,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 - A "Setup problems" section in the troubleshooting guide, linked from the release page. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 - Test issues for a release line also gate every release built on top of it, by any owner. Closing such an issue updates all of those releases at once. Issues inherited from another line are marked *from* in the release's test table. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 - The first release of a line creates its milestone (for example `aamna/v2.4`) automatically. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
+- A new release page is complete from the start: status badges, the Beta or Stable box, the test-issue table, the install guide and the changes. Later edits outside the status section are kept. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 - A container image tag per release line (`varun-2.1`, `aamna-2.4`) that points at the line's newest release. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 
 ### Changed

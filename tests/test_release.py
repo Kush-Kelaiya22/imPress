@@ -313,6 +313,19 @@ def test_inherited_issues_are_marked_with_their_line(monkeypatch):
     assert "Timed quizzes on real modules <sub>from varun/v2.1</sub>" in block
 
 
+def test_a_new_release_is_published_with_its_status_section(monkeypatch, tmp_path):
+    """#104: the first page already has the badges, the Beta/Stable box and the test issues."""
+    fake = FakeGitHub([], LINE, ISSUES)
+    monkeypatch.setattr(release, "gh", fake.gh)
+    monkeypatch.setattr(release, "is_ancestor", lambda older, newer, root=None: True)
+    status, body = release.initial_page(REPO, "varun/v2.1.5", "abc1234", "## Install and set up\n\nSteps.\n", tmp_path)
+    assert status == "beta" and body.startswith(release.START) and body.endswith("Steps.\n")
+    assert "| No. | Issue | Assigned to | Status |" in body and "> [!WARNING]" in body
+    closed = FakeGitHub([], LINE, CLOSED)
+    monkeypatch.setattr(release, "gh", closed.gh)
+    assert release.initial_page(REPO, "varun/v2.1.5", "abc1234", "x", tmp_path)[0] == "stable"
+
+
 # ── sync against a fake GitHub ──────────────────────────────────────────────
 
 class FakeGitHub:
@@ -466,7 +479,8 @@ def test_release_is_built_from_a_tested_image_and_firmware(wf):
     publish = "\n".join(s.get("run", "") for s in rel["steps"])
     assert '"$RUNNER_TEMP/release.py" notes "$TAG" prs.md --root . --templates' in publish and "CHANGELOG.md" in publish
     assert 'title="$OWNER/v$LINE"' in publish                                     # the line's milestone
-    assert "--verify-tag" in publish and '--title "$TAG (Beta)"' in publish
+    assert "--verify-tag" in publish and 'page "$TAG" notes.md --sha "$SHA" --out body.md --root .' in publish
+    assert "--notes-file body.md" in publish and "--prerelease" in publish
     assert 'git/ref/tags/$TAG" -q .object.sha)" = "$SHA"' in publish
 
 
