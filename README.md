@@ -334,7 +334,7 @@ imPress/
 | 2.0 | `v2` | the October 2026 audit fixes (#1–#25), test suite, CI and documentation: [changelog](docs/reference/changelog-v2.md) |
 | 1.x | `main` | the original system |
 
-Releases are published on the [Releases page](https://github.com/Kush-Kelaiya22/imPress/releases) by the release workflow, with the firmware images, the documentation and a backend container image (`ghcr.io/kush-kelaiya22/impress-backend`). A release is marked **Beta** while its hardware test issues are open, and **Stable** when they are closed: see [releases](docs/guides/releases.md). The version is in the [`VERSION`](VERSION) file and reported by `GET /health`.
+Releases are published on the [Releases page](https://github.com/Kush-Kelaiya22/imPress/releases) by the release workflow: every push to `varun/v2.1` that passes CI becomes the next 2.1 patch release, with the firmware images, the documentation and a backend container image (`ghcr.io/kush-kelaiya22/impress-backend`). A release is marked **Beta** while its hardware test issues are open, and **Stable** when they are closed: see [releases](docs/guides/releases.md). The version is in the [`VERSION`](VERSION) file and reported by `GET /health`.
 
 **Hardware status:** every v2.1 feature is verified by automated tests and builds. None has been verified on real boards yet; the bench checks and their status are in [hardware validation](docs/testing/HARDWARE_VALIDATION.md), and the test plan is tracked in [#94](https://github.com/Kush-Kelaiya22/imPress/issues/94).
 
