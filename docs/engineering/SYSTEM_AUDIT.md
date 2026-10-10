@@ -25,7 +25,9 @@ flowchart LR
     end
     C6 -- "HTTP POST /api/device/*<br/>(X-API-Key)" --> BE
     BE -- "WebSocket /ws/class/{id}?role=device<br/>(commands)" --> C6
-    BE["FastAPI backend<br/>SQLite (aiosqlite)"] <-- "REST + WS<br/>(session token)" --> UI["Web UI<br/>vanilla SPA (primary)<br/>React (optional)"]
+    BE["FastAPI backend<br/>SQLite (aiosqlite)"]
+    UI["Web UI<br/>vanilla SPA (primary)<br/>React (optional)"]
+    BE <-->|"REST + WS<br/>(session token)"| UI
 ```
 
 | Layer | Location | Responsibility |

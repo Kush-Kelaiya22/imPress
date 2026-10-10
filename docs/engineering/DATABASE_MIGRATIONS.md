@@ -30,6 +30,10 @@ flowchart TD
 | 1 | `add_v2_columns` | Adds the columns older databases lack (the former `database._ADD_COLUMNS` list) | additive |
 | 2 | `repair_dangling_references` | Runs `PRAGMA foreign_key_check`. A **nullable** reference to a missing parent is set to `NULL`. A row whose **required** parent is gone is deleted (it was unreachable in the app). Repeats until clean (deleting a row can orphan its children). | Old code could leave these: a hard-deleted student's answers, attendance of deleted classes. Counts are logged. |
 | 3 | `add_unique_constraints` | Creates the six unique indexes below. Before each one, it looks for existing duplicates. | Answers, votes and enrollments: **the earliest row is kept**, the same "first one wins" rule the application always applied, and counts are logged. Duplicate course sections **stop the upgrade** with the offending keys, because they need a human decision. |
+| 4 | `unique_question_order` | Creates `uq_quiz_questions_quiz_order` on `quiz_questions(quiz_id, order_num)` so concurrent CSV imports into one quiz can't interleave (#31) | Duplicate positions are renumbered first, in `(order_num, id)` order. Counts are logged. |
+| 5 | `add_diagnostics_columns` | Adds the gateway heartbeat diagnostics to `esp_devices`: `uptime_s`, `reset_reason`, `boot_count`, `min_free_heap`, `s3_link_ok`, `s3_uptime_s`, `diag_at` (#39) | additive; all nullable (older firmware doesn't send them) |
+| 6 | `add_device_keys` | Adds per-device keys to `esp_devices`: `api_key_hash` (indexed), `key_issued_at`, `key_confirmed_at` (#66) | additive; existing devices keep using the shared key until they register again |
+| 7 | `add_firmware_signer` | Adds `firmware_artifacts.signer` (#66) | additive; images registered earlier are recorded as unsigned (`''`) |
 
 ### Unique indexes
 

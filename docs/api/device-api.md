@@ -21,7 +21,7 @@ There are two kinds of key (#66):
 stateDiagram-v2
     [*] --> shared: device has no key
     shared --> issued: register with the shared key (response carries device_key)
-    issued --> issued: register again with the shared key (a lost response): a new key replaces it
+    issued --> issued: register again with the shared key after a lost response, a new key replaces it
     issued --> active: first request made with it
     active --> shared: admin resets it (POST /api/admin/modules/{id}/reset-key)
 ```

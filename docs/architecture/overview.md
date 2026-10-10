@@ -15,10 +15,10 @@ flowchart LR
         S3n["Student module<br/>ESP32"]
         HUB["Hub — ESP32-S3<br/>mesh root · SPI master"]
         GW["Gateway — ESP32-C6<br/>SPI slave · Wi-Fi STA"]
-        S1 <-- "ESP-NOW<br/>broadcast" --> HUB
-        S2 <-- "ESP-NOW" --> S1
-        S3n <-- "ESP-NOW (relayed)" --> S2
-        HUB <-- "SPI, 4 KB slots<br/>+ 2 ready lines" --> GW
+        S1 <-->|"ESP-NOW<br/>broadcast"| HUB
+        S2 <-->|"ESP-NOW"| S1
+        S3n <-->|"ESP-NOW (relayed)"| S2
+        HUB <-->|"SPI, 4 KB slots<br/>+ 2 ready lines"| GW
     end
     subgraph Server["Server"]
         API["FastAPI backend<br/>REST + WebSocket"]
@@ -27,8 +27,9 @@ flowchart LR
         API --- DB
         API --- FW
     end
-    GW <-- "Wi-Fi: HTTP JSON +<br/>device WebSocket" --> API
-    T["Teacher / admin<br/>browser SPA"] <-- "HTTPS + WSS" --> API
+    GW <-->|"Wi-Fi: HTTP JSON +<br/>device WebSocket"| API
+    T["Teacher / admin<br/>browser SPA"]
+    T <-->|"HTTPS + WSS"| API
 ```
 
 | Component | Code | Runs on | Job |

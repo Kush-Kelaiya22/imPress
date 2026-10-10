@@ -716,7 +716,8 @@ This section is a change history; it does not assert that a GitHub release or
 tag exists.
 
 - **Documentation ([PR #74](https://github.com/Kush-Kelaiya22/imPress/pull/74)):** Added the GitHub wiki link to the README and integrated the initial contribution guidance, version policy, and Code of Conduct.
-- **Governance (this PR):** Expanded the contributor handbook with issue triage, labels, branch ownership, review, testing, and release guidance; strengthened the Code of Conduct; consolidated version history and removed the separate version-policy document.
+- **Governance ([PR #75](https://github.com/Kush-Kelaiya22/imPress/pull/75)):** Expanded the contributor handbook with issue triage, labels, branch ownership, review, testing, and release guidance; strengthened the Code of Conduct; consolidated version history and removed the separate version-policy document.
+- **Documentation ([#79](https://github.com/Kush-Kelaiya22/imPress/issues/79)):** Rewrote the README architecture diagram and two other flowcharts in portable mermaid syntax so they render on GitHub; fixed two state diagrams that failed on mermaid 10; listed migration steps 4–7 in the database migration guide; linked the governance entry to PR #75.
 
 #### Recorded product version and development history
 
