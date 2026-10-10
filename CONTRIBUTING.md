@@ -691,7 +691,7 @@ The release owner determines the actual next version based on compatibility and 
 | Current v2.1 integration line | `varun/v2.1`, fetched and checked 2026-10-09 |
 | Version-line ancestry | The v2.1 changelog records `varun/v2.1` as developed from `v2` |
 | Firmware versions | `firmware/class_c6/version.txt`, `firmware/class_s3/version.txt`, and `firmware/student/version.txt` each contain `2.1.0`, checked 2026-10-09 |
-| Published GitHub releases and tags | None were listed by GitHub when checked 2026-10-09 |
+| Published GitHub releases and tags | [`v2.1.0`](https://github.com/Kush-Kelaiya22/imPress/releases/tag/v2.1.0): tag at `e4000f2` (the merge of #98), published 2026-10-10 by the release workflow as a pre-release (**Beta**: hardware test issues #83–#94 open). Tag, assets and checksums verified 2026-10-10 |
 
 This is a dated repository snapshot, not a promise that these values remain
 current. Verify the root version, target branch, firmware version files, tags,
@@ -715,11 +715,11 @@ and link to its issue or pull request. Do not describe a proposal as delivered.
 This section is a change history; it does not assert that a GitHub release or
 tag exists.
 
-No unreleased changes yet.
+- **Documentation ([#96](https://github.com/Kush-Kelaiya22/imPress/issues/96) follow-up):** Recorded the published v2.1.0 release in the version history; the prebuilt-firmware steps use esptool 5 command names.
 
 #### 2.1.0
 
-The changes in version 2.1.0, from `varun/v2.1`. The release workflow publishes `v2.1.0` from the commit that merges this section together with [`docs/releases/v2.1.0.md`](docs/releases/v2.1.0.md); the history table below records the release once it is verified ([releases](docs/guides/releases.md)).
+The changes in version 2.1.0, from `varun/v2.1`, published as [`v2.1.0`](https://github.com/Kush-Kelaiya22/imPress/releases/tag/v2.1.0) on 2026-10-10 ([release notes](docs/releases/v2.1.0.md), [releases](docs/guides/releases.md)).
 
 - **Documentation ([PR #74](https://github.com/Kush-Kelaiya22/imPress/pull/74)):** Added the GitHub wiki link to the README and integrated the initial contribution guidance, version policy, and Code of Conduct.
 - **Governance ([PR #75](https://github.com/Kush-Kelaiya22/imPress/pull/75)):** Expanded the contributor handbook with issue triage, labels, branch ownership, review, testing, and release guidance; strengthened the Code of Conduct; consolidated version history and removed the separate version-policy document.
@@ -737,7 +737,7 @@ Releases. GitHub had no published releases or tags when checked on 2026-10-09.
 
 | Recorded version or line | Source / integration line | Notes |
 | --- | --- | --- |
-| `2.1.0` | `v2` → `varun/v2.1` | Current value in `VERSION` at the 2026-10-09 check. The [v2.1 changelog](docs/reference/changelog-v2.1.md) records the integration lineage. No published release or tag was found at that check. |
+| `2.1.0` | `v2` → `varun/v2.1` | Published as [`v2.1.0`](https://github.com/Kush-Kelaiya22/imPress/releases/tag/v2.1.0) on 2026-10-10 from `e4000f2`; status **Beta** until the hardware test issues in milestone `v2.1.0` are closed. The [v2.1 changelog](docs/reference/changelog-v2.1.md) records the integration lineage. |
 | `2.0` | `v2` | Prior development line described in the [v2 changelog](docs/reference/changelog-v2.md) and README release history. No published release or tag was found at the check above. |
 | `1.x` | `main` | Historical line described in the README. This records project history, not a published release. |
 

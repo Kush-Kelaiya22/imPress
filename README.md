@@ -330,7 +330,7 @@ imPress/
 
 | Version | Branch | Summary |
 |---|---|---|
-| 2.1.0 | `varun/v2.1` | CSV imports, firmware registry and staged OTA with rollback, gateway OTA client, diagnostics, module inventory, migrations, install path: [changelog](docs/reference/changelog-v2.1.md) |
+| [2.1.0](https://github.com/Kush-Kelaiya22/imPress/releases/tag/v2.1.0) | `varun/v2.1` | CSV imports, firmware registry and staged OTA with rollback, gateway OTA client, diagnostics, module inventory, migrations, install path, timed quizzes, container image: [changelog](docs/reference/changelog-v2.1.md) |
 | 2.0 | `v2` | the October 2026 audit fixes (#1–#25), test suite, CI and documentation: [changelog](docs/reference/changelog-v2.md) |
 | 1.x | `main` | the original system |
 

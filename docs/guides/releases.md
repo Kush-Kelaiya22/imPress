@@ -137,7 +137,7 @@ The prebuilt images contain the default settings (`impress-hotspot` Wi-Fi, a def
 
 ### Write the settings of a new gateway or hub
 
-Install the tools once: `pip install esptool esp-idf-nvs-partition-gen`.
+Install the tools once: `pip install "esptool>=5" esp-idf-nvs-partition-gen` (the `flash_args` files use esptool 5 option names).
 
 1. Make a settings file. Use the key names exactly as shown. The first data row (`init_done` or `init`) stops the firmware from replacing your values with its defaults on the first start.
 
@@ -172,14 +172,14 @@ Install the tools once: `pip install esptool esp-idf-nvs-partition-gen`.
 3. Erase the board, flash the images, then flash the settings. From the board's folder in the firmware zip:
    ```bash
    cd class_c6
-   python -m esptool --chip esp32c6 -p <port> erase_flash
-   python -m esptool --chip esp32c6 -p <port> -b 460800 write_flash @flash_args
-   python -m esptool --chip esp32c6 -p <port> write_flash 0x9000 ../c6-settings.bin
+   python -m esptool --chip esp32c6 -p <port> erase-flash
+   python -m esptool --chip esp32c6 -p <port> -b 460800 write-flash @flash_args
+   python -m esptool --chip esp32c6 -p <port> write-flash 0x9000 ../c6-settings.bin
    ```
    For the hub, use `--chip esp32s3`, the `class_s3` folder and `s3-settings.bin`.
 4. Open a serial monitor (`python -m serial.tools.miniterm <port> 115200`, or `idf.py monitor`). The log must **not** show `First boot — writing … defaults`. The gateway also prints `WiFi: <ssid>  backend: <host>:<port>`, then registers with the server.
 
-Student modules need no settings partition: flash `student` with `write_flash @flash_args` (`--chip esp32`) and enter the enrollment number on the module.
+Student modules need no settings partition: flash `student` with `write-flash @flash_args` (`--chip esp32`) and enter the enrollment number on the module.
 
 Limits: the hub's server address is at most 63 characters and its key at most 64. The gateway allows 127 for both.
 
