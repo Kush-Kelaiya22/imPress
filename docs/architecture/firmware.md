@@ -44,8 +44,8 @@ flowchart TB
 ```mermaid
 stateDiagram-v2
     [*] --> Armed: spi_slave_init → queue_slot(&s_trans)
-    Armed --> Completed: S3 clocks 4096 bytes (ISR: post_trans_cb validates LEN+CRC → s_has_data)
-    Completed --> Armed: spi_slave_read(): get_trans_result → copy rx → queue_slot
+    Armed --> Completed: S3 clocks 4096 bytes, ISR post_trans_cb validates LEN+CRC → s_has_data
+    Completed --> Armed: spi_slave_read() → get_trans_result → copy rx → queue_slot
     Armed --> Armed: spi_slave_read() while S3 idle → returns 0 (nothing queued twice)
 ```
 
