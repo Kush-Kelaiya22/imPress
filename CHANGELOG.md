@@ -8,6 +8,10 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ## [Unreleased]
 
+### Fixed
+
+- A release line created on the same commit as an older release no longer gates that older release: a line's test issues apply only to releases built on it after it existed. ([#107](https://github.com/Kush-Kelaiya22/imPress/issues/107))
+
 ### Added
 
 - `CHANGELOG.md`, kept by every pull request. A CI check fails a pull request that doesn't add an entry, unless it has the `no-changelog` label. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))

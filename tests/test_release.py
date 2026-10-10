@@ -303,6 +303,23 @@ def test_ancestry_is_read_from_git(tmp_path):
     assert release.gates("aamna/v2.4.0", "varun/v2.1", lambda a, b: release.is_ancestor(a, b, tmp_path))
 
 
+SAME_COMMIT = _ancestry({("varun/v2.2.0", "varun/v2.1.4"), ("varun/v2.1.0", "varun/v2.2.0"),
+                         ("kush/v2.1.0", "varun/v2.1.4"), ("varun/v2.1.0", "kush/v2.1.0")})
+PUBLISHED = {"varun/v2.1.0": "2026-10-10T09:00", "varun/v2.1.4": "2026-10-10T12:12",
+             "varun/v2.2.0": "2026-10-10T12:23", "kush/v2.1.0": "2026-10-10T13:00"}.get
+
+
+@pytest.mark.parametrize("tag,milestone,expected", [
+    ("varun/v2.1.4", "varun/v2.2", False),       # 2.2 was created later on the same commit: not "built on"
+    ("varun/v2.2.0", "varun/v2.1", True),        # 2.2 is built on 2.1.0, published earlier
+    ("varun/v2.1.4", "kush/v2.1", False),        # kush's line forked later on the same commit
+    ("kush/v2.1.0", "varun/v2.1", True),
+])
+def test_gating_needs_the_line_to_exist_before_the_release(tag, milestone, expected):
+    """#104: found live: a new line on the same commit as an older release must not gate it."""
+    assert release.gates(tag, milestone, SAME_COMMIT, PUBLISHED) is expected
+
+
 def test_inherited_issues_are_marked_with_their_line(monkeypatch):
     fake = FakeGitHub([], [{"number": 1, "title": "varun/v2.1"}, {"number": 2, "title": "varun/v2.3"}],
                       [dict(ISSUES[0]), dict(ISSUES[1], milestone=2)])
@@ -357,7 +374,8 @@ class FakeGitHub:
 
 
 def _release(tag, prerelease, body="Notes.", rid=1):
-    return {"id": rid, "tag_name": tag, "name": tag, "body": body, "prerelease": prerelease, "draft": False}
+    return {"id": rid, "tag_name": tag, "name": tag, "body": body, "prerelease": prerelease, "draft": False,
+            "published_at": f"2026-10-10T{rid:02d}:00:00Z"}
 
 
 LINE = [{"number": 1, "title": "varun/v2.1"}]
@@ -366,7 +384,8 @@ LINE = [{"number": 1, "title": "varun/v2.1"}]
 def test_closing_a_2_1_issue_updates_every_release_built_on_2_1(monkeypatch):
     """The cascade: one milestone, three lines from two owners."""
     rels = [_release("varun/v2.1.4", True, rid=1), _release("varun/v2.3.0", True, rid=2),
-            _release("aamna/v2.4.2", True, rid=3), _release("kush/v2.2.0", False, rid=4)]
+            _release("aamna/v2.4.2", True, rid=3), _release("kush/v2.2.0", False, rid=4),
+            _release("varun/v2.1.0", True, rid=0)]
     fake = FakeGitHub(rels, LINE, CLOSED)
     monkeypatch.setattr(release, "gh", fake.gh)
     changed = {c["tag"]: c["status"] for c in release.sync(REPO, ancestor=BUILT_ON)}
@@ -375,7 +394,7 @@ def test_closing_a_2_1_issue_updates_every_release_built_on_2_1(monkeypatch):
     monkeypatch.setattr(release, "gh", reopened.gh)
     release.sync(REPO, ancestor=BUILT_ON)
     beta = {path.rsplit("/", 1)[1]: u["prerelease"] for path, u in reopened.patches}
-    assert beta["1"] and beta["2"] and beta["3"] and not beta.get("4", False)
+    assert beta["1"] and beta["2"] and beta["3"] and beta["0"] and not beta.get("4", False)
 
 
 def test_sync_marks_every_release_of_the_owners_line_beta(monkeypatch):

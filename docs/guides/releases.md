@@ -131,7 +131,7 @@ Which milestones gate a release:
 
 | Milestone | Gates |
 |---|---|
-| `<owner>/vX.Y` (a line) | every release of that line, **and every release built on top of** `<owner>/vX.Y.0`: later lines of the same owner, and other owners' lines branched from it. Built on top means that `<owner>/vX.Y.0` is a git ancestor of the release commit. |
+| `<owner>/vX.Y` (a line) | every release of that line, **and every release built on top of** `<owner>/vX.Y.0`: later lines of the same owner, and other owners' lines branched from it. Built on top means that `<owner>/vX.Y.0` is a git ancestor of the release commit **and** was published before the release, so a new line created on the same commit as an older release does not gate that older release. |
 | `<owner>/vX.Y.Z` (one release) | that release only |
 
 Example with three lines:

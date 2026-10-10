@@ -344,13 +344,17 @@ def is_ancestor(older: str, newer: str, root: Path = ROOT) -> bool:
         return False
 
 
-def gates(tag: str, milestone: str, ancestor=is_ancestor) -> bool:
+def gates(tag: str, milestone: str, ancestor=is_ancestor, published=None) -> bool:
     """Does `milestone` gate release `tag`?
 
     - exact <owner>/vX.Y.Z: that release only;
     - line <owner>/vX.Y: every release built on top of <owner>/vX.Y.0 (same line, a later line of the
       same owner, or another owner's line branched from it); before vX.Y.0 exists, the same line only;
     - legacy vX.Y (no owner): releases of line X.Y.
+
+    "Built on top" needs both: <owner>/vX.Y.0 is a git ancestor of the release, and it was published
+    before the release (`published(tag)` gives a sortable time, or None when unknown). Without the
+    second condition, a new line created on the same commit as an older release would gate it.
     """
     m, (owner, version) = _MILESTONE.match(milestone), parse_tag(tag)
     if not m:
@@ -361,18 +365,23 @@ def gates(tag: str, milestone: str, ancestor=is_ancestor) -> bool:
         return line_of(version) == m["line"]
     if m["owner"] == owner and m["line"] == line_of(version):
         return True
-    return ancestor(f"{m['owner']}/v{m['line']}.0", tag)
+    anchor = f"{m['owner']}/v{m['line']}.0"
+    if published is not None:
+        anchor_time, release_time = published(anchor), published(tag)
+        if anchor_time is None or (release_time is not None and anchor_time > release_time):
+            return False
+    return ancestor(anchor, tag)
 
 
 def test_issues(repo: str, tag: str, milestones: list[dict], cache: dict | None = None,
-                ancestor=is_ancestor) -> list[dict]:
+                ancestor=is_ancestor, published=None) -> list[dict]:
     """Every `testing` issue (open and closed) in a milestone that gates release `tag`."""
     cache = {} if cache is None else cache
     owner, version = parse_tag(tag)
     own_line = f"{owner}/v{line_of(version)}" if owner else f"v{line_of(version)}"
     found = {}
     for m in milestones:
-        if not gates(tag, m["title"], ancestor):
+        if not gates(tag, m["title"], ancestor, published):
             continue
         if m["number"] not in cache:
             cache[m["number"]] = [i for i in gh_json(
@@ -396,7 +405,9 @@ def sync(repo: str, only_tag: str | None = None, ancestor=None) -> list[dict]:
     rels = releases(repo)
     milestones = gh_json(f"repos/{repo}/milestones?state=all")
     cache: dict = {}
-    issues = {r["tag_name"]: test_issues(repo, r["tag_name"], milestones, cache, ancestor or is_ancestor)
+    times = {r["tag_name"]: r.get("published_at") or r.get("created_at") or "" for r in rels}
+    issues = {r["tag_name"]: test_issues(repo, r["tag_name"], milestones, cache, ancestor or is_ancestor,
+                                         lambda t: times.get(t) or None)
               for r in rels}
     statuses = {tag: status_of(found) for tag, found in issues.items()}
     stable = [t for t, s in statuses.items() if s == "stable"]
@@ -464,7 +475,10 @@ def initial_page(repo: str, tag: str, sha: str, notes: str, root: Path = ROOT) -
     """The complete page of a release about to be published: its status section (computed against the
     release commit, since the tag does not exist yet) on top of `notes`. Returns (status, body)."""
     milestones = gh_json(f"repos/{repo}/milestones?state=all")
-    issues = test_issues(repo, tag, milestones, ancestor=lambda older, _new: is_ancestor(older, sha, root))
+    times = {r["tag_name"]: r.get("published_at") or "" for r in releases(repo)}
+    times[tag] = "9999"                                   # not published yet: newer than every release
+    issues = test_issues(repo, tag, milestones, ancestor=lambda older, _new: is_ancestor(older, sha, root),
+                         published=lambda t: times.get(t) or None)
     status = status_of(issues)
     return status, apply_status(notes, status_block(tag, status, issues, repo))
 
