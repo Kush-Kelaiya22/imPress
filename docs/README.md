@@ -26,6 +26,7 @@ This folder is the long-form documentation for imPress. The [project README](../
 | ↳ [Deployment](guides/deployment.md) | put imPress in a real classroom |
 | ↳ [CSV imports](guides/csv-imports.md) | bulk-create quiz questions, courses and sections from a spreadsheet; export sections |
 | ↳ [OTA updates](guides/ota-updates.md) | ship firmware to deployed hubs and gateways |
+| ↳ [Releases](guides/releases.md) | how releases are made, Beta and Stable, the container image, flashing prebuilt images |
 | ↳ [Testing](guides/testing.md) | run, read or write tests; understand CI |
 | ↳ [Troubleshooting](guides/troubleshooting.md) | diagnose resets, connectivity and data problems |
 | **[Reference](reference/)** | look up facts |

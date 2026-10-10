@@ -1,0 +1,10 @@
+# Build context for the backend image (#96): only what the Dockerfile copies.
+*
+!VERSION
+!backend/app
+!backend/requirements-lock.txt
+!backend/.env.example
+!scripts/init_env.py
+!scripts/docker-entrypoint.sh
+**/__pycache__
+**/*.pyc

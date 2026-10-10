@@ -234,6 +234,8 @@ These protect the pipeline and the docs from silently drifting:
 
 ## Continuous integration
 
+`.github/workflows/release.yml` runs after CI passes on the default branch, on issue changes and daily; it publishes releases and the backend image, and keeps each release's Beta or Stable status ([releases](releases.md)). `tests/test_release.py` checks its status rules (against a fake GitHub), its safety settings, the `Dockerfile` and the release notes.
+
 `.github/workflows/ci.yml` runs on every pull request, on pushes to the long-lived branches (`main`, `v2`, `v3`, `varun/**`) and on demand (`workflow_dispatch`). Feature branches are built through their pull request, so a push isn't built twice.
 
 ```mermaid

@@ -334,9 +334,9 @@ imPress/
 | 2.0 | `v2` | the October 2026 audit fixes (#1–#25), test suite, CI and documentation: [changelog](docs/reference/changelog-v2.md) |
 | 1.x | `main` | the original system |
 
-No GitHub release or tag has been published yet, so there is no release badge. The version is in the [`VERSION`](VERSION) file and reported by `GET /health`.
+Releases are published on the [Releases page](https://github.com/Kush-Kelaiya22/imPress/releases) by the release workflow, with the firmware images, the documentation and a backend container image (`ghcr.io/kush-kelaiya22/impress-backend`). A release is marked **Beta** while its hardware test issues are open, and **Stable** when they are closed: see [releases](docs/guides/releases.md). The version is in the [`VERSION`](VERSION) file and reported by `GET /health`.
 
-**Hardware status:** every v2.1 feature is verified by automated tests and builds. None has been verified on real boards yet; the bench checks and their status are in [hardware validation](docs/testing/HARDWARE_VALIDATION.md).
+**Hardware status:** every v2.1 feature is verified by automated tests and builds. None has been verified on real boards yet; the bench checks and their status are in [hardware validation](docs/testing/HARDWARE_VALIDATION.md), and the test plan is tracked in [#94](https://github.com/Kush-Kelaiya22/imPress/issues/94).
 
 > [!WARNING]
 > Databases containing user and session data were committed to git history before `v2`. Purge them and rotate the affected passwords before publishing the repository. See the [deployment checklist](docs/guides/deployment.md#4-go-live-checklist).
