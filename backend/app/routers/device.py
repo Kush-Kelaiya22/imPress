@@ -14,7 +14,7 @@ from ..schemas import DeviceRegister, DeviceHeartbeat, DeviceStatusPing, DeviceA
 from ..device_auth import DeviceCaller, authorize, denial, device_caller, new_device_key
 from ..services.presence import class_id_for_device, mark_online, _push_after_commit
 from ..services.firmware_store import artifact_file, resolve as resolve_firmware
-from ..services import deployments as deployment_engine, student_modules
+from ..services import deployments as deployment_engine, quiz_timer, student_modules
 from ..timeutil import istnow, istnow_aware
 from ..ws.manager import manager
 
@@ -462,7 +462,8 @@ async def _record_quiz_answer(db: AsyncSession, msg: dict) -> dict | None:
 
     Mesh relays can deliver the same press several times, so (quiz, question,
     student) is unique. Answers for unknown students, inactive/unknown quizzes,
-    unknown questions or out-of-range options are dropped.
+    unknown questions, out-of-range options or after a timed question's
+    deadline are dropped.
     Returns the teacher broadcast for a stored answer, else None.
     """
     quiz_id, order, option = msg.get("quiz_id"), msg.get("question_order", 0), msg.get("selected_option")
@@ -474,6 +475,8 @@ async def _record_quiz_answer(db: AsyncSession, msg: dict) -> dict | None:
         return None
     question = next((q for q in quiz.questions if q.order_num == order), None)
     if question is None or not 0 <= option < len(question.options):
+        return None
+    if quiz_timer.answer_closed(quiz, order, istnow()):       # #73: pressed after the time ran out
         return None
     dup = await db.execute(select(QuizAnswer.id).where(
         QuizAnswer.quiz_id == quiz_id, QuizAnswer.question_order == order,

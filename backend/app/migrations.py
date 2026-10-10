@@ -191,6 +191,12 @@ async def unique_question_order(conn: AsyncConnection) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_quiz_questions_quiz_order ON quiz_questions (quiz_id, order_num)"))
 
 
+async def add_quiz_question_started_at(conn: AsyncConnection) -> None:
+    """Quiz timer (#73): when the current question went live. A quiz already
+    running a per-question timer gets it on the timer's first tick."""
+    await _add_columns(conn, {"quizzes": {"question_started_at": "DATETIME"}})
+
+
 # Append-only. (version, name, step)
 MIGRATIONS: list[tuple[int, str, Step]] = [
     (1, "add_v2_columns", add_v2_columns),
@@ -200,6 +206,7 @@ MIGRATIONS: list[tuple[int, str, Step]] = [
     (5, "add_diagnostics_columns", add_diagnostics_columns),
     (6, "add_device_keys", add_device_keys),
     (7, "add_firmware_signer", add_firmware_signer),
+    (8, "add_quiz_question_started_at", add_quiz_question_started_at),
 ]
 
 LATEST = MIGRATIONS[-1][0]

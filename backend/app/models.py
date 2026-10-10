@@ -301,6 +301,7 @@ class Quiz(Base):
     is_live = Column(Boolean, default=False)  # whether quiz is currently visible to students
     created_at = Column(DateTime, default=istnow)
     started_at = Column(DateTime, nullable=True)
+    question_started_at = Column(DateTime, nullable=True)  # when current_question went live (per_question timer)
     ended_at = Column(DateTime, nullable=True)
 
     class_session = relationship("ClassSession", back_populates="quizzes")

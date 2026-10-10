@@ -51,8 +51,10 @@ interact through their **ESP32 devices** on the mesh.
 - **Quiz modes**: `planned` (saved as draft, faculty presses ▶ Start to go
   live) or `impromptu` (created live instantly — on-the-spot quiz).
 - **Timing modes**: `manual` (faculty advances questions with Next),
-  `per_question` (fixed seconds per question), `total` (one countdown for the
-  whole quiz). The device list receives the question + `time_limit` over WS.
+  `per_question` (the server advances after fixed seconds per question),
+  `total` (the server ends the quiz after one countdown). Next and Stop are
+  offered in every mode; a quiz the timer ends switches to Results live.
+  Devices receive the question + `time_limit_s` over WS.
 - **Poll modes**: `live` (starts immediately) or `planned` (draft until
   faculty starts it).
 - All state changes (`quiz.start`, `poll.end`, `student.register`,

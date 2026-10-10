@@ -8,6 +8,8 @@
  *   3. Send heartbeat periodically
  *   4. Receive quiz/poll from S3 → display on OLED
  *   5. Button press → send answer/vote through mesh → back to S3
+ *   6. Timed quiz (#73): count down time_limit_s, then stop taking presses
+ *      (the backend refuses late answers too; this is the student's view)
  */
 
 #include <stdio.h>
@@ -49,6 +51,21 @@ static uint16_t s_current_quiz_id;
 static uint8_t s_current_question;
 static uint16_t s_current_poll_id;
 
+/* Answer deadline of a timed question (time_limit_s > 0), in ticks. */
+static volatile bool s_timed;
+static volatile TickType_t s_deadline;
+
+/* Ticks until the deadline; <= 0 once it has passed (wrap-safe). */
+static int32_t ticks_left(void)
+{
+    return (int32_t)(s_deadline - xTaskGetTickCount());
+}
+
+static bool time_is_up(void)
+{
+    return s_timed && ticks_left() <= 0;
+}
+
 /* ── Mesh Receive Handler ──────────────────────────────────────────── */
 
 static void on_mesh_message(const msg_t *msg)
@@ -70,6 +87,8 @@ static void on_mesh_message(const msg_t *msg)
                 s_current_quiz_id = q->quiz_id;
                 s_current_question = q->question_num;
                 s_selected_option = -1;
+                s_deadline = xTaskGetTickCount() + pdMS_TO_TICKS((uint64_t)q->time_limit_s * 1000);
+                s_timed = q->time_limit_s > 0;
                 s_state = STATE_QUIZ_ACTIVE;
 
                 /* Display question on OLED */
@@ -131,7 +150,9 @@ static void on_button_press(int button)
     gpio_set_level(PIN_LED_STATUS, 1);
 
     if (s_state == STATE_QUIZ_ACTIVE) {
-        if (button >= 0 && button <= 3) {
+        if (time_is_up()) {
+            ESP_LOGI(TAG, "Press after the time limit ignored");
+        } else if (button >= 0 && button <= 3) {
             s_selected_option = button;
             display_show_question("Answer selected", NULL, 0, button);
 
@@ -280,8 +301,25 @@ void app_main(void)
         ESP_LOGE(TAG, "Failed to connect to mesh");
     }
 
-    /* Main loop: nothing to do, events handled by callbacks */
+    /* Main loop: events are handled by callbacks; this only runs the
+     * countdown of a timed question. */
+    int shown = -1;
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(200));
+        if (s_state != STATE_QUIZ_ACTIVE || !s_timed) {
+            shown = -1;
+            continue;
+        }
+        if (time_is_up()) {
+            s_state = STATE_IDLE;
+            display_show_result("Time's up");
+            ESP_LOGI(TAG, "Quiz Q%d: time is up", s_current_question);
+            continue;
+        }
+        int secs = (int)(((int64_t)ticks_left() * portTICK_PERIOD_MS + 999) / 1000);
+        if (secs != shown) {
+            display_show_countdown(secs);
+            shown = secs;
+        }
     }
 }

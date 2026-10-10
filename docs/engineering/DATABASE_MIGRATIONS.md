@@ -34,6 +34,7 @@ flowchart TD
 | 5 | `add_diagnostics_columns` | Adds the gateway heartbeat diagnostics to `esp_devices`: `uptime_s`, `reset_reason`, `boot_count`, `min_free_heap`, `s3_link_ok`, `s3_uptime_s`, `diag_at` (#39) | additive; all nullable (older firmware doesn't send them) |
 | 6 | `add_device_keys` | Adds per-device keys to `esp_devices`: `api_key_hash` (indexed), `key_issued_at`, `key_confirmed_at` (#66) | additive; existing devices keep using the shared key until they register again |
 | 7 | `add_firmware_signer` | Adds `firmware_artifacts.signer` (#66) | additive; images registered earlier are recorded as unsigned (`''`) |
+| 8 | `add_quiz_question_started_at` | Adds `quizzes.question_started_at`, when the current question went live (quiz timer, #73) | additive; a quiz already running a per-question timer starts counting on the timer's first tick |
 
 ### Unique indexes
 
