@@ -1,16 +1,22 @@
 name: Release
 
-# Releases and the backend image (#96, #100). See docs/guides/releases.md.
+# Releases and the backend image (#96, #100, #104). See docs/guides/releases.md.
 #
-# - After CI passes on a push to the default branch: the release version is
-#   MAJOR.MINOR from VERSION plus PATCH = first-parent commits since the
-#   line's vMAJOR.MINOR.0 tag (scripts/release.py). If that release doesn't
-#   exist yet and the line's notes (docs/releases/vMAJOR.MINOR.md) are
-#   present, stamp the version into the build, tag the exact commit, build the
-#   firmware, the image and the zip files, and publish the release.
+# - After CI passes on a push to an integration line <owner>/vMAJOR.MINOR
+#   (owners in RELEASE_OWNERS): the release is <owner>/vMAJOR.MINOR.PATCH,
+#   PATCH = first-parent commits since <owner>/vMAJOR.MINOR.0
+#   (scripts/release.py). If it doesn't exist yet and the line's page
+#   template (docs/releases/vMAJOR.MINOR.md) is present, stamp the version
+#   into the build, tag the exact commit, build the firmware, the image and
+#   the zip files, and publish the release. Its "What changed" section is the
+#   CHANGELOG.md entries added since the previous release of the line.
+#   The script and the page templates always come from the default branch,
+#   so a line branched long ago still releases with the current rules.
 # - On issue changes, daily, and on demand: a release is Beta while an open
-#   issue labelled `testing` is in milestone vMAJOR.MINOR (or vVERSION),
-#   Stable otherwise. The image tags `beta` and `latest` follow.
+#   issue labelled `testing` is in a milestone that gates it (its line
+#   <owner>/vX.Y, any line it is built on, or its exact <owner>/vX.Y.Z),
+#   Stable otherwise. The image tags <owner>-<X.Y>, <owner>-beta and
+#   <owner>-latest follow.
 #
 # issues, schedule and workflow_run events run this file from the default
 # branch (varun/v2.1).
@@ -18,7 +24,7 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
-    branches: ["varun/**"]
+    branches: ["varun/**", "kush/**", "aamna/**", "encrypted/**"]
   issues:
     types: [opened, edited, closed, reopened, labeled, unlabeled, milestoned, demilestoned, deleted, transferred]
   schedule:
@@ -37,23 +43,26 @@ concurrency:
 env:
   IMAGE: ghcr.io/kush-kelaiya22/impress-backend
   PYTHON_VERSION: "3.12"
+  RELEASE_OWNERS: varun kush aamna encrypted
 
 jobs:
   plan:
     name: Plan
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Only a successful CI run for a push to the default branch can publish.
+    # Only a successful CI run for a push can publish (the plan checks the branch).
     if: >-
       github.event_name != 'workflow_run' ||
       (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_branch == github.event.repository.default_branch)
+       github.event.workflow_run.event == 'push')
     outputs:
       sha: ${{ steps.plan.outputs.sha }}
+      owner: ${{ steps.plan.outputs.owner }}
+      line: ${{ steps.plan.outputs.line }}
       version: ${{ steps.plan.outputs.version }}
       tag: ${{ steps.plan.outputs.tag }}
       previous: ${{ steps.plan.outputs.previous }}
+      asset: ${{ steps.plan.outputs.asset }}
       create: ${{ steps.plan.outputs.create }}
       publish: ${{ steps.plan.outputs.publish }}
     steps:
@@ -66,21 +75,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
+          BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           sha=$(git rev-parse HEAD)
-          plan=$(python3 scripts/release.py plan)
-          version=$(jq -r .version <<<"$plan"); tag=$(jq -r .tag <<<"$plan"); previous=$(jq -r .previous <<<"$plan")
           publish=false; create=false
-          # A manual run publishes only from the default branch.
-          if [ "$EVENT" = workflow_run ] || { [ "$EVENT" = workflow_dispatch ] && [ "$GITHUB_REF_NAME" = "$DEFAULT_BRANCH" ]; }; then
+          # The current rules and templates, applied to the pushed commit.
+          git show "origin/$DEFAULT_BRANCH:scripts/release.py" > "$RUNNER_TEMP/release.py"
+          mkdir -p "$RUNNER_TEMP/defaults"
+          git archive "origin/$DEFAULT_BRANCH" docs/releases | tar -x -C "$RUNNER_TEMP/defaults"
+          plan=$(python3 "$RUNNER_TEMP/release.py" plan --branch "$BRANCH" --root . --templates "$RUNNER_TEMP/defaults/docs/releases")
+          echo "branch=$BRANCH plan=$plan" >> "$GITHUB_STEP_SUMMARY"
+          get() { jq -r ".$1 // empty" <<<"$plan"; }
+          # Only CI-tested pushes and manual runs publish, and only from an integration line.
+          if { [ "$EVENT" = workflow_run ] || [ "$EVENT" = workflow_dispatch ]; } && [ "$(get releasable)" = true ]; then
             publish=true
-            if [ "$(jq -r .notes_present <<<"$plan")" = true ] && ! gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              create=true
-            fi
+            gh release view "$(get tag)" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || create=true
           fi
-          echo "sha=$sha version=$version tag=$tag previous=$previous publish=$publish create=$create" | tee -a "$GITHUB_STEP_SUMMARY"
-          { echo "sha=$sha"; echo "version=$version"; echo "tag=$tag"; echo "previous=$previous"; echo "publish=$publish"; echo "create=$create"; } >> "$GITHUB_OUTPUT"
+          echo "publish=$publish create=$create" | tee -a "$GITHUB_STEP_SUMMARY"
+          {
+            echo "sha=$sha"; echo "owner=$(get owner)"; echo "line=$(get line)"; echo "version=$(get version)"; echo "tag=$(get tag)"
+            echo "previous=$(get previous)"; echo "asset=$(get asset)"; echo "publish=$publish"; echo "create=$create"
+          } >> "$GITHUB_OUTPUT"
 
   image:
     name: Backend image
@@ -101,7 +117,7 @@ jobs:
       - name: Stamp the release version
         run: printf '%s\n' "${{ needs.plan.outputs.version }}" > VERSION
       - name: Build
-        run: docker build --platform linux/amd64 --label "org.opencontainers.image.revision=${{ needs.plan.outputs.sha }}" --label "org.opencontainers.image.version=${{ needs.plan.outputs.version }}" -t impress-backend:ci .
+        run: docker build --platform linux/amd64 --label "org.opencontainers.image.revision=${{ needs.plan.outputs.sha }}" --label "org.opencontainers.image.version=${{ needs.plan.outputs.tag }}" -t impress-backend:ci .
       - name: Smoke test the image
         run: |
           docker run -d --name impress -p 8000:8000 -e IMPRESS_INITIAL_ADMIN_PASSWORD=smoke-${{ github.run_id }} impress-backend:ci
@@ -116,12 +132,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ needs.plan.outputs.sha }}
+          OWNER: ${{ needs.plan.outputs.owner }}
+          LINE: ${{ needs.plan.outputs.line }}
           VERSION: ${{ needs.plan.outputs.version }}
           CREATE: ${{ needs.plan.outputs.create }}
         run: |
           echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          tags=(edge "sha-${SHA:0:12}")
-          [ "$CREATE" = true ] && tags+=("$VERSION")
+          tags=("$OWNER-$LINE" "sha-${SHA:0:12}")
+          [ "$CREATE" = true ] && tags+=("$OWNER-$VERSION")
           for t in "${tags[@]}"; do
             docker tag impress-backend:ci "$IMAGE:$t"
             docker push "$IMAGE:$t"
@@ -173,12 +191,17 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+      issues: write          # creates the line's milestone on its first release
     env:
       GH_TOKEN: ${{ github.token }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      OWNER: ${{ needs.plan.outputs.owner }}
+      LINE: ${{ needs.plan.outputs.line }}
       SHA: ${{ needs.plan.outputs.sha }}
       VERSION: ${{ needs.plan.outputs.version }}
       TAG: ${{ needs.plan.outputs.tag }}
       PREVIOUS: ${{ needs.plan.outputs.previous }}
+      NAME: ${{ needs.plan.outputs.asset }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -191,41 +214,59 @@ jobs:
           merge-multiple: true
       - name: Build the release files
         run: |
-          name="impress-$VERSION"; mkdir -p dist stage
-          # Release notes: the line's template with this version and the merged pull requests.
+          mkdir -p dist stage
+          # Release page: the line's template, the CHANGELOG entries new since the previous
+          # release, and the merged pull requests.
           args=(-f tag_name="$TAG" -f target_commitish="$SHA")
           [ -n "$PREVIOUS" ] && args+=(-f previous_tag_name="$PREVIOUS")
-          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${args[@]}" -q .body > generated.md
-          PYTHONPATH=scripts python3 -c 'import release; print(release.clean_changes(open("generated.md").read()))' > changes.md
-          python3 scripts/release.py notes "$VERSION" changes.md > notes.md
-          # Firmware: one folder per board, flashable with esptool (see the release notes).
-          (cd firmware-images && zip -qr "../dist/$name-firmware.zip" .)
-          # Documentation: repository docs, the wiki and the release notes.
-          mkdir -p "stage/$name-docs"
-          cp -r README.md CONTRIBUTING.md CODE_OF_CONDUCT.md docs "stage/$name-docs/"
-          cp notes.md "stage/$name-docs/RELEASE_NOTES.md"
-          git clone -q --depth 1 "https://github.com/$GITHUB_REPOSITORY.wiki.git" "stage/$name-docs/wiki"
-          rm -rf "stage/$name-docs/wiki/.git"
-          (cd stage && zip -qr "../dist/$name-docs.zip" "$name-docs")
-          # Bundle: the source at the release commit, the firmware images and the notes.
-          git archive --format=tar --prefix="$name/" "$SHA" | tar -x -C stage
-          printf '%s\n' "$VERSION" | tee "stage/$name/VERSION" stage/"$name"/firmware/{class_c6,class_s3,student}/version.txt >/dev/null
-          mkdir -p "stage/$name/release"
-          cp -r firmware-images "stage/$name/release/firmware"
-          cp notes.md "stage/$name/release/RELEASE_NOTES.md"
-          (cd stage && zip -qr "../dist/$name.zip" "$name")
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${args[@]}" -q .body > prs.md
+          git show "origin/$DEFAULT_BRANCH:scripts/release.py" > "$RUNNER_TEMP/release.py"
+          mkdir -p "$RUNNER_TEMP/defaults"
+          git archive "origin/$DEFAULT_BRANCH" docs/releases | tar -x -C "$RUNNER_TEMP/defaults"
+          python3 "$RUNNER_TEMP/release.py" notes "$TAG" prs.md --root . --templates "$RUNNER_TEMP/defaults/docs/releases" > notes.md
+          # Firmware: one folder per board, flashable with esptool (see the release page).
+          (cd firmware-images && zip -qr "../dist/$NAME-firmware.zip" .)
+          # Documentation: repository docs, the changelog, the wiki and the release page.
+          mkdir -p "stage/$NAME-docs"
+          for f in README.md CHANGELOG.md CONTRIBUTING.md CODE_OF_CONDUCT.md docs; do
+            [ -e "$f" ] && cp -r "$f" "stage/$NAME-docs/"
+          done
+          cp notes.md "stage/$NAME-docs/RELEASE_NOTES.md"
+          git clone -q --depth 1 "https://github.com/$GITHUB_REPOSITORY.wiki.git" "stage/$NAME-docs/wiki"
+          rm -rf "stage/$NAME-docs/wiki/.git"
+          (cd stage && zip -qr "../dist/$NAME-docs.zip" "$NAME-docs")
+          # Bundle: the source at the release commit with the release version, the firmware and the page.
+          git archive --format=tar --prefix="$NAME/" "$SHA" | tar -x -C stage
+          printf '%s\n' "$VERSION" | tee "stage/$NAME/VERSION" stage/"$NAME"/firmware/{class_c6,class_s3,student}/version.txt >/dev/null
+          mkdir -p "stage/$NAME/release"
+          cp -r firmware-images "stage/$NAME/release/firmware"
+          cp notes.md "stage/$NAME/release/RELEASE_NOTES.md"
+          (cd stage && zip -qr "../dist/$NAME.zip" "$NAME")
           (cd dist && sha256sum ./*.zip > SHA256SUMS.txt && cat SHA256SUMS.txt)
+      - name: Milestone for the line
+        run: |
+          # Test issues for every release of the line (and of lines built on it) go here.
+          title="$OWNER/v$LINE"
+          if ! gh api "repos/$GITHUB_REPOSITORY/milestones?state=all" --paginate -q '.[].title' | grep -qx "$title"; then
+            gh api "repos/$GITHUB_REPOSITORY/milestones" -f title="$title" \
+              -f description="Release line $title. Open issues labelled 'testing' keep its releases (and releases built on it) in Beta." >/dev/null
+            echo "created milestone $title" >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Tag the release commit
         run: |
           gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$SHA"
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" -q .object.sha)" = "$SHA"
       - name: Publish
         run: |
-          # Published as a pre-release; the status job adds the badge and the
-          # open test issues, and sets Beta or Stable a few seconds later.
-          gh release create "$TAG" --verify-tag --prerelease --title "imPress $VERSION (Beta)" \
-            --notes-file notes.md dist/*.zip dist/SHA256SUMS.txt
-          echo "Published $TAG at $SHA" >> "$GITHUB_STEP_SUMMARY"
+          # The complete page from the start: status section (badges, Beta/Stable box,
+          # test issues), install guide and changes. Editable later: the status job only
+          # replaces the marked status section.
+          meta=$(python3 "$RUNNER_TEMP/release.py" page "$TAG" notes.md --sha "$SHA" --out body.md --root .)
+          flags=()
+          [ "$(jq -r .prerelease <<<"$meta")" = true ] && flags+=(--prerelease)
+          gh release create "$TAG" --verify-tag "${flags[@]}" --title "$(jq -r .title <<<"$meta")" \
+            --notes-file body.md dist/*.zip dist/SHA256SUMS.txt
+          echo "Published $TAG at $SHA: $(jq -r .status <<<"$meta")" >> "$GITHUB_STEP_SUMMARY"
 
   status:
     name: Release status
@@ -244,19 +285,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0          # every tag, to see which lines a release is built on
       - name: Beta or Stable
         run: python3 scripts/release.py sync | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Image channels (latest = newest stable, beta = newest beta)
+      - name: Image tags (<owner>-<X.Y>, <owner>-latest, <owner>-beta)
         run: |
-          channels=$(python3 scripts/release.py channels)
-          echo "$channels" >> "$GITHUB_STEP_SUMMARY"
+          plan=$(python3 scripts/release.py channels)
+          echo "$plan" >> "$GITHUB_STEP_SUMMARY"
           echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          for channel in latest beta; do
-            version=$(jq -r ".$channel // empty" <<<"$channels")
-            [ -n "$version" ] || continue
-            if docker buildx imagetools inspect "$IMAGE:$version" >/dev/null 2>&1; then
-              docker buildx imagetools create -t "$IMAGE:$channel" "$IMAGE:$version"
-            else
-              echo "no image $IMAGE:$version yet; $channel not moved"
+          exists() { docker buildx imagetools inspect "$IMAGE:$1" >/dev/null 2>&1; }
+          digest() { docker buildx imagetools inspect "$IMAGE:$1" --format '{{json .Manifest.Digest}}' 2>/dev/null; }
+          # Releases published before owner-prefixed names (#104) have plain version tags.
+          jq -r '.legacy | to_entries[] | "\(.key) \(.value)"' <<<"$plan" | while read -r target source; do
+            if ! exists "$target" && exists "$source"; then
+              docker buildx imagetools create -t "$IMAGE:$target" "$IMAGE:$source"
+            fi
+          done
+          jq -r '.aliases | to_entries[] | "\(.key) \(.value)"' <<<"$plan" | while read -r alias source; do
+            if ! exists "$source"; then echo "no image $IMAGE:$source; $alias not moved"; continue; fi
+            if [ "$(digest "$alias")" != "$(digest "$source")" ]; then
+              docker buildx imagetools create -t "$IMAGE:$alias" "$IMAGE:$source"
+              echo "$alias -> $source" >> "$GITHUB_STEP_SUMMARY"
             fi
           done

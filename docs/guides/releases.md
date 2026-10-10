@@ -5,7 +5,10 @@ How imPress releases are made, what a release contains, how its **Beta** or **St
 ## Contents
 
 - [Overview](#overview)
+- [Release names](#release-names)
+- [Every owner's line](#every-owners-line)
 - [Version numbers](#version-numbers)
+- [The changelog](#the-changelog)
 - [Starting a new release line](#starting-a-new-release-line)
 - [Beta and Stable](#beta-and-stable)
 - [The release page](#the-release-page)
@@ -16,120 +19,178 @@ How imPress releases are made, what a release contains, how its **Beta** or **St
 
 ## Overview
 
-Every push to `varun/v2.1` that passes CI is published as the next patch release of its line. For example, the pushes after `v2.1.0` become `v2.1.2`, `v2.1.3`, and so on.
+Every push to an integration line that passes CI is published as the next patch release of that line. On `varun/v2.1`, the pushes after `varun/v2.1.0` become `varun/v2.1.2`, `varun/v2.1.3`, and so on.
 
 ```mermaid
 flowchart TB
-    P["push to varun/v2.1<br/>(a merged pull request)"] --> CI{"CI passes?"}
+    P["push to owner/vX.Y<br/>(a merged pull request)"] --> CI{"CI passes?<br/>(includes the changelog check)"}
     CI -- no --> X["nothing is published"]
-    CI -- yes --> V["version = MAJOR.MINOR from VERSION<br/>+ commits since vMAJOR.MINOR.0"]
+    CI -- yes --> V["owner/vX.Y.N<br/>N = commits since owner/vX.Y.0"]
     V --> E{"release exists?"}
     E -- yes --> S
-    E -- no --> N{"line notes docs/releases/vMAJOR.MINOR.md?"}
+    E -- no --> N{"page template docs/releases/vX.Y.md?"}
     N -- no --> X2["no release (line not signed off)"]
-    N -- yes --> R["stamp the version · tag the tested commit ·<br/>firmware · image · zip files · publish"]
+    N -- yes --> R["stamp the version · tag the tested commit ·<br/>firmware · image · zip files ·<br/>page with the new CHANGELOG entries"]
     R --> S["status: Beta or Stable"]
     I["issue opened, closed, labelled,<br/>added to a milestone · daily · manual"] --> S
-    S --> CH["image tags: beta, latest"]
+    S --> CH["image tags: owner-beta, owner-latest"]
 ```
 
 | Item | Rule |
 |---|---|
+| Name | `<owner>/vMAJOR.MINOR.PATCH`, from the integration line `<owner>/vMAJOR.MINOR` ([release names](#release-names)) |
 | Version | `MAJOR.MINOR` from the root `VERSION` file; `PATCH` computed from the git history ([version numbers](#version-numbers)) |
-| Sign-off | the release line's notes, `docs/releases/vMAJOR.MINOR.md`, added through a reviewed pull request. Without this file, no release of the line is created. |
-| Source | the exact commit on the default branch (`varun/v2.1`) for which CI passed |
-| Status | **Beta** while an open issue labelled `testing` is in the milestone `vMAJOR.MINOR` (or `vMAJOR.MINOR.PATCH`); **Stable** otherwise |
+| Sign-off | the line's page template, `docs/releases/vMAJOR.MINOR.md`, added through a reviewed pull request. Without this file, no release of the line is created. |
+| Changes | the `CHANGELOG.md` entries added since the previous release of the line ([the changelog](#the-changelog)) |
+| Source | the exact commit on the integration line for which CI passed |
+| Status | **Beta** while an open issue labelled `testing` is in the milestone `<owner>/vMAJOR.MINOR` (or `<owner>/vMAJOR.MINOR.PATCH`); **Stable** otherwise |
 | Workflow | [`.github/workflows/release.yml`](../../.github/workflows/release.yml), helper [`scripts/release.py`](../../scripts/release.py), tests [`tests/test_release.py`](../../tests/test_release.py) |
+
+## Release names
+
+| Item | Format | Example |
+|---|---|---|
+| Integration line (branch) | `<owner>/vMAJOR.MINOR` | `varun/v2.1` |
+| Release tag and title | `<owner>/vMAJOR.MINOR.PATCH`; the title ends with ` (Beta)` while Beta | `varun/v2.1.4` |
+| Release files | `impress-<owner>-<version>.zip`, `…-firmware.zip`, `…-docs.zip` | `impress-varun-2.1.4.zip` |
+| Container image tags | `<owner>-<version>`, `<owner>-<MAJOR.MINOR>`, `<owner>-beta`, `<owner>-latest` | `varun-2.1.4`, `varun-2.1` |
+| Gating milestone | `<owner>/vMAJOR.MINOR` (that line and every line built on it), or `<owner>/vMAJOR.MINOR.PATCH` (one release) | `varun/v2.1` |
+
+- **Owners:** `varun`, `kush`, `aamna` and `encrypted` (`RELEASE_OWNERS` in the workflow). CI and the release workflow run for pushes to `<owner>/**`; only branches named exactly `<owner>/vMAJOR.MINOR` are released. Issue branches (`fix/v2.1-…`) and variants (`varun/v2.1-experimental`) are not.
+- **Each owner's line has its own numbering, milestone and image tags,** so two owners can release the same `MAJOR.MINOR` without collisions.
+- **The software reports the plain version.** `/health`, the firmware and OTA all use `MAJOR.MINOR.PATCH`; the owner is part of the release name only.
+- **Before #104,** releases were named `v2.1.0`, `v2.1.2` and `v2.1.3`. They were renamed to `varun/v2.1.0`, `varun/v2.1.2` and `varun/v2.1.3` (same commits and files). Their images keep the plain tags as well as the owner-prefixed ones.
+
+## Every owner's line
+
+The workflow is global: it lives on the default branch and serves every owner's integration line. For example, when Aamna pushes to `aamna/v2.4`:
+
+1. CI runs on the push (`ci.yml` triggers on `aamna/**`).
+2. When CI passes, *Release* computes `aamna/v2.4.<n>`. The line comes from the branch name. The first push is `aamna/v2.4.0`, and later pushes count up from it.
+3. It builds the firmware and the image (`aamna-2.4.0`, `aamna-2.4`), creates the milestone `aamna/v2.4` if it does not exist, and publishes `aamna/v2.4.0`.
+4. Its status follows the test issues of `aamna/v2.4` **and of every line it is built on** (see [Beta and Stable](#beta-and-stable)).
+
+| Requirement on the owner's branch | Why |
+|---|---|
+| The branch is named exactly `<owner>/vMAJOR.MINOR`, and the owner is in `RELEASE_OWNERS` | Other branch names are never released. |
+| Its `ci.yml` includes the owner's branches (any branch created from `varun/v2.1` after #104 has it) | CI on the push starts the release. A branch created earlier needs one merge from `varun/v2.1`. |
+
+What it does **not** need:
+
+- **Scripts:** the release script and the page templates always come from the default branch, so an old branch releases with the current rules.
+- **Version files:** `VERSION` should say `MAJOR.MINOR.0`, but the branch name wins. A mismatch is shown as a warning in the run summary.
+- **A template:** without `docs/releases/vMAJOR.MINOR.md` on the branch or the default branch, the newest template is used.
+
+To add an owner, change `RELEASE_OWNERS` in `release.yml` and the branch lists in `release.yml` and `ci.yml` in one pull request (CONTRIBUTING §14.1).
 
 ## Version numbers
 
 | Part | Source | Who changes it |
 |---|---|---|
-| `MAJOR.MINOR` | the root `VERSION` file (for example `2.1.0` means line 2.1) | the release owner, in a pull request ([new line](#starting-a-new-release-line)) |
-| `PATCH` | the number of **first-parent commits** on the default branch since the line's first release, tag `vMAJOR.MINOR.0`. Without that tag, `PATCH` is 0: the push is the line's first release. | nobody: computed by `scripts/release.py plan` |
+| `MAJOR.MINOR` | the root `VERSION` file (for example `2.1.0` means line 2.1). It must equal the branch name (`varun/v2.1`). | the release owner, in a pull request ([new line](#starting-a-new-release-line)) |
+| `PATCH` | the number of **first-parent commits** on the integration line since the owner's first release of the line, tag `<owner>/vMAJOR.MINOR.0`. Without that tag, `PATCH` is 0. | nobody: computed by `scripts/release.py plan` |
 
-Properties:
+- **One number per push.** A merged pull request adds one first-parent commit, however many commits the branch had.
+- **Deterministic.** The same commit always gets the same version, so a re-run can't create a second release for it.
+- **Gaps are possible.** A push that fails CI is not released, and the next green push takes its own, higher number. `varun/v2.1.1` does not exist: it was pushed before automatic releases.
+- **Stamped into the build.** The workflow writes the version into `VERSION` and every `firmware/*/version.txt` in its workspace before building, so `/health`, the image, each firmware app descriptor and the bundle report it, and OTA "success needs proof" keeps working. The repository keeps `X.Y.0`.
 
-- **One number per push.** A merged pull request adds one first-parent commit, however many commits the branch had. So each merge gets the next number.
-- **Deterministic.** The same commit always gets the same version, so a re-run of the workflow can't create a second release for it.
-- **Gaps are possible.** A push that fails CI is not released, and the next green push takes its own, higher number. Pushes made before #100 were not released either: `v2.1.1` does not exist.
-- **Stamped into the build.** The workflow writes the version into `VERSION` and every `firmware/*/version.txt` in its workspace before it builds anything. So `/health`, the container image, the firmware's app descriptor and the bundle all report the release version. The OTA rule "success needs proof" then keeps working: a device that installs `2.1.7` reports `2.1.7`. The repository keeps `X.Y.0`. Development builds report that.
+## The changelog
+
+[`CHANGELOG.md`](../../CHANGELOG.md) is kept by every pull request; the rules are in [CONTRIBUTING §14.4](../../CONTRIBUTING.md#144-recording-changes). In short:
+
+- entries go under `## [Unreleased]`, in the categories **Added**, **Changed**, **Removed**, **Fixed** and **Security**;
+- one `- ` bullet per change, written for users, ending with its issue link;
+- CI (*Changelog entry*) fails a pull request that does not change `CHANGELOG.md`, unless it has the label `no-changelog`.
+
+A release page's **What changed** section shows the `[Unreleased]` entries that are **new since the previous release of the line**: the workflow compares `CHANGELOG.md` at the release commit with `CHANGELOG.md` at the previous release tag. The merged pull requests are listed below it, folded.
 
 ## Starting a new release line
 
-`MAJOR` and `MINOR` remain the release owner's decision (CONTRIBUTING §14). To start line 2.2:
+`MAJOR` and `MINOR` remain the release owner's decision (CONTRIBUTING §14). To start line 2.2 on `varun/v2.2`:
 
-1. **Prepare one pull request:**
+1. **Create the branch** `varun/v2.2` from the agreed source (CONTRIBUTING §8.2).
+2. **Prepare one pull request into it:**
    - set `VERSION` and the three `firmware/*/version.txt` files to `2.2.0`;
-   - add `docs/releases/v2.2.md`, the release-page template of the line. Use the 2.1 template for its structure. The placeholders `{{version}}`, `{{tag}}`, `{{line}}`, `{{previous}}` and `{{changes}}` are replaced for each release, and `{{changes}}` becomes the list of pull requests merged since the previous release;
-   - move the *Unreleased* entries in `CONTRIBUTING.md` into a section for the line.
+   - add `docs/releases/v2.2.md`, the line's page template. Keep the headings of the [release page structure](../../CONTRIBUTING.md#153-release-page-structure) (a test checks them);
+   - in `CHANGELOG.md`, rename `## [Unreleased]` to the old line's last release and start a new `## [Unreleased]`.
+3. **Create the milestone** `varun/v2.2`, and add the test issues (label `testing`) that must pass before the line is Stable.
+4. **Merge** after review and green CI. The merge becomes `varun/v2.2.0`, and every later push `varun/v2.2.<n>`.
+5. **Check the first release:** compare the tag with the merge commit, download a zip, run `sha256sum -c SHA256SUMS.txt`, and record the line in CONTRIBUTING §14.2.
 
-   `tests/test_release.py` fails if the line has no notes template, so the two always change together.
-2. **Create the milestone** `v2.2` and add the test issues (label `testing`) that must pass before the line is Stable. Hardware checks are the usual case: see [hardware validation](../testing/HARDWARE_VALIDATION.md).
-3. **Merge** after review and green CI. The merge becomes `v2.2.0`, and every later push `v2.2.<n>`.
-4. **Check the first release:** compare the tag with the merge commit, download a zip and run `sha256sum -c SHA256SUMS.txt`. Then record the line in the version history in `CONTRIBUTING.md` (§14.2).
-
-To retry after a failure, run *Release* from the Actions tab (**Run workflow** on `varun/v2.1`). It never re-creates or changes a release that exists, and it never moves a tag. A published release is never edited apart from its status section: a fix ships as the next patch.
+To retry after a failure, run *Release* from the Actions tab (**Run workflow** on the integration line). It never re-creates or changes a release that exists, and it never moves a tag. A published release is never edited apart from its status section: a fix ships as the next patch.
 
 ## Beta and Stable
 
 | Status | Condition | Release page | GitHub flag | Image tag |
 |---|---|---|---|---|
-| **Beta** | at least one open issue labelled `testing` in milestone `vMAJOR.MINOR` or `vMAJOR.MINOR.PATCH` | title ends with *(Beta)*; orange badge; warning box; the test table | pre-release | `beta` (the newest beta) |
-| **Stable** | no such open issue (or no such milestone) | plain title; green badge; tip box; the test table, all closed | latest release (the newest stable) | `latest` (the newest stable) |
+| **Beta** | at least one open issue labelled `testing` in milestone `<owner>/vMAJOR.MINOR` or `<owner>/vMAJOR.MINOR.PATCH` | title ends with *(Beta)*; orange badge; **Warning** box | pre-release | `<owner>-beta` |
+| **Stable** | no such open issue (or no such milestone) | plain title; green badge; **Note** box | latest release (the newest stable) | `<owner>-latest` |
 
-The line milestone (`v2.1`) gates **every** release of the line, so all 2.1.x releases change status together. An exact milestone (`v2.1.7`) adds gates for one release only, for example a regression found in that version.
+Which milestones gate a release:
 
-The status is checked again:
+| Milestone | Gates |
+|---|---|
+| `<owner>/vX.Y` (a line) | every release of that line, **and every release built on top of** `<owner>/vX.Y.0`: later lines of the same owner, and other owners' lines branched from it. Built on top means that `<owner>/vX.Y.0` is a git ancestor of the release commit. |
+| `<owner>/vX.Y.Z` (one release) | that release only |
 
-- when an issue is opened, edited, closed, reopened, deleted or transferred, labelled or unlabelled, or added to or removed from a milestone;
-- every day at 05:17 UTC;
-- when someone runs the workflow manually.
+Example with three lines:
 
-So the status follows the issues in both directions:
+| Release | Built on `varun/v2.1.0`? | Gated by `varun/v2.1` |
+|---|---|---|
+| `varun/v2.1.6` | its own line | yes |
+| `varun/v2.3.0` (created from `varun/v2.1`) | yes | yes |
+| `aamna/v2.4.2` (branched from `varun/v2.1`) | yes | yes |
+| `kush/v2.2.0` (separate history) | no | no |
 
-- **Promotion:** closing the last open test issue makes the releases Stable within about a minute.
-- **Back to Beta:** adding a test issue to the milestone later makes them Beta again.
+So a test issue for 2.1 keeps 2.1 and everything built on it in Beta. When you close it, **every one of those releases is updated in the same run**. An issue in `varun/v2.3` gates only 2.3 and what is built on 2.3, never the older 2.1 releases. In the status table, an issue that comes from another line is marked *from varun/v2.1*.
 
-> **Labels and milestones are the interface.** To keep a release in Beta, put the blocking issue in its milestone with the `testing` label. To stop an issue from blocking, remove the label or move it to another milestone. Change `RELEASE_GATE_LABEL` in the workflow to gate on another label.
+**Adding gates in the Milestones tab:** open **Issues > Milestones**, and put the issue (label `testing`) in `<owner>/vX.Y` to gate the whole line, or create `<owner>/vX.Y.Z` to gate one specific release. A release that already exists changes status within a minute. A release published later starts in the right status.
+
+The status is checked again when an issue is opened, edited, closed, reopened, deleted or transferred, labelled or unlabelled, or added to or removed from a milestone; every day at 05:17 UTC; and on a manual run. Closing the last open test issue makes the releases Stable within about a minute; adding a test issue later makes them Beta again.
+
+> **Labels and milestones are the interface.** To keep a release in Beta, put the blocking issue in its milestone with the `testing` label. To stop an issue from blocking, remove the label or move it to another milestone.
 
 ## The release page
 
-Each release page has a **status section** at the top, between `<!-- release-status:start -->` and `<!-- release-status:end -->`:
+The page structure is fixed for every release: see [CONTRIBUTING §15.3](../../CONTRIBUTING.md#153-release-page-structure). It leads with what a reader needs to install and use imPress; detail is linked, not copied.
 
-| Part | Content | Updated |
-|---|---|---|
-| Badges | the release status (Beta / Stable), and how many test issues are closed (for example *3 of 12*) | by the workflow |
-| Alert | a warning box (Beta: how many test issues are open) or a tip box (Stable) | by the workflow |
-| Release tests | a table of every test issue (open ones first): issue, test area, owner, and a status badge: *open*, *closed: completed* or *closed: not planned* | by the workflow |
+The **status section** at the top (between `<!-- release-status:start -->` and `<!-- release-status:end -->`) is written by the workflow:
 
-Everything in the status section is redrawn **within about a minute of any change** to a test issue (the `issues` trigger), and checked again daily. The badges are static images drawn from the workflow's own data, so they always load. Badges that query GitHub from shields.io on each page view were tried first: they sometimes showed *invalid* when shields.io hit GitHub's rate limit.
+| Part | Content |
+|---|---|
+| Badges | `release: beta` or `release: stable`, and `tests closed: N of M` |
+| Box | **Warning** (Beta: how many test issues are open) or **Note** (Stable) |
+| Table | every release test issue, open ones first: **No.** (link), **Issue** (title), **Assigned to**, **Status** (*open*, *closed: completed*, *closed: not planned*) |
 
-Below the status section comes the line's template: a summary, **Changes since** the previous release (the merged pull requests), downloads, set-up, tests, deployment, upgrades, known limits and checksums. The workflow replaces only the status section. Edits to the rest of the release text are kept.
+The page is **complete when GitHub Actions publishes it**: status section, summary, changes, install guide and troubleshooting, with the right title and Beta/Stable flag. The status is computed against the release commit before the tag exists. After that, the status section is redrawn within about a minute of any change to a test issue, and checked daily. The badges are static images drawn from the workflow's data, so they always load.
+
+**Editing a published page:** edit the release on GitHub as usual. Everything outside the status section (between the `release-status` markers) is yours and is kept. The status section is overwritten on the next issue change, so don't edit inside it.
 
 ## What a release contains
 
 | Asset | Contents |
 |---|---|
-| `impress-<VERSION>.zip` | `impress-<VERSION>/`: the source at the tagged commit (`git archive`), plus `release/firmware/` (the images below) and `release/RELEASE_NOTES.md` |
-| `impress-<VERSION>-firmware.zip` | one folder per board (`class_c6`, `class_s3`, `student`): the application image, `bootloader/bootloader.bin`, `partition_table/partition-table.bin`, `ota_data_initial.bin`, `flash_args`, `flasher_args.json` and a `SHA256SUMS` file |
-| `impress-<VERSION>-docs.zip` | `README.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `docs/`, the wiki pages (`wiki/`) and the release notes |
+| `impress-<owner>-<version>.zip` | `impress-<owner>-<version>/`: the source at the tagged commit with the release version stamped in, plus `release/firmware/` and `release/RELEASE_NOTES.md` |
+| `impress-<owner>-<version>-firmware.zip` | one folder per board (`class_c6`, `class_s3`, `student`): the application image, `bootloader/bootloader.bin`, `partition_table/partition-table.bin`, `ota_data_initial.bin`, `flash_args`, `flasher_args.json` and a `SHA256SUMS` file |
+| `impress-<owner>-<version>-docs.zip` | `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `docs/`, the wiki pages (`wiki/`) and the release page |
 | `SHA256SUMS.txt` | checksums of the three zip files |
 | *Source code* (zip, tar.gz) | added by GitHub for every tag |
 
-The firmware is built by the workflow from the tagged commit with the committed `sdkconfig` files. It therefore contains the **default** Wi-Fi, server and key settings; see the next sections. Signed images (#66) are not published: a site signs its own images with its own key ([OTA updates → signing](ota-updates.md#signing-images)).
+The firmware is built by the workflow from the tagged commit with the committed `sdkconfig` files. It therefore contains the **default** Wi-Fi, server and key settings; see [flash prebuilt images](#flash-prebuilt-images). Signed images (#66) are not published: a site signs its own images with its own key ([OTA updates → signing](ota-updates.md#signing-images)).
 
 ## The backend container image
 
-`ghcr.io/kush-kelaiya22/impress-backend`, built from the [`Dockerfile`](../../Dockerfile) on every green push to the default branch.
+`ghcr.io/kush-kelaiya22/impress-backend`, built from the [`Dockerfile`](../../Dockerfile) on every green push to an integration line.
 
 | Tag | Meaning |
 |---|---|
-| `<VERSION>` (for example `2.1.0`) | the image of that release; never moved |
-| `latest` | the newest **Stable** release |
-| `beta` | the newest **Beta** release |
-| `edge` | the newest commit on `varun/v2.1` that passed CI; not a release |
+| `<owner>-<version>` (for example `varun-2.1.4`) | the image of that release; never moved |
+| `<owner>-<MAJOR.MINOR>` (for example `varun-2.1`, `aamna-2.4`) | the newest release of that line |
+| `<owner>-latest` | the owner's newest **Stable** release, across lines |
+| `<owner>-beta` | the owner's newest **Beta** release, across lines |
 | `sha-<commit>` | one exact commit |
+| `2.1.0`, `2.1.2`, `2.1.3`, `varun-edge` | images published before #104 (the first three also as `varun-2.1.0`, …); not updated any more |
 
 Properties:
 
@@ -144,13 +205,11 @@ Run it:
 ```bash
 docker run -d --name impress --restart unless-stopped \
   -p 8000:8000 -v impress-data:/data \
-  ghcr.io/kush-kelaiya22/impress-backend:2.1.0
+  ghcr.io/kush-kelaiya22/impress-backend:varun-latest
 docker logs impress            # admin password (first start) and device key
 ```
 
 Settings are the usual `IMPRESS_*` variables (`-e IMPRESS_DEVICE_KEYS_REQUIRED=true`, …; see [configuration](configuration.md)). Environment variables override `/data/.env`. For TLS without a proxy, mount the certificate and key and set `IMPRESS_SSL_CERTFILE` and `IMPRESS_SSL_KEYFILE`. Upgrade by starting the new tag with the same volume: migrations run at startup and back up the database first.
-
-> A new package on GitHub Container Registry can start as private. If `docker pull` asks for credentials, the repository owner makes the package public once (package settings → *Change visibility*).
 
 ## Flash prebuilt images
 
@@ -212,8 +271,9 @@ Limits: the hub's server address is at most 63 characters and its key at most 64
 
 | Symptom | Cause and action |
 |---|---|
-| No release after a merge | Check that CI passed on the merge commit and that the line's notes, `docs/releases/vMAJOR.MINOR.md`, are on `varun/v2.1`. The *Plan* step summary shows the computed version and `create`. |
+| No release after a merge | Check that CI passed on the merge commit, that the branch is named exactly `<owner>/vMAJOR.MINOR` with a listed owner and the same line as `VERSION`, and that `docs/releases/vMAJOR.MINOR.md` exists. The *Plan* step summary shows the plan and the reason. |
 | *Publish release* failed | The tag may not exist yet. Fix the cause and run the workflow manually. If the tag was created but the release wasn't, delete the tag only after checking that it points to the intended commit, then run the workflow again. |
-| The status did not change | The issue must be in milestone `vMAJOR.MINOR` or `vMAJOR.MINOR.PATCH` (the exact title) and labelled `testing`. Run the workflow manually to force a check. |
+| The status did not change | The issue must be in milestone `<owner>/vMAJOR.MINOR` or `<owner>/vMAJOR.MINOR.PATCH` (the exact title) and labelled `testing`. Run the workflow manually to force a check. |
+| CI fails with *Add an entry under '## [Unreleased]'* | Add a `CHANGELOG.md` entry ([CONTRIBUTING §14.4](../../CONTRIBUTING.md#144-recording-changes)), or ask a maintainer for the `no-changelog` label. |
 | A status badge is out of date | The workflow redraws the table on every issue change. Check the latest *Release* run under Actions, or run the workflow manually. |
 | `docker pull` asks for credentials | The package is private; see [the backend container image](#the-backend-container-image). |

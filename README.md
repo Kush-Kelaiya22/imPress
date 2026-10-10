@@ -330,11 +330,11 @@ imPress/
 
 | Version | Branch | Summary |
 |---|---|---|
-| [2.1.0](https://github.com/Kush-Kelaiya22/imPress/releases/tag/v2.1.0) | `varun/v2.1` | CSV imports, firmware registry and staged OTA with rollback, gateway OTA client, diagnostics, module inventory, migrations, install path, timed quizzes, container image: [changelog](docs/reference/changelog-v2.1.md) |
+| [2.1](https://github.com/Kush-Kelaiya22/imPress/releases) | `varun/v2.1` | CSV imports, firmware registry and staged OTA with rollback, gateway OTA client, diagnostics, module inventory, migrations, install path, timed quizzes, container image: [changelog](docs/reference/changelog-v2.1.md) |
 | 2.0 | `v2` | the October 2026 audit fixes (#1–#25), test suite, CI and documentation: [changelog](docs/reference/changelog-v2.md) |
 | 1.x | `main` | the original system |
 
-Releases are published on the [Releases page](https://github.com/Kush-Kelaiya22/imPress/releases) by the release workflow: every push to `varun/v2.1` that passes CI becomes the next 2.1 patch release, with the firmware images, the documentation and a backend container image (`ghcr.io/kush-kelaiya22/impress-backend`). A release is marked **Beta** while its hardware test issues are open, and **Stable** when they are closed: see [releases](docs/guides/releases.md). The version is in the [`VERSION`](VERSION) file and reported by `GET /health`.
+Releases are published on the [Releases page](https://github.com/Kush-Kelaiya22/imPress/releases) by the release workflow. Every push to an integration line that passes CI becomes its next patch release, named after the line's owner (for example `varun/v2.1.4`), with the firmware images, the documentation and a backend container image (`ghcr.io/kush-kelaiya22/impress-backend`). What changed in each release is in [`CHANGELOG.md`](CHANGELOG.md). A release is marked **Beta** while its hardware test issues are open, and **Stable** when they are closed: see [releases](docs/guides/releases.md). The version is in the [`VERSION`](VERSION) file and reported by `GET /health`.
 
 **Hardware status:** every v2.1 feature is verified by automated tests and builds. None has been verified on real boards yet; the bench checks and their status are in [hardware validation](docs/testing/HARDWARE_VALIDATION.md), and the test plan is tracked in [#94](https://github.com/Kush-Kelaiya22/imPress/issues/94).
 

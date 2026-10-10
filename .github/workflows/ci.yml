@@ -4,7 +4,7 @@ name: CI
 # branches, so a PR branch isn't built twice per push.
 on:
   push:
-    branches: [main, v2, v3, "varun/**"]
+    branches: [main, v2, v3, "varun/**", "kush/**", "aamna/**", "encrypted/**"]
   pull_request:
   workflow_dispatch:
 
@@ -53,6 +53,32 @@ jobs:
           name: junit-repo
           path: reports/
           retention-days: 14
+
+  changelog:
+    # Every pull request records its change in CHANGELOG.md (CONTRIBUTING §14.4);
+    # the label `no-changelog` exempts a change with nothing to tell users.
+    name: Changelog entry
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: CHANGELOG.md changed (pull requests only)
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then echo "not a pull request: nothing to check"; exit 0; fi
+          if jq -e 'index("no-changelog")' <<<"$LABELS" >/dev/null; then echo "label no-changelog: skipped"; exit 0; fi
+          if git diff --name-only "$BASE"...HEAD | grep -qx CHANGELOG.md; then
+            echo "CHANGELOG.md updated"
+          else
+            echo "::error file=CHANGELOG.md::Add an entry under '## [Unreleased]' (Added, Changed, Removed, Fixed or Security), or label the pull request no-changelog. See CONTRIBUTING §14.4."
+            exit 1
+          fi
+          python3 scripts/release.py check-changelog
 
   security:
     name: Dependency audit
@@ -278,7 +304,7 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [repo, security, backend, firmware-static, firmware-host, firmware-build, firmware-signed, frontend, ui, install-smoke]
+    needs: [repo, changelog, security, backend, firmware-static, firmware-host, firmware-build, firmware-signed, frontend, ui, install-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
