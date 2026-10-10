@@ -1,5 +1,60 @@
 # Troubleshooting
 
+## Contents
+
+- [Setup problems](#setup-problems): the server, the container and the first boot of each board
+- [Start with the reset reason](#start-with-the-reset-reason)
+- [Connectivity](#connectivity)
+- [Mesh and students](#mesh-and-students)
+- [Backend data](#backend-data)
+- [Collecting evidence for a bug report](#collecting-evidence-for-a-bug-report)
+
+## Setup problems
+
+The release page lists the most common of these. Check them in order: server, then gateway, then hub, then student modules.
+
+### Server
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `scripts/install.sh` stops with *imPress needs Python >= 3.12* | the default `python3` is older | install Python 3.12 or later, then `PYTHON=python3.12 scripts/install.sh` |
+| `pip` fails to build a package (bcrypt, pydantic-core) | not Linux x86_64, and no prebuilt wheel for this platform | install a C compiler and Python headers, or use the container image |
+| The server stops with *Refusing to start with default secrets* | `backend/.env` holds the public example secrets | run `scripts/install.sh` again (it generates new secrets), or set `IMPRESS_JWT_SECRET` and `IMPRESS_DEVICE_API_KEY` |
+| The first admin password is lost | it is printed only on the first start, and only when the database has no users | another super admin resets it (**Users** page, **Reset pwd**). On a new installation with no data yet, you can instead stop the server, delete `backend/impress.db`, set `IMPRESS_INITIAL_ADMIN_PASSWORD` and start again |
+| The web app opens on the server but not from other computers | the server listens on 127.0.0.1 | start with `IMPRESS_HOST=0.0.0.0`, and open port 8000 in the firewall |
+| *Address already in use* | another process uses port 8000 | stop it, or start with `IMPRESS_PORT=8080` (and use that port on the gateways) |
+| The upgrade stops and names two classes | two classes share a course and a section | give one of them another section label, then start again ([migrations](../engineering/DATABASE_MIGRATIONS.md)) |
+
+### Container
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `docker pull` asks for credentials | the package is private | the repository owner makes it public once (package settings) |
+| *exec format error* or very slow start | the host is not x86_64 (for example a Raspberry Pi or an Apple silicon Mac without emulation) | use an x86_64 host, or install with `scripts/install.sh` |
+| The data is gone after `docker run` | the container started without the volume | always pass `-v impress-data:/data`; the database and the secrets are in that volume |
+| `docker logs` does not show the admin password | the volume already holds a database from an earlier start | use the password from that start, or see "The first admin password is lost" above |
+| `docker inspect` shows `unhealthy` | the server did not answer `/health` | `docker logs impress` shows the reason (often the TLS variables) |
+
+### Gateway and hub (first boot)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| The native USB port disappears after flashing the gateway | GPIO12/13 are the SPI ready lines | flash and monitor through the UART port ([hardware](../reference/hardware.md)) |
+| `WiFi disconnected — retrying` | wrong Wi-Fi name or password, or a 5 GHz-only network | set them in `idf.py menuconfig` (or the settings partition) and erase the flash before flashing |
+| The gateway connects to Wi-Fi but never shows `ONLINE` | wrong server address or port, or the server listens on 127.0.0.1 | `curl http://<server>:8000/health` from the same network; check `BACKEND_HOST` and `BACKEND_PORT` |
+| The server log shows 401 or 403 for device calls | the device API key does not match | set `CONFIG_DEVICE_API_KEY` to the server's `IMPRESS_DEVICE_API_KEY` |
+| The log shows `First boot — writing … defaults` after you wrote a settings partition | the partition has no `init_done` (gateway) or `init` (hub) flag | rebuild it with the flag ([releases: flash prebuilt images](releases.md#flash-prebuilt-images)) |
+| `s3_link_ok` stays false | SPI wiring, or no common ground | check the six signals and GND ([wiring](../reference/hardware.md#s3--c6-wiring)) |
+| `Brownout detector was triggered` | weak USB cable or supply | use a short cable and a 5 V supply that gives at least 500 mA |
+
+### Student modules
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| The display shows `NO ID` | no enrollment number yet | enter the 10-character number with the buttons (A next, B previous, C delete, CONFIRM save) |
+| `No mesh found` | the hub is off, or a different Wi-Fi channel | power the hub first; use the same `MESH_WIFI_CHANNEL` on both |
+| Answers do not count | the enrollment number is not registered, or the class is not active | add the student on the Students page; activate the class |
+
 ## Start with the reset reason
 
 Every ESP32 boot prints `rst:0x… (REASON)`. `idf.py monitor` decodes panic backtraces when it is given the matching `.elf`.

@@ -22,7 +22,7 @@ There is one source per image, and the device never hard-codes its version. Befo
 
 ## Releasing a new version
 
-1. **Patch releases are automatic** (#100). Every push to `varun/v2.1` that passes CI is released as `2.1.<n>`. The release workflow writes that version into every `version.txt` before it builds, so each image's app descriptor carries it. Download the images from the release (`impress-<version>-firmware.zip`).
+1. **Patch releases are automatic** (#100). Every push to an integration line (`varun/v2.1`) that passes CI is released as `varun/v2.1.<n>`. The release workflow writes the version `2.1.<n>` into every `version.txt` before it builds, so each image's app descriptor carries it (without the owner). Download the images from the release (`impress-<owner>-<version>-firmware.zip`).
    **A new line** (`2.2`) is a pull request that sets `VERSION` and the three `version.txt` files to `2.2.0`. `tests/test_install_scripts.py` fails if they differ. See [releases](../guides/releases.md#starting-a-new-release-line).
 2. For a local test image, build with `idf.py build`. It reports the repository's `X.Y.0`, so don't deploy it over a release version.
 3. Upload `build/impress_<project>.bin` on the Firmware page and check that the version, target and chip shown are the ones you expect.

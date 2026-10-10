@@ -299,6 +299,7 @@ Consider scope, frequency, reachability, affected roles, data sensitivity, avail
 | Label | Apply when | Remove or update when |
 | --- | --- | --- |
 | `status:blocked` | Progress is stopped by a stated external dependency or prerequisite | The dependency is resolved; explain what changed. |
+| `no-changelog` | A PR with nothing to tell users (tests only, CI internals); the *Changelog entry* check then passes without a `CHANGELOG.md` change | The PR turns out to change something users see: remove the label and add the entry. |
 | `needs:hardware` | Physical board testing is necessary and not yet complete | Verified on the documented hardware, or transfer the outstanding work to a linked issue. |
 | `hardware` | Hardware design, board behavior, electrical or module interface is central | Keep while the issue remains about hardware. |
 | `testing` | Tests, quality coverage, or test infrastructure are central | Keep for that workstream. |
@@ -558,9 +559,9 @@ Open a **draft PR** for early design feedback or incomplete work. Do not call a 
 
 Update the relevant files in `docs/`, API specifications, hardware guides,
 firmware guides, deployment guides, README, or repository policy pages in the
-same PR as the behavior they describe. Add a concise entry to
-[Unreleased changes](#unreleased-changes) in this file for **every merged PR**,
-including documentation, tests, configuration, and maintenance.
+same PR as the behavior they describe. Add an entry to
+[`CHANGELOG.md`](CHANGELOG.md) under `[Unreleased]` for **every PR** that changes
+what users install, configure or see ([§14.4](#144-recording-changes)).
 
 ## 12. Review, CI, and merge policy
 
@@ -579,7 +580,7 @@ A PR is ready to merge only when:
 3. The diff contains no unrelated changes, secret data, or accidental generated files.
 4. The latest reviewed commit has passed all required CI checks; no required job is pending, cancelled, or failing.
 5. Required local and component-specific tests have run, or approved exceptions are documented.
-6. Relevant documentation and this document's Unreleased entry are updated.
+6. Relevant documentation and the `CHANGELOG.md` entry are updated.
 7. Required reviewer approvals have been obtained; unresolved substantive requests are addressed.
 8. Conflicts are resolved and checks have been rerun against the final code.
 9. Migration, deployment, device compatibility, and rollback concerns are documented where relevant.
@@ -597,7 +598,7 @@ Before pressing Merge, confirm the **base and head branches** in the PR. After m
 
 When CI fails, find the earliest meaningful error and determine whether it comes from the change, existing baseline, flaky test, or external tooling. Do not assume `flake` without evidence. Fix the problem, rerun local tests, push to the same issue branch, and wait for **new** CI results.
 
-When the target branch has changed, merge or rebase it into the issue branch according to the branch's collaboration needs. Resolve conflicts deliberately, especially in migrations and Unreleased changes. Verify that entries from **both** PRs remain. A clean conflict resolution is not proven safe until tests pass.
+When the target branch has changed, merge or rebase it into the issue branch according to the branch's collaboration needs. Resolve conflicts deliberately, especially in migrations and `CHANGELOG.md`. Verify that entries from **both** PRs remain. A clean conflict resolution is not proven safe until tests pass.
 
 ### 12.5 Emergency fixes and reverts
 
@@ -663,9 +664,10 @@ closed after the merge landed. This is the correct distinction between
 
 ## 14. Version policy and change history
 
-This section is the source of truth for the contributor-facing version policy
-and change history. The root [`VERSION`](VERSION) file remains the
-machine-readable product version used by the application.
+This section is the source of truth for the contributor-facing version policy,
+release names and change history. The root [`VERSION`](VERSION) file remains the
+machine-readable product version used by the application. The change history
+itself is [`CHANGELOG.md`](CHANGELOG.md).
 
 ### 14.1 Version format and source of truth
 
@@ -679,9 +681,21 @@ Examples: `2.1.0`, `2.2.0`, `2.2.1`.
 
 - **MAJOR:** An agreed major transition or compatibility break.
 - **MINOR:** A new non-major product line or agreed feature release.
-- **PATCH:** A release on an existing product line. It is **computed automatically**: the number of first-parent commits on the default branch since the line's first release (`vMAJOR.MINOR.0`). Every push to the default branch that passes CI is published as the next patch release ([releases → version numbers](docs/guides/releases.md#version-numbers)).
+- **PATCH:** A release on an existing product line. It is **computed automatically**: the number of first-parent commits on the integration line since the owner's first release of the line (`<owner>/vMAJOR.MINOR.0`). Every push to an integration line that passes CI is published as the next patch release ([releases → version numbers](docs/guides/releases.md#version-numbers)).
 
-The release owner determines `MAJOR` and `MINOR` based on compatibility and the planned release, through the root `VERSION` file. Do not edit the `PATCH` digit by hand: in the repository it stays the line's base (`0`), and the release workflow stamps the computed patch into each build. A version-line branch other than the default branch is a **development lineage**, not an automatically published product release.
+The release owner determines `MAJOR` and `MINOR` based on compatibility and the planned release, through the root `VERSION` file. Do not edit the `PATCH` digit by hand: in the repository it stays the line's base (`0`), and the release workflow stamps the computed patch into each build.
+
+**Release names** carry the integration line's owner:
+
+| Item | Format | Example |
+| --- | --- | --- |
+| Integration line (branch) | `<owner>/vMAJOR.MINOR` | `varun/v2.1` |
+| Release tag and title | `<owner>/vMAJOR.MINOR.PATCH` (title + ` (Beta)` while Beta) | `varun/v2.1.4` |
+| Release files | `impress-<owner>-<version>.zip`, `-firmware.zip`, `-docs.zip` | `impress-varun-2.1.4.zip` |
+| Container image tags | `<owner>-<version>` (fixed), `<owner>-<MAJOR.MINOR>` (newest of the line), `<owner>-beta`, `<owner>-latest` | `varun-2.1.4`, `varun-2.1` |
+| Gating milestone | `<owner>/vMAJOR.MINOR`: the line and every line built on it (git ancestry, any owner); `<owner>/vMAJOR.MINOR.PATCH`: one release. Created automatically on a line's first release | `varun/v2.1` |
+
+Owners with integration lines that publish releases: `varun`, `kush`, `aamna`, `encrypted` (`RELEASE_OWNERS` in the release workflow). The automation is the same for every owner: a push to `aamna/v2.4` that passes CI publishes `aamna/v2.4.<n>` without any other step ([releases → every owner's line](docs/guides/releases.md#every-owners-line)). Adding an owner is a governance change: update the workflow, `ci.yml` and this table in one PR. The application, firmware and `/health` report the plain `MAJOR.MINOR.PATCH`; the owner is part of the release name only. Branches with other names (issue branches such as `fix/v2.1-…`, variants such as `varun/v2.1-experimental`) are never released.
 
 ### 14.2 Verified repository state
 
@@ -691,7 +705,7 @@ The release owner determines `MAJOR` and `MINOR` based on compatibility and the 
 | Current v2.1 integration line | `varun/v2.1`, fetched and checked 2026-10-09 |
 | Version-line ancestry | The v2.1 changelog records `varun/v2.1` as developed from `v2` |
 | Firmware versions | `firmware/class_c6/version.txt`, `firmware/class_s3/version.txt`, and `firmware/student/version.txt` each contain `2.1.0`, checked 2026-10-09 |
-| Published GitHub releases and tags | [`v2.1.0`](https://github.com/Kush-Kelaiya22/imPress/releases/tag/v2.1.0): tag at `e4000f2` (the merge of #98), published 2026-10-10 by the release workflow as a pre-release (**Beta**: hardware test issues #83–#94 open). Tag, assets and checksums verified 2026-10-10 |
+| Published GitHub releases and tags | The [Releases page](https://github.com/Kush-Kelaiya22/imPress/releases): `varun/v2.1.0` (tag at `e4000f2`, the merge of #98), then automatic patch releases from `varun/v2.1.2`. Published by the release workflow as **Beta** while hardware test issues #83–#94 are open. Releases before #104 were named `v2.1.x` and were renamed (same commits and files). Verified 2026-10-10 |
 
 This is a dated repository snapshot, not a promise that these values remain
 current. Verify the root version, target branch, firmware version files, tags,
@@ -704,42 +718,52 @@ When `VERSION` changes (a new `MAJOR.MINOR` line), update **all three** `firmwar
 
 ### 14.4 Recording changes
 
-**Every merged PR needs a concise entry in Unreleased changes.** This includes fixes, features, test-only changes, documentation, refactors, configuration, build changes, and maintenance tasks. Add the entry in the PR before merge and preserve concurrent entries while resolving conflicts.
+[`CHANGELOG.md`](CHANGELOG.md) is the change history for people who install and use imPress. The release page of every release shows the entries that are new in it, so the wording matters.
 
-Write changes in past tense or as clear completed outcomes. Describe the effect and link the PR or issue. Do not record speculative features as delivered. A changelog entry does not prove that hardware verification occurred or that a release was published.
+**Rules:**
 
-#### Unreleased changes
+1. **Every PR adds at least one entry** under `## [Unreleased]`, in the PR itself. CI (*Changelog entry*) fails a pull request that does not change `CHANGELOG.md`.
+2. **Use exactly these categories,** as `###` headings in this order:
 
-Keep this section accurate as changes merge. Record a concise completed outcome
-and link to its issue or pull request. Do not describe a proposal as delivered.
-This section is a change history; it does not assert that a GitHub release or
-tag exists.
+   | Category | Use it for |
+   | --- | --- |
+   | **Added** | a new capability, page, setting, command, endpoint or file |
+   | **Changed** | different behaviour of something that exists (including renamed things and new defaults) |
+   | **Removed** | something that is no longer available |
+   | **Fixed** | a defect repaired: say what was wrong, from the user's side |
+   | **Security** | a protection added or a vulnerability fixed (no exploit details, see §16) |
 
-- **Release page ([#102](https://github.com/Kush-Kelaiya22/imPress/issues/102)):** The test-issue table and the badges are drawn by the workflow as static images (open, closed: completed, closed: not planned; *N of M closed*), so they never show *invalid* when shields.io is rate-limited; the footnote link reads clearly.
-- **Releases ([#100](https://github.com/Kush-Kelaiya22/imPress/issues/100)):** Every push to the default branch that passes CI is published as the next patch release (`PATCH` = first-parent commits since the line's `.0` tag, stamped into the app, image and firmware); release notes are one template per line with the merged pull requests; the release page's status section has badges, an alert and a table of the test issues with a live status badge each; the line milestone (`v2.1`) gates all of the line's releases.
-- **Documentation ([#96](https://github.com/Kush-Kelaiya22/imPress/issues/96) follow-up):** Recorded the published v2.1.0 release in the version history; the prebuilt-firmware steps use esptool 5 command names.
+   Add a category heading only when it has entries.
+3. **One `- ` bullet per change,** one or two sentences, past tense or present state, written for users: what they can now do, or what is different. Start with the thing that changed. Avoid internal names unless users type them (commands, settings, files).
+4. **End each entry with its link** in parentheses: the issue number linked to the issue (see the example below), or the PR if there is no issue.
+5. **Changes with nothing to tell users** (tests only, CI internals, typo fixes in comments) may skip the entry: a maintainer adds the label `no-changelog` to the PR. Documentation that users read *does* get an entry.
+6. **Never edit released sections** (`## [<owner>/vX.Y.Z]`) except to fix a broken link. A correction ships as a new entry.
+7. **Resolve conflicts by keeping both sides' entries.** Two PRs often add lines at the same place.
+8. **When a new line starts** (for example 2.2), the release owner renames `## [Unreleased]` to the last release of the old line (`## [varun/v2.1.N] - <date>`) and starts a new, empty `## [Unreleased]`.
 
-#### 2.1.0
+`scripts/release.py check-changelog` (run by CI) checks the structure: the `[Unreleased]` section, the five category names, and `- ` bullets.
 
-The changes in version 2.1.0, from `varun/v2.1`, published as [`v2.1.0`](https://github.com/Kush-Kelaiya22/imPress/releases/tag/v2.1.0) on 2026-10-10 ([releases](docs/guides/releases.md)). Later changes are published as automatic 2.1 patch releases from the [line template](docs/releases/v2.1.md).
+**Example entry:**
 
-- **Documentation ([PR #74](https://github.com/Kush-Kelaiya22/imPress/pull/74)):** Added the GitHub wiki link to the README and integrated the initial contribution guidance, version policy, and Code of Conduct.
-- **Governance ([PR #75](https://github.com/Kush-Kelaiya22/imPress/pull/75)):** Expanded the contributor handbook with issue triage, labels, branch ownership, review, testing, and release guidance; strengthened the Code of Conduct; consolidated version history and removed the separate version-policy document.
-- **Quiz and poll lifecycle ([#76](https://github.com/Kush-Kelaiya22/imPress/issues/76)):** A completed quiz or closed poll can no longer be restarted with its old answers or votes (`409`), a draft can no longer be stopped or ended, and repeating stop/end on a finished quiz or poll is a no-op.
-- **Documentation ([#95](https://github.com/Kush-Kelaiya22/imPress/issues/95)):** Linked the hardware validation matrix to the bench test plan (#83–#94) and added rows H20–H23; recorded #73, #76, #77 and #79 in the v2.1 changelog.
-- **Quiz timing ([#73](https://github.com/Kush-Kelaiya22/imPress/issues/73)):** Timed quizzes now advance (`per_question`) and end (`total`) on a durable server-side timer; the class page offers Next in every timing mode; late answers are refused on both answer paths; student modules show a countdown and ignore presses after it. Adds schema migration 8 (`quizzes.question_started_at`).
-- **Documentation ([#79](https://github.com/Kush-Kelaiya22/imPress/issues/79)):** Rewrote the README architecture diagram and two other flowcharts in portable mermaid syntax so they render on GitHub; fixed two state diagrams that failed on mermaid 10; listed migration steps 4–7 in the database migration guide; linked the governance entry to PR #75.
-- **Maintenance ([#77](https://github.com/Kush-Kelaiya22/imPress/issues/77)):** Removed the unused `services/participation.py`, whose question broadcast read a field that does not exist; the routers' broadcasts are the only implementation of the device frame contract.
-- **Releases and packaging ([#96](https://github.com/Kush-Kelaiya22/imPress/issues/96)):** Added the release workflow (a release per `VERSION`, tagged on the tested commit, with firmware, documentation and bundle zip files; Beta while test issues in its milestone are open, Stable otherwise, re-checked on issue changes), the backend container image on GHCR, and the 2.1.0 release notes.
+```markdown
+## [Unreleased]
+
+### Fixed
+
+- A timed quiz no longer skips a question when the teacher presses Next at the same moment the timer runs out. ([#123](https://github.com/Kush-Kelaiya22/imPress/issues/123))
+```
+
+The detailed per-issue engineering history, with branches, PRs and tests, stays in [`docs/reference/changelog-v2.1.md`](docs/reference/changelog-v2.1.md).
 
 #### Recorded product version and development history
 
-This table records repository history. It is **not** a list of published GitHub
-Releases. GitHub had no published releases or tags when checked on 2026-10-09.
+This table records the release lines. The individual patch releases are on the
+[Releases page](https://github.com/Kush-Kelaiya22/imPress/releases) and in
+[`CHANGELOG.md`](CHANGELOG.md).
 
 | Recorded version or line | Source / integration line | Notes |
 | --- | --- | --- |
-| `2.1.0` | `v2` → `varun/v2.1` | Published as [`v2.1.0`](https://github.com/Kush-Kelaiya22/imPress/releases/tag/v2.1.0) on 2026-10-10 from `e4000f2`; status **Beta** until the hardware test issues in milestone `v2.1.0` are closed. The [v2.1 changelog](docs/reference/changelog-v2.1.md) records the integration lineage. |
+| `2.1` | `v2` → `varun/v2.1` | First release `varun/v2.1.0` on 2026-10-10 from `e4000f2`, then automatic patch releases `varun/v2.1.N`. Status **Beta** until the hardware test issues in milestone `varun/v2.1` are closed. The [v2.1 changelog](docs/reference/changelog-v2.1.md) records the integration lineage. |
 | `2.0` | `v2` | Prior development line described in the [v2 changelog](docs/reference/changelog-v2.md) and README release history. No published release or tag was found at the check above. |
 | `1.x` | `main` | Historical line described in the README. This records project history, not a published release. |
 
@@ -761,7 +785,7 @@ Releases require an identified release owner and an agreed source integration br
 2. Verify that required issues and PRs are complete and merged into the release source.
 3. Review unresolved P0/P1 defects, security risks, migration risks, and outstanding device verification.
 4. Choose the approved `MAJOR.MINOR.PATCH` value; confirm it is not already used by a published release.
-5. Move relevant Unreleased entries into a dated release section, while leaving unfinished work in Unreleased.
+5. In `CHANGELOG.md`, rename `## [Unreleased]` to the old line's last release and start a new `## [Unreleased]` ([§14.4](#144-recording-changes), rule 8).
 6. Update root `VERSION` and **all three** firmware version files together.
 7. Update the README, release notes, upgrade and rollback steps, API,
    deployment, and firmware documentation. Verify and document database
@@ -781,13 +805,38 @@ Do not mark a release as published before its tag or release record actually exi
 
 ### 15.2 Automation
 
-The release workflow carries out steps 11–13 for every push to the default branch that passes CI, once the release line is signed off by its notes template (`docs/releases/vMAJOR.MINOR.md`, added through a reviewed pull request). It computes the patch number, stamps it into the build, tags that exact commit, builds and publishes the files, and marks the release **Beta** while open issues labelled `testing` are in the milestone `vMAJOR.MINOR`, **Stable** otherwise. It never moves a tag or replaces a published release. Steps 1–10 apply when a new line starts; verification of the first release of a line (step 13) stays a human task. Details: [releases](docs/guides/releases.md).
+The release workflow carries out steps 11–13 for every push to an integration line `<owner>/vMAJOR.MINOR` that passes CI, once the line is signed off by its page template (`docs/releases/vMAJOR.MINOR.md`, added through a reviewed pull request). It computes the patch number, stamps it into the build, tags that exact commit `<owner>/vMAJOR.MINOR.PATCH`, builds and publishes the files, and marks the release **Beta** while open issues labelled `testing` are in the milestone `<owner>/vMAJOR.MINOR`, **Stable** otherwise. It never moves a tag or replaces a published release. Steps 1–10 apply when a new line starts; verification of the first release of a line (step 13) stays a human task. Details: [releases](docs/guides/releases.md).
 
-### 15.3 Rollback and recovery
+### 15.3 Release page structure
+
+Every release page has the same structure, so readers find the same thing in the same place. The workflow writes section 1; sections 2–12 come from the line's template (`docs/releases/vMAJOR.MINOR.md`), and section 3 from `CHANGELOG.md`. A new line's template keeps these headings, in this order (`tests/test_release.py` checks them).
+
+| # | Section | Content | Keep it |
+|---|---|---|---|
+| 1 | *Status* (no heading) | release and *tests closed* badges; a **Warning** (Beta) or **Note** (Stable) box; the release test table: **No.**, **Issue**, **Assigned to**, **Status** | generated; do not edit |
+| 2 | *Summary* (no heading) | what imPress is, and which line and owner this release comes from | two sentences |
+| 3 | **What changed since** *previous* | the `CHANGELOG.md` entries new in this release as **Added / Changed / Removed / Fixed / Security**; the merged PRs folded below; a link to the full changelog | generated from the changelog |
+| 4 | **Downloads** | each file and what to use it for; the container image | one line per file |
+| 5 | **Requirements** | server, classroom hardware, student modules, flashing tools | a short list |
+| 6 | **Install and set up** | start the server (script or container), log in, prepare the devices | commands a reader can copy; link to the deployment guide for production |
+| 7 | **First use** | the five steps from an empty system to a first quiz | numbered steps |
+| 8 | **Check the installation** | `/health`, the smoke test, the gateway `ONLINE` | three checks |
+| 9 | **Setup problems** | the 5–7 most common setup problems and their fix | a short table; link to [troubleshooting → setup problems](docs/guides/troubleshooting.md#setup-problems) for the rest |
+| 10 | **Upgrade** | back up, install, start, update the boards | four steps; link to the full upgrade and recovery pages |
+| 11 | **Verify the downloads** | `sha256sum -c SHA256SUMS.txt` | one command |
+| 12 | **Help and documentation** | documentation, wiki, known issues, how to report a problem, license | one line of links |
+
+**Writing rules:**
+
+- **Structure:** the page is for installing and using imPress. Detail belongs in the linked documentation, not on the page.
+- **Language:** write in ASD-STE100 Simplified Technical English where practical: short sentences (at most 20 words for an instruction), active voice, one instruction per sentence, the same word for the same thing.
+- **Style:** no emoji. Use only the placeholders `{{tag}}`, `{{version}}`, `{{owner}}`, `{{branch}}`, `{{line}}`, `{{asset}}`, `{{previous}}` and `{{changes}}`; an unknown placeholder stops the release.
+
+### 15.4 Rollback and recovery
 
 For server releases, document backup, migration, compatibility, and recovery steps. For device releases, document image approval, signing keys, target-board checks, canary deployment, rollback prerequisites, and recovery from an interrupted update. Some firmware or bootloader/security changes may not be reversible over the air; explain that **before** deployment. Never promise OTA rollback without verifying the supported recovery path.
 
-### 15.4 Post-release follow-up
+### 15.5 Post-release follow-up
 
 Check deployment health, known issues, device enrollment, OTA status, and reported regressions. Link new regressions to the published release and earlier related issues. A patch release should use the approved version process rather than editing an existing published artifact without traceability.
 
@@ -833,7 +882,7 @@ Use GitHub issues and PRs for implementation decisions. Be respectful and direct
 - [ ] Regression and failure-path tests are included where relevant.
 - [ ] Full standard pre-push test was run; outcomes recorded.
 - [ ] Required additional suites and hardware status are stated.
-- [ ] Documentation and Unreleased changes are updated.
+- [ ] Documentation and `CHANGELOG.md` are updated.
 - [ ] No secrets, private data, or accidental build artifacts appear in the diff.
 
 ### Pull request ready to merge
@@ -991,7 +1040,7 @@ The following templates are copyable starting points. They are **recommended for
 [Documentation checks, tests, clean-install checks, and/or review.]
 
 ## Version history
-[Proposed Unreleased entry.]
+[Proposed `CHANGELOG.md` entry, with its category.]
 ````
 
 ### 19.4 Pull request template
@@ -1018,7 +1067,7 @@ Refs #<number>
 | Physical hardware | [Verified / Not run / N/A] | [board, steps, date, result] |
 
 ## Documentation and version history
-[Updated documents and Unreleased entry.]
+[Updated documents and the `CHANGELOG.md` entry (category and text).]
 
 ## Outstanding work
 [None or linked follow-up issues.]
