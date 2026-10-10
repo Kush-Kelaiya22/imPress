@@ -292,7 +292,7 @@ Mark **CI result** as the required status check in branch protection.
 
 ## What is *not* automatically tested
 
-The layers and their limits are in the [test strategy](../testing/TEST_STRATEGY.md); bench checks and their status are in [hardware validation](../testing/HARDWARE_VALIDATION.md).
+The layers and their limits are in the [test strategy](../testing/TEST_STRATEGY.md); bench checks and their status are in [hardware validation](../testing/HARDWARE_VALIDATION.md). The bench test plan is tracked in [#94](https://github.com/Kush-Kelaiya22/imPress/issues/94): one issue per area, with numbered test cases, expected results and edge cases.
 
 - On-device behaviour (radio, SPI timing, real flash): needs a hardware soak (see [troubleshooting](troubleshooting.md)).
 - The React dev UI beyond "it builds". The vanilla SPA is covered by `ui_tests/` for the flows listed there.

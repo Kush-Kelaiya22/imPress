@@ -97,7 +97,7 @@ Use this to run the hub on a cheaper and more common ESP32-S3 with **8 MB quad f
 |---|---|---|
 | The build completes on ESP-IDF v6.1 | yes; image 1,022,400 B | measured (2026-10-08) |
 | The image and bootloader headers declare an 8 MB size and quad-capable mode | yes. The header says DIO, as ESP-IDF writes for QIO; the bootloader switches the flash to quad itself. | measured |
-| It boots and runs on an 8 MB quad-flash S3 | **not verified** | pending hardware |
+| It boots and runs on an 8 MB quad-flash S3 | **not verified**; test plan in [#91](https://github.com/Kush-Kelaiya22/imPress/issues/91) | pending hardware |
 
 Two side effects of this profile:
 - **Slot size:** each slot shrinks to 3,968 KB. The backend's image check (`SLOT_BYTES["s3"]` in `backend/app/services/firmware_image.py`) still allows 4,096 KB, so an image between 3,968 and 4,096 KB would pass upload and then fail `esp_ota_begin` on the device. Today's image is 1 MB.
@@ -117,7 +117,7 @@ Static RAM is not the limit. Radio airtime and the hub's 64-message forwarding q
 
 ## Runtime figures (pending hardware)
 
-None of these have been measured. Record them here with the board, firmware version and date when they are.
+None of these have been measured. Record them here with the board, firmware version and date when they are. The measurements are planned in [#87](https://github.com/Kush-Kelaiya22/imPress/issues/87) (heap, latency, burst), [#93](https://github.com/Kush-Kelaiya22/imPress/issues/93) (range, power) and [#88](https://github.com/Kush-Kelaiya22/imPress/issues/88)/[#89](https://github.com/Kush-Kelaiya22/imPress/issues/89) (OTA duration).
 
 | Figure | How to measure | Status |
 |---|---|---|
