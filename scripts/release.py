@@ -11,7 +11,8 @@ always gets the same number.
 Status. A release is Beta while an open issue labelled `testing` is in the
 line milestone vMAJOR.MINOR (or in an exact vMAJOR.MINOR.PATCH milestone), and
 Stable otherwise. The release page starts with a status section: badges, a
-short alert and a table of the test issues, each with a live state badge.
+short alert and a table of the test issues with their state, all redrawn by
+the workflow on every issue change.
 
     scripts/release.py plan                 # JSON for the workflow: version, tag, previous tag, notes
     scripts/release.py notes 2.1.4 [changes.md]   # the release text for a version (stdout)
@@ -126,21 +127,32 @@ def test_area(title: str) -> str:
     return text[:1].upper() + text[1:]
 
 
-def milestone_numbers(issues: list[dict]) -> list[int]:
-    return sorted({i["milestone"] for i in issues if i.get("milestone")})
+def _badge_text(text: str) -> str:
+    """Escape text for a shields.io static badge path segment."""
+    return text.replace("-", "--").replace("_", "__").replace(" ", "%20")
+
+
+def state_badge(issue: dict) -> str:
+    """A static badge for the issue's state, drawn by the workflow (never fails to load)."""
+    if issue.get("state", "open") == "open":
+        text, color = "open", "2da44e"
+    elif issue.get("state_reason") == "not_planned":
+        text, color = "closed: not planned", "6e7781"
+    else:
+        text, color = "closed: completed", "8250df"
+    return (f'<img alt="{text}" src="{SHIELDS}/badge/{_badge_text(text)}-{color}?style=flat-square">')
 
 
 def status_block(version: str, status: str, issues: list[dict], repo: str) -> str:
     """Badges, a short alert and the test-issue table, between the markers."""
-    owner, name = repo.split("/")
     open_n = sum(1 for i in issues if i.get("state", "open") == "open")
     total = len(issues)
     query = f"https://github.com/{repo}/issues?q=label%3A{GATE_LABEL}+milestone%3Av{line_of(version)}"
+    progress = _badge_text(f"{total - open_n} of {total}")
     badges = [f'<img alt="Release status: {status.title()}" src="{BADGE[status]}">']
-    for number in milestone_numbers(issues):
-        badges.append(f'<a href="https://github.com/{repo}/milestone/{number}"><img alt="Test issues closed" '
-                      f'src="{SHIELDS}/github/milestones/progress-percent/{owner}/{name}/{number}'
-                      f'?style=for-the-badge&label=tests%20closed"></a>')
+    if total:
+        badges.append(f'<a href="{query}"><img alt="Test issues closed: {total - open_n} of {total}" '
+                      f'src="{SHIELDS}/badge/tests%20closed-{progress}-0969da?style=for-the-badge"></a>')
     if status == "beta":
         alert = ["> [!WARNING]",
                  f"> **Beta.** The software tests pass. {open_n} of {total} release test "
@@ -154,18 +166,16 @@ def status_block(version: str, status: str, issues: list[dict], repo: str) -> st
     lines = [START, "", "<p>", *badges, "</p>", "", *alert, ""]
     if issues:
         lines += ["### Release tests", "",
-                  "| Issue | Test area | Owner | Live status |",
+                  "| Issue | Test area | Owner | Status |",
                   "|:--|:--|:--|:--|"]
         for i in sorted(issues, key=lambda i: (i.get("state", "open") != "open", i["number"])):
             owners = ", ".join(f"@{a}" for a in i.get("assignees", [])) or "unassigned"
-            live = (f'<img alt="{i.get("state", "open")}" '
-                    f'src="{SHIELDS}/github/issues/detail/state/{owner}/{name}/{i["number"]}?style=flat-square&label=">')
             lines.append(f"| [#{i['number']}](https://github.com/{repo}/issues/{i['number']}) "
-                         f"| {test_area(i['title'])} | {owners} | {live} |")
+                         f"| {test_area(i['title'])} | {owners} | {state_badge(i)} |")
         lines += ["",
-                  f"<sub>Live status comes from GitHub on every page view. The release status above is updated "
-                  f"by the release workflow when a test issue changes. All test issues: [label `{GATE_LABEL}`, "
-                  f"milestone v{line_of(version)}]({query}).</sub>", ""]
+                  "<sub>The status of each issue, the badges and the release status are updated automatically "
+                  "within about a minute of any change to a test issue, and checked again every day. "
+                  f"<a href=\"{query}\">All test issues for v{line_of(version)}</a></sub>", ""]
     lines.append(END)
     return "\n".join(lines)
 
@@ -208,7 +218,7 @@ def test_issues(repo: str, version: str, milestones: list[dict] | None = None) -
             for i in gh_json(f"repos/{repo}/issues?milestone={m['number']}&state=all&labels={GATE_LABEL}"):
                 if "pull_request" not in i:
                     found[i["number"]] = {"number": i["number"], "title": i["title"], "state": i["state"],
-                                          "milestone": m["number"],
+                                          "state_reason": i.get("state_reason"), "milestone": m["number"],
                                           "assignees": [a["login"] for a in i.get("assignees", [])]}
     return [found[n] for n in sorted(found)]
 

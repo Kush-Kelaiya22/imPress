@@ -99,9 +99,11 @@ Each release page has a **status section** at the top, between `<!-- release-sta
 
 | Part | Content | Updated |
 |---|---|---|
-| Badges | the release status (Beta / Stable), and the milestone's percentage of closed test issues | the status by the workflow; the percentage **live** by shields.io from GitHub |
+| Badges | the release status (Beta / Stable), and how many test issues are closed (for example *3 of 12*) | by the workflow |
 | Alert | a warning box (Beta: how many test issues are open) or a tip box (Stable) | by the workflow |
-| Release tests | a table of every test issue (open ones first): issue, test area, owner, and a **live status** badge (open or closed) | rows by the workflow; each status badge **live** on every page view (shields.io caches it for a few minutes) |
+| Release tests | a table of every test issue (open ones first): issue, test area, owner, and a status badge: *open*, *closed: completed* or *closed: not planned* | by the workflow |
+
+Everything in the status section is redrawn **within about a minute of any change** to a test issue (the `issues` trigger), and checked again daily. The badges are static images drawn from the workflow's own data, so they always load. Badges that query GitHub from shields.io on each page view were tried first: they sometimes showed *invalid* when shields.io hit GitHub's rate limit.
 
 Below the status section comes the line's template: a summary, **Changes since** the previous release (the merged pull requests), downloads, set-up, tests, deployment, upgrades, known limits and checksums. The workflow replaces only the status section. Edits to the rest of the release text are kept.
 
@@ -213,5 +215,5 @@ Limits: the hub's server address is at most 63 characters and its key at most 64
 | No release after a merge | Check that CI passed on the merge commit and that the line's notes, `docs/releases/vMAJOR.MINOR.md`, are on `varun/v2.1`. The *Plan* step summary shows the computed version and `create`. |
 | *Publish release* failed | The tag may not exist yet. Fix the cause and run the workflow manually. If the tag was created but the release wasn't, delete the tag only after checking that it points to the intended commit, then run the workflow again. |
 | The status did not change | The issue must be in milestone `vMAJOR.MINOR` or `vMAJOR.MINOR.PATCH` (the exact title) and labelled `testing`. Run the workflow manually to force a check. |
-| A live status badge is out of date | shields.io caches badges for a few minutes. Reload the page later; the table rows themselves are correct. |
+| A status badge is out of date | The workflow redraws the table on every issue change. Check the latest *Release* run under Actions, or run the workflow manually. |
 | `docker pull` asks for credentials | The package is private; see [the backend container image](#the-backend-container-image). |

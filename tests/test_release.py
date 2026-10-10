@@ -24,7 +24,7 @@ REPO = "Kush-Kelaiya22/imPress"
 ISSUES = [{"number": 83, "title": "test(hardware): timed quizzes on real modules", "state": "open",
            "milestone": 1, "assignees": ["Kush-Kelaiya22"]},
           {"number": 84, "title": "test(hardware): bench bring-up", "state": "open", "milestone": 1, "assignees": []}]
-CLOSED = [dict(i, state="closed") for i in ISSUES]
+CLOSED = [dict(i, state="closed", state_reason="completed") for i in ISSUES]
 
 
 # ── Version (#100) ──────────────────────────────────────────────────────────
@@ -118,16 +118,17 @@ def test_test_area_drops_the_conventional_prefix():
     assert release.test_area("timed quizzes") == "Timed quizzes"
 
 
-def test_beta_block_has_badges_alert_and_a_table_with_live_status():
+def test_beta_block_has_badges_alert_and_a_table_with_status():
     block = release.status_block("2.1.0", "beta", ISSUES, REPO)
     assert block.startswith(release.START) and block.endswith(release.END)
-    assert release.BADGE["beta"] in block and "milestones/progress-percent/Kush-Kelaiya22/imPress/1" in block
+    assert release.BADGE["beta"] in block and "badge/tests%20closed-0%20of%202-0969da" in block
     assert "> [!WARNING]" in block and "2 of 2 release test issues are still open" in block
-    assert "| Issue | Test area | Owner | Live status |" in block
+    assert "| Issue | Test area | Owner | Status |" in block
     assert ("| [#83](https://github.com/Kush-Kelaiya22/imPress/issues/83) | Timed quizzes on real modules "
             "| @Kush-Kelaiya22 |") in block
     assert "| unassigned |" in block
-    assert "github/issues/detail/state/Kush-Kelaiya22/imPress/84" in block
+    assert block.count('alt="open" src="https://img.shields.io/badge/open-2da44e') == 2
+    assert "img.shields.io/github/" not in block          # static badges only: they never fail to load
 
 
 def test_one_open_issue_reads_correctly_and_open_rows_come_first():
@@ -141,7 +142,7 @@ def test_stable_block_lists_closed_issues_and_says_it_can_go_back():
     block = release.status_block("2.1.0", "stable", CLOSED, REPO)
     assert release.BADGE["stable"] in block and "> [!TIP]" in block
     assert "All 2 release test issues are closed" in block and "changes back to Beta" in block
-    assert 'alt="closed"' in block
+    assert 'alt="closed: completed"' in block and "badge/tests%20closed-2%20of%202-0969da" in block
 
 
 def test_status_block_is_replaced_in_place_and_idempotent():
@@ -152,6 +153,14 @@ def test_status_block_is_replaced_in_place_and_idempotent():
     stable = release.apply_status(beta, release.status_block("2.1.1", "stable", CLOSED, REPO))
     assert stable.count(release.START) == 1 and "[!TIP]" in stable and "[!WARNING]" not in stable
     assert stable.endswith(notes)
+
+
+def test_state_badges_distinguish_open_completed_and_not_planned():
+    assert "badge/open-2da44e" in release.state_badge({"state": "open"})
+    assert "badge/closed:%20completed-8250df" in release.state_badge({"state": "closed", "state_reason": "completed"})
+    assert "badge/closed:%20not%20planned-6e7781" in release.state_badge({"state": "closed",
+                                                                       "state_reason": "not_planned"})
+    assert release._badge_text("a-b c_d") == "a--b%20c__d"
 
 
 def test_newest_compares_numerically():
@@ -183,7 +192,7 @@ class FakeGitHub:
             assert "state=all" in path and "labels=testing" in path
             number = int(re.search(r"milestone=(\d+)", path).group(1))
             return json.dumps([[{"number": i["number"], "title": i["title"], "state": i["state"],
-                                 "assignees": [{"login": a} for a in i["assignees"]]}
+                                 "state_reason": i.get("state_reason"), "assignees": [{"login": a} for a in i["assignees"]]}
                                 for i in self.issues if i["milestone"] == number]])
         raise AssertionError(path)
 
