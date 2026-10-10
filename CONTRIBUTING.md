@@ -717,6 +717,7 @@ tag exists.
 
 - **Documentation ([PR #74](https://github.com/Kush-Kelaiya22/imPress/pull/74)):** Added the GitHub wiki link to the README and integrated the initial contribution guidance, version policy, and Code of Conduct.
 - **Governance (this PR):** Expanded the contributor handbook with issue triage, labels, branch ownership, review, testing, and release guidance; strengthened the Code of Conduct; consolidated version history and removed the separate version-policy document.
+- **Quiz and poll lifecycle ([#76](https://github.com/Kush-Kelaiya22/imPress/issues/76)):** A completed quiz or closed poll can no longer be restarted with its old answers or votes (`409`), a draft can no longer be stopped or ended, and repeating stop/end on a finished quiz or poll is a no-op.
 
 #### Recorded product version and development history
 

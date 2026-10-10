@@ -68,6 +68,37 @@ def test_stop_completes_quiz(client, env):
     assert client.post(f"/api/quizzes/{qid}/stop", headers=env["teacher"]).json()["status"] == "completed"
 
 
+def test_completed_quiz_cannot_be_restarted(client, env):
+    """#76: its answers are still stored, so devices would be refused on Q1."""
+    qid = _quiz(client, env, quiz_mode="impromptu")["id"]
+    client.post(f"/api/quizzes/{qid}/stop", headers=env["teacher"])
+    r = client.post(f"/api/quizzes/{qid}/start", headers=env["teacher"])
+    assert r.status_code == 409 and "create a new quiz" in r.json()["detail"]
+    assert client.get(f"/api/quizzes/{qid}", headers=env["teacher"]).json()["status"] == "completed"
+
+
+def test_draft_quiz_cannot_be_stopped(client, env):
+    qid = _quiz(client, env)["id"]
+    assert client.post(f"/api/quizzes/{qid}/stop", headers=env["teacher"]).status_code == 409
+    assert client.get(f"/api/quizzes/{qid}", headers=env["teacher"]).json()["status"] == "draft"
+
+
+def test_stopping_a_finished_quiz_again_changes_nothing(client, db, env):
+    from app.models import ActivityLog, Quiz
+    from sqlalchemy import func, select
+    qid = _quiz(client, env, quiz_mode="impromptu")["id"]
+    first = client.post(f"/api/quizzes/{qid}/stop", headers=env["teacher"]).json()
+    again = client.post(f"/api/quizzes/{qid}/stop", headers=env["teacher"])
+    assert again.status_code == 200 and again.json()["status"] == "completed"
+
+    async def state(s):
+        ended = (await s.get(Quiz, qid)).ended_at
+        stops = await s.scalar(select(func.count()).select_from(ActivityLog).where(ActivityLog.action == "quiz.stop"))
+        return ended, stops
+    ended, stops = db(state)
+    assert stops == 1 and ended is not None and first["status"] == "completed"
+
+
 def test_other_teacher_cannot_run_quiz(client, env):
     qid = _quiz(client, env)["id"]
     for action in ("start", "next", "stop"):
@@ -141,6 +172,19 @@ def test_poll_results_and_ended_vote_rejected(client, env):
     client.post(f"/api/polls/{pid}/end", headers=env["teacher"])
     late = client.post(f"/api/polls/{pid}/vote", headers=DEVICE, json={"device_id": devs[0], "selected_option": 1})
     assert late.status_code == 400
+
+
+def test_closed_poll_cannot_be_restarted_and_draft_cannot_be_ended(client, env):
+    """#76: a restarted poll would keep its old votes."""
+    live = _poll(client, env, mode="live")["id"]
+    client.post(f"/api/polls/{live}/end", headers=env["teacher"])
+    r = client.post(f"/api/polls/{live}/start", headers=env["teacher"])
+    assert r.status_code == 409 and "create a new poll" in r.json()["detail"]
+    again = client.post(f"/api/polls/{live}/end", headers=env["teacher"])
+    assert again.status_code == 200 and again.json()["status"] == "closed"     # idempotent
+    draft = _poll(client, env)["id"]
+    assert client.post(f"/api/polls/{draft}/end", headers=env["teacher"]).status_code == 409
+    assert client.get(f"/api/polls/{draft}", headers=env["teacher"]).json()["status"] == "draft"
 
 
 def test_other_teacher_cannot_run_poll(client, env):

@@ -230,9 +230,9 @@ stateDiagram-v2
 | `POST /api/quizzes/` | class access | `{class_session_id, title, questions: [{question_text, options (2-4), correct_option}], quiz_mode: planned|impromptu, timing_mode: per_question|total|manual, question_time_limit, total_time_limit}`; ≥ 1 question; `correct_option` must be `< len(options)` (422, #22). At most **4 options** (student modules have four buttons, #49). The response has `warnings`: text longer than a module can show (question 139, option 14 bytes of UTF-8) is accepted but truncated on the device. |
 | `GET /api/quizzes/class/{class_id}` | class access | newest first |
 | `GET /api/quizzes/{id}` | class access (#20) | `QuizResponse {id, class_session_id, title, status, quiz_mode, timing_mode, question_time_limit, total_time_limit, current_question, is_live, question_count, created_at, started_at}` |
-| `POST /api/quizzes/{id}/start` | class access | already active → 400; broadcasts `quiz_question` (q 0) |
+| `POST /api/quizzes/{id}/start` | class access | draft only: already active → 400, completed → 409 (its answers are kept; create a new quiz, #76); broadcasts `quiz_question` (q 0) |
 | `POST /api/quizzes/{id}/next` | class access | not active → 400; broadcasts the next `quiz_question`, or completes |
-| `POST /api/quizzes/{id}/stop` | class access | → completed; broadcasts `quiz_end` |
+| `POST /api/quizzes/{id}/stop` | class access | active → completed, broadcasts `quiz_end`; draft → 409; already completed → returns it unchanged, no broadcast (#76) |
 | `GET /api/quizzes/{id}/results` | class access (#20) | below |
 
 ```json
@@ -288,8 +288,8 @@ stateDiagram-v2
 | `POST /api/polls/` | class access | `{class_session_id, title (1-256), options (2-4), poll_mode: live|planned}`; `live` → active immediately + `poll_start` broadcast. `warnings` as for quizzes (poll title 63 bytes, option 14). |
 | `GET /api/polls/class/{class_id}` | class access | |
 | `GET /api/polls/{id}` | class access (#20) | `PollResponse {id, class_session_id, title, options, poll_mode, status, is_live, total_votes, created_at}` |
-| `POST /api/polls/{id}/start` | class access | draft → active; already active → 400; broadcasts `poll_start` |
-| `POST /api/polls/{id}/end` | class access | → closed; broadcasts `poll_end` with `option_counts` |
+| `POST /api/polls/{id}/start` | class access | draft → active; already active → 400, closed → 409 (its votes are kept, #76); broadcasts `poll_start` |
+| `POST /api/polls/{id}/end` | class access | active → closed, broadcasts `poll_end` with `option_counts`; draft → 409; already closed → returns it unchanged, no broadcast (#76) |
 | `GET /api/polls/{id}/results` | class access (#20) | `{poll_id, title, options, poll_mode, status, total_votes, option_counts}` |
 
 ---
