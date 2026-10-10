@@ -7,6 +7,7 @@ otherwise; the workflow publishes only after CI passed on the default branch.
 
 import json
 import re
+import subprocess
 import sys
 import unicodedata
 
@@ -20,15 +21,91 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import release  # noqa: E402
 
 REPO = "Kush-Kelaiya22/imPress"
-ISSUES = [{"number": 83, "title": "timed quizzes", "milestone": 1},
-          {"number": 84, "title": "bench bring-up", "milestone": 1}]
+ISSUES = [{"number": 83, "title": "test(hardware): timed quizzes on real modules", "state": "open",
+           "milestone": 1, "assignees": ["Kush-Kelaiya22"]},
+          {"number": 84, "title": "test(hardware): bench bring-up", "state": "open", "milestone": 1, "assignees": []}]
+CLOSED = [dict(i, state="closed") for i in ISSUES]
+
+
+# ── Version (#100) ──────────────────────────────────────────────────────────
+
+def _repo(tmp_path, version="2.1.0"):
+    def g(*a):
+        subprocess.run(["git", *a], cwd=tmp_path, check=True, capture_output=True)
+    g("init", "-q", "-b", "main")
+    g("config", "user.email", "t@example.edu")
+    g("config", "user.name", "t")
+    (tmp_path / "VERSION").write_text(version + "\n")
+    g("add", "VERSION")
+    g("commit", "-qm", "base")
+    return g
+
+
+def test_first_release_of_a_line_is_patch_zero(tmp_path):
+    _repo(tmp_path)
+    assert release.release_version(tmp_path) == "2.1.0"
+
+
+def test_patch_counts_first_parent_commits_since_the_line_tag(tmp_path):
+    g = _repo(tmp_path)
+    g("tag", "v2.1.0")
+    assert release.release_version(tmp_path) == "2.1.0"           # the tagged commit keeps its number
+    for n in range(3):
+        g("commit", "-q", "--allow-empty", "-m", f"push {n}")
+    assert release.release_version(tmp_path) == "2.1.3"
+    # a merged feature branch with two commits counts once (one push to the default branch)
+    g("switch", "-q", "-c", "feature")
+    g("commit", "-q", "--allow-empty", "-m", "a")
+    g("commit", "-q", "--allow-empty", "-m", "b")
+    g("switch", "-q", "main")
+    g("merge", "-q", "--no-ff", "-m", "merge", "feature")
+    assert release.release_version(tmp_path) == "2.1.4"
+    assert release.previous_tag("2.1.4", tmp_path) == "v2.1.0"
+
+
+def test_a_new_line_starts_again_at_zero(tmp_path):
+    g = _repo(tmp_path)
+    g("tag", "v2.1.0")
+    g("commit", "-q", "--allow-empty", "-m", "more")
+    (tmp_path / "VERSION").write_text("2.2.0\n")
+    g("commit", "-qam", "2.2")
+    assert release.release_version(tmp_path) == "2.2.0"
+    assert release.previous_tag("2.2.0", tmp_path) == "v2.1.0"
+
+
+def test_version_file_is_semver_and_its_line_has_release_notes():
+    version = release.read_version()
+    assert re.fullmatch(r"\d+\.\d+\.\d+", version)
+    assert release.notes_path(version).exists(), "add docs/releases/v<MAJOR.MINOR>.md for a new line"
+
+
+# ── Release notes template ──────────────────────────────────────────────────
+
+def test_notes_template_renders_every_placeholder():
+    template = release.notes_path(release.read_version()).read_text()
+    text = release.render_notes(template, "2.1.7", "v2.1.6", "* fix(x): y by @a in #1")
+    assert "{{" not in text and "imPress 2.1.7" in text and "impress-2.1.7.zip" in text
+    assert "## Changes since v2.1.6" in text and "* fix(x): y by @a in #1" in text
+    assert "impress-backend:2.1.7" in text and "/blob/v2.1.7/" in text
+    assert "2.1.0" not in text.replace("v2.1.0", "")          # no version left hard-coded
+    assert "No pull requests were merged" in release.render_notes(template, "2.1.7", "v2.1.6")
+
+
+def test_unknown_placeholder_is_refused():
+    with pytest.raises(ValueError):
+        release.render_notes("{{version}} {{oops}}", "2.1.1", None)
+
+
+def test_generated_heading_is_removed():
+    assert release.clean_changes("## What's Changed\n* a in #1\n\n**Full Changelog**: x") == \
+        "* a in #1\n\n**Full Changelog**: x"
 
 
 # ── Status rules ────────────────────────────────────────────────────────────
 
 def test_open_test_issues_make_a_release_beta():
     assert release.status_of(ISSUES) == "beta"
-    assert release.status_of([]) == "stable"
+    assert release.status_of(CLOSED) == "stable" and release.status_of([]) == "stable"
 
 
 def test_title_says_beta_only_while_beta():
@@ -36,45 +113,50 @@ def test_title_says_beta_only_while_beta():
     assert release.title_for("2.1.0", "stable") == "imPress 2.1.0"
 
 
-def test_beta_block_has_badge_and_lists_open_issues():
+def test_test_area_drops_the_conventional_prefix():
+    assert release.test_area("test(hardware): bench bring-up: flash") == "Bench bring-up: flash"
+    assert release.test_area("timed quizzes") == "Timed quizzes"
+
+
+def test_beta_block_has_badges_alert_and_a_table_with_live_status():
     block = release.status_block("2.1.0", "beta", ISSUES, REPO)
     assert block.startswith(release.START) and block.endswith(release.END)
-    assert release.BADGE["beta"] in block and 'alt="Status: Beta"' in block
-    assert "2 test issues are open" in block
-    for i in ISSUES:
-        assert f"[#{i['number']}](https://github.com/{REPO}/issues/{i['number']}) {i['title']}" in block
-    assert f"https://github.com/{REPO}/milestone/1" in block
+    assert release.BADGE["beta"] in block and "milestones/progress-percent/Kush-Kelaiya22/imPress/1" in block
+    assert "> [!WARNING]" in block and "2 of 2 release test issues are still open" in block
+    assert "| Issue | Test area | Owner | Live status |" in block
+    assert ("| [#83](https://github.com/Kush-Kelaiya22/imPress/issues/83) | Timed quizzes on real modules "
+            "| @Kush-Kelaiya22 |") in block
+    assert "| unassigned |" in block
+    assert "github/issues/detail/state/Kush-Kelaiya22/imPress/84" in block
 
 
-def test_one_open_issue_reads_correctly():
-    assert "1 test issue is open" in release.status_block("2.1.0", "beta", ISSUES[:1], REPO)
+def test_one_open_issue_reads_correctly_and_open_rows_come_first():
+    issues = [CLOSED[0], ISSUES[1]]
+    block = release.status_block("2.1.0", "beta", issues, REPO)
+    assert "1 of 2 release test issue is still open" in block
+    assert block.index("issues/84)") < block.index("issues/83)")
 
 
-def test_stable_block_says_it_can_go_back_to_beta():
-    block = release.status_block("2.1.0", "stable", [], REPO)
-    assert release.BADGE["stable"] in block and "Status: Stable" in block
-    assert "changes back to Beta" in block and "milestone%3Av2.1.0" in block
+def test_stable_block_lists_closed_issues_and_says_it_can_go_back():
+    block = release.status_block("2.1.0", "stable", CLOSED, REPO)
+    assert release.BADGE["stable"] in block and "> [!TIP]" in block
+    assert "All 2 release test issues are closed" in block and "changes back to Beta" in block
+    assert 'alt="closed"' in block
 
 
 def test_status_block_is_replaced_in_place_and_idempotent():
-    notes = "# imPress 2.1.0\n\nBody text.\n"
-    beta = release.apply_status(notes, release.status_block("2.1.0", "beta", ISSUES, REPO))
+    notes = "## Changes since v2.1.0\n\nBody text.\n"
+    beta = release.apply_status(notes, release.status_block("2.1.1", "beta", ISSUES, REPO))
     assert beta.startswith(release.START) and beta.endswith(notes)
-    assert release.apply_status(beta, release.status_block("2.1.0", "beta", ISSUES, REPO)) == beta
-    stable = release.apply_status(beta, release.status_block("2.1.0", "stable", [], REPO))
-    assert stable.count(release.START) == 1 and "Status: Stable" in stable and "Status: Beta" not in stable
+    assert release.apply_status(beta, release.status_block("2.1.1", "beta", ISSUES, REPO)) == beta
+    stable = release.apply_status(beta, release.status_block("2.1.1", "stable", CLOSED, REPO))
+    assert stable.count(release.START) == 1 and "[!TIP]" in stable and "[!WARNING]" not in stable
     assert stable.endswith(notes)
 
 
 def test_newest_compares_numerically():
     assert release.newest(["2.9.0", "2.10.0", "2.1.0"]) == "2.10.0"
     assert release.newest(["2.1.0-rc1", "bad"]) is None and release.newest([]) is None
-
-
-def test_version_file_is_semver_and_its_release_notes_exist():
-    version = release.read_version()
-    assert re.fullmatch(r"\d+\.\d+\.\d+", version)
-    assert release.notes_path(version).exists(), "add docs/releases/v<VERSION>.md before bumping VERSION"
 
 
 # ── sync against a fake GitHub ──────────────────────────────────────────────
@@ -98,35 +180,49 @@ class FakeGitHub:
         if "/milestones" in path:
             return json.dumps([self.milestones])
         if "/issues?" in path:
+            assert "state=all" in path and "labels=testing" in path
             number = int(re.search(r"milestone=(\d+)", path).group(1))
-            return json.dumps([[i for i in self.issues if i["milestone"] == number]])
+            return json.dumps([[{"number": i["number"], "title": i["title"], "state": i["state"],
+                                 "assignees": [{"login": a} for a in i["assignees"]]}
+                                for i in self.issues if i["milestone"] == number]])
         raise AssertionError(path)
 
 
-def _release(tag, prerelease, body="Notes."):
-    return {"id": 1, "tag_name": tag, "name": f"imPress {tag[1:]}", "body": body,
+def _release(tag, prerelease, body="Notes.", rid=1):
+    return {"id": rid, "tag_name": tag, "name": f"imPress {tag[1:]}", "body": body,
             "prerelease": prerelease, "draft": False}
 
 
-def test_sync_marks_beta_while_test_issues_are_open(monkeypatch):
-    fake = FakeGitHub([_release("v2.1.0", False)], [{"number": 1, "title": "v2.1.0"}],
-                      [{"number": 83, "title": "t", "milestone": 1}])
+LINE = [{"number": 1, "title": "v2.1"}]
+
+
+def test_sync_marks_every_release_of_the_line_beta_while_issues_are_open(monkeypatch):
+    fake = FakeGitHub([_release("v2.1.0", False), _release("v2.1.3", False, rid=2)], LINE, ISSUES)
     monkeypatch.setattr(release, "gh", fake.gh)
-    assert release.sync(REPO) == [{"tag": "v2.1.0", "status": "beta"}]
-    (_, update), = fake.patches
-    assert update["prerelease"] is True and update["make_latest"] == "false"
-    assert update["name"] == "imPress 2.1.0 (Beta)" and "Status: Beta" in update["body"]
+    assert {c["tag"] for c in release.sync(REPO)} == {"v2.1.0", "v2.1.3"}
+    for _, update in fake.patches:
+        assert update["prerelease"] is True and update["make_latest"] == "false"
+        assert "(Beta)" in update["name"] and "[!WARNING]" in update["body"]
 
 
 def test_sync_promotes_to_stable_when_the_last_issue_closes(monkeypatch):
-    beta_body = release.apply_status("Notes.", release.status_block("2.1.0", "beta", ISSUES, REPO))
-    fake = FakeGitHub([_release("v2.1.0", True, beta_body)], [{"number": 1, "title": "v2.1.0"}], [])
+    beta_body = release.apply_status("Notes.", release.status_block("2.1.3", "beta", ISSUES, REPO))
+    fake = FakeGitHub([_release("v2.1.0", True, rid=1), _release("v2.1.3", True, beta_body, rid=2)], LINE, CLOSED)
     monkeypatch.setattr(release, "gh", fake.gh)
-    assert release.sync(REPO) == [{"tag": "v2.1.0", "status": "stable"}]
-    (_, update), = fake.patches
-    assert update["prerelease"] is False and update["make_latest"] == "true"
-    assert update["name"] == "imPress 2.1.0" and "Status: Stable" in update["body"]
-    assert update["body"].endswith("Notes.")
+    release.sync(REPO)
+    updates = {path.rsplit("/", 1)[1]: u for path, u in fake.patches}
+    assert updates["2"]["prerelease"] is False and updates["2"]["make_latest"] == "true"      # newest stable
+    assert updates["1"]["prerelease"] is False and updates["1"]["make_latest"] == "false"
+    assert updates["2"]["name"] == "imPress 2.1.3" and "[!TIP]" in updates["2"]["body"]
+    assert updates["2"]["body"].endswith("Notes.")
+
+
+def test_an_exact_patch_milestone_also_gates(monkeypatch):
+    issue = dict(ISSUES[0], milestone=7)
+    fake = FakeGitHub([_release("v2.1.3", False)], [{"number": 7, "title": "v2.1.3"}], [issue])
+    monkeypatch.setattr(release, "gh", fake.gh)
+    release.sync(REPO)
+    assert fake.patches[0][1]["prerelease"] is True
 
 
 def test_sync_without_a_milestone_is_stable(monkeypatch):
@@ -137,9 +233,9 @@ def test_sync_without_a_milestone_is_stable(monkeypatch):
 
 
 def test_sync_changes_nothing_when_already_correct(monkeypatch):
-    body = release.apply_status("Notes.", release.status_block("2.1.0", "stable", [], REPO))
+    body = release.apply_status("Notes.", release.status_block("2.1.0", "stable", CLOSED, REPO))
     rel = _release("v2.1.0", False, body) | {"name": "imPress 2.1.0"}
-    fake = FakeGitHub([rel], [{"number": 1, "title": "v2.1.0"}], [], latest="v2.1.0")
+    fake = FakeGitHub([rel], LINE, CLOSED, latest="v2.1.0")
     monkeypatch.setattr(release, "gh", fake.gh)
     assert release.sync(REPO) == [] and fake.patches == []
 
@@ -170,6 +266,7 @@ def test_publishing_needs_a_green_ci_push_on_the_default_branch(wf):
     decide = wf["jobs"]["plan"]["steps"][-1]["run"]
     assert '"$GITHUB_REF_NAME" = "$DEFAULT_BRANCH"' in decide          # manual runs too
     assert "notes_present" in decide and "gh release view" in decide   # never re-creates a release
+    assert wf["jobs"]["plan"]["steps"][0]["with"]["fetch-depth"] == 0      # the patch counts commits
 
 
 def test_least_privilege_and_no_cancelled_releases(wf):
@@ -189,6 +286,12 @@ def test_release_waits_for_a_tested_image_and_firmware(wf):
     assert sorted(wf["jobs"]["firmware"]["strategy"]["matrix"]["project"]) == sorted(run_tests.IDF_PROJECTS)
     assert wf["jobs"]["firmware"]["container"] == run_tests.IDF_IMAGE
     publish = "\n".join(s.get("run", "") for s in rel["steps"])
+    assert "generate-notes" in publish and "release.py notes" in publish and "--notes-file notes.md" in publish
+    assert 'printf \'%s\\n\' "$VERSION"' in publish                       # the bundle reports the release version
+    firmware = "\n".join(s.get("run", "") for s in wf["jobs"]["firmware"]["steps"])
+    assert "version.txt" in firmware.split("idf.py build")[0]               # stamped before the build
+    image = "\n".join(s.get("run", "") for s in wf["jobs"]["image"]["steps"])
+    assert image.index("> VERSION") < image.index("docker build")
     assert "--verify-tag" in publish and 'git/ref/tags/$TAG" -q .object.sha)" = "$SHA"' in publish
 
 
@@ -226,8 +329,8 @@ def test_build_context_is_an_allow_list():
 
 def test_release_notes_cover_setup_test_and_deploy_without_emoji():
     notes = release.notes_path(release.read_version()).read_text()
-    for heading in ("Downloads", "Set up the server", "Test the installation", "Deploy to a classroom",
-                    "Upgrade from 2.0", "Verify the downloads"):
+    for heading in ("Changes since", "Downloads", "Set up the server", "Test the installation", "Deploy to a classroom",
+                    "Upgrade from an earlier 2.1 release", "Upgrade from 2.0", "Verify the downloads"):
         assert re.search(rf"^##\s+{heading}", notes, re.M), heading
     assert not [c for c in notes if unicodedata.category(c) == "So" and ord(c) > 0x2600]
     assert release.START not in notes            # the workflow adds the status block

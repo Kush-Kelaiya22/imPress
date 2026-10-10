@@ -679,9 +679,9 @@ Examples: `2.1.0`, `2.2.0`, `2.2.1`.
 
 - **MAJOR:** An agreed major transition or compatibility break.
 - **MINOR:** A new non-major product line or agreed feature release.
-- **PATCH:** A maintenance release or correction on an existing product line, when approved by the release owner.
+- **PATCH:** A release on an existing product line. It is **computed automatically**: the number of first-parent commits on the default branch since the line's first release (`vMAJOR.MINOR.0`). Every push to the default branch that passes CI is published as the next patch release ([releases → version numbers](docs/guides/releases.md#version-numbers)).
 
-The release owner determines the actual next version based on compatibility and the planned release. Do not increment versions once per commit, branch, or issue. A version-line branch is a **development lineage**, not an automatically published product release.
+The release owner determines `MAJOR` and `MINOR` based on compatibility and the planned release, through the root `VERSION` file. Do not edit the `PATCH` digit by hand: in the repository it stays the line's base (`0`), and the release workflow stamps the computed patch into each build. A version-line branch other than the default branch is a **development lineage**, not an automatically published product release.
 
 ### 14.2 Verified repository state
 
@@ -700,7 +700,7 @@ integration branch is not proof of a published release.
 
 ### 14.3 Firmware version consistency
 
-When `VERSION` changes, update **all three** `firmware/<project>/version.txt` files to the same version, even if one firmware project's code did not change. Follow [`docs/firmware/FIRMWARE_VERSIONING.md`](docs/firmware/FIRMWARE_VERSIONING.md) and the repository's consistency checks. A version bump should be performed by the coordinated release change, not each feature PR.
+When `VERSION` changes (a new `MAJOR.MINOR` line), update **all three** `firmware/<project>/version.txt` files to the same version, even if one firmware project's code did not change. Follow [`docs/firmware/FIRMWARE_VERSIONING.md`](docs/firmware/FIRMWARE_VERSIONING.md) and the repository's consistency checks. A line change is made by the coordinated release change, not by each feature PR. Patch releases need no change here: the release workflow writes the computed version into `VERSION` and every `version.txt` in its build workspace.
 
 ### 14.4 Recording changes
 
@@ -715,11 +715,12 @@ and link to its issue or pull request. Do not describe a proposal as delivered.
 This section is a change history; it does not assert that a GitHub release or
 tag exists.
 
+- **Releases ([#100](https://github.com/Kush-Kelaiya22/imPress/issues/100)):** Every push to the default branch that passes CI is published as the next patch release (`PATCH` = first-parent commits since the line's `.0` tag, stamped into the app, image and firmware); release notes are one template per line with the merged pull requests; the release page's status section has badges, an alert and a table of the test issues with a live status badge each; the line milestone (`v2.1`) gates all of the line's releases.
 - **Documentation ([#96](https://github.com/Kush-Kelaiya22/imPress/issues/96) follow-up):** Recorded the published v2.1.0 release in the version history; the prebuilt-firmware steps use esptool 5 command names.
 
 #### 2.1.0
 
-The changes in version 2.1.0, from `varun/v2.1`, published as [`v2.1.0`](https://github.com/Kush-Kelaiya22/imPress/releases/tag/v2.1.0) on 2026-10-10 ([release notes](docs/releases/v2.1.0.md), [releases](docs/guides/releases.md)).
+The changes in version 2.1.0, from `varun/v2.1`, published as [`v2.1.0`](https://github.com/Kush-Kelaiya22/imPress/releases/tag/v2.1.0) on 2026-10-10 ([releases](docs/guides/releases.md)). Later changes are published as automatic 2.1 patch releases from the [line template](docs/releases/v2.1.md).
 
 - **Documentation ([PR #74](https://github.com/Kush-Kelaiya22/imPress/pull/74)):** Added the GitHub wiki link to the README and integrated the initial contribution guidance, version policy, and Code of Conduct.
 - **Governance ([PR #75](https://github.com/Kush-Kelaiya22/imPress/pull/75)):** Expanded the contributor handbook with issue triage, labels, branch ownership, review, testing, and release guidance; strengthened the Code of Conduct; consolidated version history and removed the separate version-policy document.
@@ -779,7 +780,7 @@ Do not mark a release as published before its tag or release record actually exi
 
 ### 15.2 Automation
 
-The release workflow carries out steps 11–13 after a reviewed pull request adds `docs/releases/v<VERSION>.md` (the sign-off) and CI passes on the merge commit. It tags that exact commit, builds and publishes the files, and marks the release **Beta** while open issues labelled `testing` are in the milestone `v<VERSION>`, **Stable** otherwise. It never moves a tag or replaces a published release. Step 13 (verification) stays a human task. Details: [releases](docs/guides/releases.md).
+The release workflow carries out steps 11–13 for every push to the default branch that passes CI, once the release line is signed off by its notes template (`docs/releases/vMAJOR.MINOR.md`, added through a reviewed pull request). It computes the patch number, stamps it into the build, tags that exact commit, builds and publishes the files, and marks the release **Beta** while open issues labelled `testing` are in the milestone `vMAJOR.MINOR`, **Stable** otherwise. It never moves a tag or replaces a published release. Steps 1–10 apply when a new line starts; verification of the first release of a line (step 13) stays a human task. Details: [releases](docs/guides/releases.md).
 
 ### 15.3 Rollback and recovery
 

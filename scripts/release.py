@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
-"""Release helper for .github/workflows/release.yml (#96).
+"""Release helper for .github/workflows/release.yml (#96, #100).
 
-A release is identified by the root VERSION file: tag v<VERSION>, notes in
-docs/releases/v<VERSION>.md. Its status follows the issues linked to it:
+Version. VERSION holds the release line, MAJOR.MINOR (its PATCH digit is the
+line's base, normally 0). A release's PATCH is the number of first-parent
+commits on the default branch since the line's first release, tag
+vMAJOR.MINOR.0; without that tag the release *is* vMAJOR.MINOR.0. Every push
+that passes CI therefore becomes the next patch release, and the same commit
+always gets the same number.
 
-    Beta    while any open issue labelled `testing` is in milestone v<VERSION>
-    Stable  otherwise
+Status. A release is Beta while an open issue labelled `testing` is in the
+line milestone vMAJOR.MINOR (or in an exact vMAJOR.MINOR.PATCH milestone), and
+Stable otherwise. The release page starts with a status section: badges, a
+short alert and a table of the test issues, each with a live state badge.
 
-Beta is a GitHub pre-release; the release page starts with a status badge and
-lists the open test issues. `sync` re-evaluates every release (or one tag) and
-updates the title, the status block, the pre-release flag and "latest".
-
-    scripts/release.py plan                  # JSON: version, tag, notes path, notes present
-    scripts/release.py render v2.1.0 beta    # the release body as it would be published (stdin: issues JSON)
-    scripts/release.py sync [--tag v2.1.0]   # needs GH_TOKEN and GITHUB_REPOSITORY; uses the gh CLI
-    scripts/release.py channels              # JSON: newest stable and newest beta version (image tags)
+    scripts/release.py plan                 # JSON for the workflow: version, tag, previous tag, notes
+    scripts/release.py notes 2.1.4 [changes.md]   # the release text for a version (stdout)
+    scripts/release.py sync [--tag v2.1.4]  # set Beta/Stable on the releases (gh CLI, GH_TOKEN)
+    scripts/release.py channels             # JSON: newest stable and newest beta version
 """
 
 from __future__ import annotations
@@ -30,61 +32,142 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GATE_LABEL = os.environ.get("RELEASE_GATE_LABEL", "testing")
 START, END = "<!-- release-status:start -->", "<!-- release-status:end -->"
+SHIELDS = "https://img.shields.io"
 BADGE = {
-    "beta": "https://img.shields.io/badge/status-beta-d29922?style=flat-square",
-    "stable": "https://img.shields.io/badge/status-stable-2da44e?style=flat-square",
+    "beta": f"{SHIELDS}/badge/release-beta-d29922?style=for-the-badge",
+    "stable": f"{SHIELDS}/badge/release-stable-2da44e?style=for-the-badge",
 }
-_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
+_SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
+_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 
 
-# ── Pure rules (unit-tested in tests/test_release.py) ───────────────────────
+def _key(version: str) -> tuple[int, ...]:
+    return tuple(int(x) for x in version.split("."))
+
+
+# ── Version ─────────────────────────────────────────────────────────────────
 
 def read_version(root: Path = ROOT) -> str:
     version = (root / "VERSION").read_text().strip()
-    if not _VERSION.match(version):
+    if not _SEMVER.match(version):
         raise ValueError(f"VERSION must be MAJOR.MINOR.PATCH, got {version!r}")
     return version
+
+
+def line_of(version: str) -> str:
+    return ".".join(version.split(".")[:2])
 
 
 def tag_for(version: str) -> str:
     return f"v{version}"
 
 
+def git(*args: str, root: Path = ROOT) -> str:
+    return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=True).stdout.strip()
+
+
+def tags(root: Path = ROOT) -> list[str]:
+    """Release versions that exist as tags, oldest first."""
+    found = [t[1:] for t in git("tag", "--list", "v*", root=root).split() if _TAG.match(t)]
+    return sorted(found, key=_key)
+
+
+def release_version(root: Path = ROOT, rev: str = "HEAD") -> str:
+    """MAJOR.MINOR from VERSION; PATCH = first-parent commits since vMAJOR.MINOR.0."""
+    line = line_of(read_version(root))
+    anchor = f"v{line}.0"
+    if anchor not in {tag_for(v) for v in tags(root)}:
+        return f"{line}.0"
+    count = git("rev-list", "--count", "--first-parent", f"{anchor}..{rev}", root=root)
+    return f"{line}.{int(count)}"
+
+
+def previous_tag(version: str, root: Path = ROOT) -> str | None:
+    older = [v for v in tags(root) if _key(v) < _key(version)]
+    return tag_for(older[-1]) if older else None
+
+
+# ── Release text ────────────────────────────────────────────────────────────
+
 def notes_path(version: str, root: Path = ROOT) -> Path:
-    return root / "docs" / "releases" / f"{tag_for(version)}.md"
+    """One release-notes template per line: docs/releases/vMAJOR.MINOR.md."""
+    return root / "docs" / "releases" / f"v{line_of(version)}.md"
 
 
-def status_of(open_test_issues: list[dict]) -> str:
-    return "beta" if open_test_issues else "stable"
+def render_notes(template: str, version: str, previous: str | None, changes: str = "") -> str:
+    text = (template.replace("{{version}}", version).replace("{{tag}}", tag_for(version))
+            .replace("{{line}}", line_of(version)).replace("{{previous}}", previous or "the previous release"))
+    if "{{changes}}" in text:
+        text = text.replace("{{changes}}", changes.strip() or "No pull requests were merged since the previous release.")
+    leftover = re.findall(r"\{\{\w+\}\}", text)
+    if leftover:
+        raise ValueError(f"unknown placeholders in the release notes: {sorted(set(leftover))}")
+    return text
+
+
+def clean_changes(generated: str) -> str:
+    """GitHub's generated notes, without their own heading."""
+    return re.sub(r"^## What's Changed\s*\n", "", generated.strip()).strip()
+
+
+# ── Status ──────────────────────────────────────────────────────────────────
+
+def status_of(issues: list[dict]) -> str:
+    return "beta" if any(i.get("state", "open") == "open" for i in issues) else "stable"
 
 
 def title_for(version: str, status: str) -> str:
     return f"imPress {version}" + (" (Beta)" if status == "beta" else "")
 
 
+def test_area(title: str) -> str:
+    """'test(hardware): bench bring-up: …' → 'Bench bring-up: …'."""
+    text = re.sub(r"^\w+(\([^)]*\))?:\s*", "", title).strip()
+    return text[:1].upper() + text[1:]
+
+
+def milestone_numbers(issues: list[dict]) -> list[int]:
+    return sorted({i["milestone"] for i in issues if i.get("milestone")})
+
+
 def status_block(version: str, status: str, issues: list[dict], repo: str) -> str:
-    """The badge and one short paragraph, between the markers."""
-    milestone = f"https://github.com/{repo}/milestone/{issues[0]['milestone']}" if issues and issues[0].get("milestone") else \
-        f"https://github.com/{repo}/issues?q=milestone%3A{tag_for(version)}+label%3A{GATE_LABEL}"
-    badge = f'<img alt="Status: {status.title()}" src="{BADGE[status]}">'
+    """Badges, a short alert and the test-issue table, between the markers."""
+    owner, name = repo.split("/")
+    open_n = sum(1 for i in issues if i.get("state", "open") == "open")
+    total = len(issues)
+    query = f"https://github.com/{repo}/issues?q=label%3A{GATE_LABEL}+milestone%3Av{line_of(version)}"
+    badges = [f'<img alt="Release status: {status.title()}" src="{BADGE[status]}">']
+    for number in milestone_numbers(issues):
+        badges.append(f'<a href="https://github.com/{repo}/milestone/{number}"><img alt="Test issues closed" '
+                      f'src="{SHIELDS}/github/milestones/progress-percent/{owner}/{name}/{number}'
+                      f'?style=for-the-badge&label=tests%20closed"></a>')
     if status == "beta":
-        lines = [
-            badge, "",
-            f"**Status: Beta.** The software tests pass. The hardware tests for this release are not complete: "
-            f"{len(issues)} test {'issue is' if len(issues) == 1 else 'issues are'} open. "
-            f"Do a bench test before you use this release in a classroom.",
-            "",
-            *[f"- [#{i['number']}](https://github.com/{repo}/issues/{i['number']}) {i['title']}" for i in issues],
-            "",
-            f"This status changes to Stable automatically when all [test issues for {tag_for(version)}]({milestone}) are closed.",
-        ]
+        alert = ["> [!WARNING]",
+                 f"> **Beta.** The software tests pass. {open_n} of {total} release test "
+                 f"{'issue is' if open_n == 1 else 'issues are'} still open. Do a bench test before you use "
+                 "this release in a classroom. This release becomes Stable automatically when all of them are closed."]
     else:
-        lines = [
-            badge, "",
-            f"**Status: Stable.** All [test issues for {tag_for(version)}]({milestone}) are closed. "
-            f"If a new test issue is added to the milestone, the status changes back to Beta.",
-        ]
-    return "\n".join([START, *lines, END])
+        alert = ["> [!TIP]",
+                 f"> **Stable.** All {total} release test {'issue is' if total == 1 else 'issues are'} closed. "
+                 "If a new test issue is added, this release changes back to Beta automatically." if total else
+                 "> **Stable.** No release test issues are linked to this release."]
+    lines = [START, "", "<p>", *badges, "</p>", "", *alert, ""]
+    if issues:
+        lines += ["### Release tests", "",
+                  "| Issue | Test area | Owner | Live status |",
+                  "|:--|:--|:--|:--|"]
+        for i in sorted(issues, key=lambda i: (i.get("state", "open") != "open", i["number"])):
+            owners = ", ".join(f"@{a}" for a in i.get("assignees", [])) or "unassigned"
+            live = (f'<img alt="{i.get("state", "open")}" '
+                    f'src="{SHIELDS}/github/issues/detail/state/{owner}/{name}/{i["number"]}?style=flat-square&label=">')
+            lines.append(f"| [#{i['number']}](https://github.com/{repo}/issues/{i['number']}) "
+                         f"| {test_area(i['title'])} | {owners} | {live} |")
+        lines += ["",
+                  f"<sub>Live status comes from GitHub on every page view. The release status above is updated "
+                  f"by the release workflow when a test issue changes. All test issues: [label `{GATE_LABEL}`, "
+                  f"milestone v{line_of(version)}]({query}).</sub>", ""]
+    lines.append(END)
+    return "\n".join(lines)
 
 
 def apply_status(body: str, block: str) -> str:
@@ -96,8 +179,8 @@ def apply_status(body: str, block: str) -> str:
 
 
 def newest(versions: list[str]) -> str | None:
-    valid = [v for v in versions if _VERSION.match(v)]
-    return max(valid, key=lambda v: tuple(int(x) for x in v.split(".")), default=None)
+    valid = [v for v in versions if _SEMVER.match(v)]
+    return max(valid, key=_key, default=None)
 
 
 # ── GitHub access (gh CLI; GH_TOKEN and GITHUB_REPOSITORY from the workflow) ─
@@ -107,27 +190,30 @@ def gh(*args: str, input: str | None = None) -> str:
 
 
 def gh_json(*args: str):
-    out = gh("api", "--paginate", "--slurp", *args)
-    pages = json.loads(out)
+    pages = json.loads(gh("api", "--paginate", "--slurp", *args))
     return [item for page in pages for item in (page if isinstance(page, list) else [page])]
 
 
 def releases(repo: str) -> list[dict]:
-    return [r for r in gh_json(f"repos/{repo}/releases") if r["tag_name"].startswith("v") and not r["draft"]]
+    return [r for r in gh_json(f"repos/{repo}/releases") if _TAG.match(r["tag_name"]) and not r["draft"]]
 
 
-def open_test_issues(repo: str, tag: str) -> list[dict]:
-    milestones = [m for m in gh_json(f"repos/{repo}/milestones?state=all") if m["title"] == tag]
-    if not milestones:
-        return []
-    number = milestones[0]["number"]
-    issues = gh_json(f"repos/{repo}/issues?milestone={number}&state=open&labels={GATE_LABEL}")
-    return sorted(({"number": i["number"], "title": i["title"], "milestone": number}
-                   for i in issues if "pull_request" not in i), key=lambda i: i["number"])
+def test_issues(repo: str, version: str, milestones: list[dict] | None = None) -> list[dict]:
+    """Every `testing` issue (open and closed) in milestone vMAJOR.MINOR or vVERSION."""
+    milestones = milestones if milestones is not None else gh_json(f"repos/{repo}/milestones?state=all")
+    wanted = {f"v{line_of(version)}", tag_for(version)}
+    found = {}
+    for m in milestones:
+        if m["title"] in wanted:
+            for i in gh_json(f"repos/{repo}/issues?milestone={m['number']}&state=all&labels={GATE_LABEL}"):
+                if "pull_request" not in i:
+                    found[i["number"]] = {"number": i["number"], "title": i["title"], "state": i["state"],
+                                          "milestone": m["number"],
+                                          "assignees": [a["login"] for a in i.get("assignees", [])]}
+    return [found[n] for n in sorted(found)]
 
 
 def current_latest(repo: str) -> str | None:
-    """The tag GitHub shows as "Latest" (never a pre-release), or None."""
     try:
         return json.loads(gh("api", f"repos/{repo}/releases/latest"))["tag_name"]
     except subprocess.CalledProcessError:          # 404: no stable release yet
@@ -135,9 +221,10 @@ def current_latest(repo: str) -> str | None:
 
 
 def sync(repo: str, only_tag: str | None = None) -> list[dict]:
-    """Bring each release's status in line with its open test issues."""
+    """Bring each release's title, text, pre-release flag and "latest" in line with its test issues."""
     rels = releases(repo)
-    issues = {r["tag_name"]: open_test_issues(repo, r["tag_name"]) for r in rels}
+    milestones = gh_json(f"repos/{repo}/milestones?state=all")
+    issues = {r["tag_name"]: test_issues(repo, r["tag_name"][1:], milestones) for r in rels}
     statuses = {tag: status_of(found) for tag, found in issues.items()}
     latest = newest([tag[1:] for tag, status in statuses.items() if status == "stable"])
     shown_latest = current_latest(repo)
@@ -156,7 +243,9 @@ def sync(repo: str, only_tag: str | None = None) -> list[dict]:
         if stale:
             gh("api", "-X", "PATCH", f"repos/{repo}/releases/{r['id']}", "--input", "-", input=json.dumps(update))
             changed.append({"tag": tag, "status": status})
-        print(f"{tag}: {status} ({len(issues[tag])} open test issue(s)){' - updated' if stale else ''}", file=sys.stderr)
+        opened = sum(1 for i in issues[tag] if i["state"] == "open")
+        print(f"{tag}: {status} ({opened}/{len(issues[tag])} test issues open){' - updated' if stale else ''}",
+              file=sys.stderr)
     return changed
 
 
@@ -172,9 +261,9 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("plan")
-    r = sub.add_parser("render")
-    r.add_argument("tag")
-    r.add_argument("status", choices=["beta", "stable"])
+    n = sub.add_parser("notes")
+    n.add_argument("version")
+    n.add_argument("changes", nargs="?")
     s = sub.add_parser("sync")
     s.add_argument("--tag")
     sub.add_parser("channels")
@@ -182,14 +271,14 @@ def main(argv: list[str] | None = None) -> int:
     repo = os.environ.get("GITHUB_REPOSITORY", "Kush-Kelaiya22/imPress")
 
     if a.cmd == "plan":
-        version = read_version()
+        version = release_version()
         notes = notes_path(version)
-        print(json.dumps({"version": version, "tag": tag_for(version),
-                          "notes": str(notes.relative_to(ROOT)), "notes_present": notes.exists()}))
-    elif a.cmd == "render":
-        version = a.tag.lstrip("v")
-        issues = json.loads(sys.stdin.read() or "[]") if not sys.stdin.isatty() else []
-        print(apply_status(notes_path(version).read_text(), status_block(version, a.status, issues, repo)))
+        print(json.dumps({"version": version, "tag": tag_for(version), "line": line_of(version),
+                          "previous": previous_tag(version) or "", "notes": str(notes.relative_to(ROOT)),
+                          "notes_present": notes.exists()}))
+    elif a.cmd == "notes":
+        changes = Path(a.changes).read_text() if a.changes else ""
+        print(render_notes(notes_path(a.version).read_text(), a.version, previous_tag(a.version), changes))
     elif a.cmd == "sync":
         print(json.dumps(sync(repo, a.tag)))
     elif a.cmd == "channels":
