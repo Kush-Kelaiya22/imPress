@@ -230,6 +230,8 @@ async def start_quiz(
 
     if quiz.status == "active":
         raise HTTPException(400, "Quiz is already active")
+    if quiz.status != "draft":      # its answers are still stored (#76)
+        raise HTTPException(409, "A completed quiz can't be restarted; create a new quiz")
 
     quiz.status = "active"
     quiz.is_live = True
@@ -261,6 +263,11 @@ async def stop_quiz(
         raise HTTPException(404, "Quiz not found")
 
     await _verify_class_access(quiz.class_session_id, user, db)
+
+    if quiz.status == "draft":
+        raise HTTPException(409, "Quiz has not started")
+    if quiz.status != "active":     # already over: nothing to stop or broadcast (#76)
+        return _quiz_response(quiz)
 
     quiz.status = "completed"
     quiz.is_live = False

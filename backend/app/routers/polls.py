@@ -146,6 +146,8 @@ async def start_poll(
 
     if poll.status == "active":
         raise HTTPException(400, "Poll is already active")
+    if poll.status != "draft":      # its votes are still stored (#76)
+        raise HTTPException(409, "A closed poll can't be restarted; create a new poll")
 
     poll.status = "active"
     poll.is_live = True
@@ -180,6 +182,11 @@ async def end_poll(
         raise HTTPException(404, "Poll not found")
 
     cls = await _verify_class_access(poll.class_session_id, user, db)
+
+    if poll.status == "draft":
+        raise HTTPException(409, "Poll has not started")
+    if poll.status != "active":     # already closed: nothing to end or broadcast (#76)
+        return await _poll_response(poll, db)
 
     poll.status = "closed"
     poll.is_live = False
