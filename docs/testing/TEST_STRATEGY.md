@@ -51,4 +51,4 @@ How imPress is tested, what each layer can and can't catch, and the rules every 
 
 ## What is not covered
 
-Everything that needs a board: radio delivery and range, the SPI link at speed, real flash writes and reboots, reset reasons, power, heat and timing. These are listed with procedures in [hardware validation](HARDWARE_VALIDATION.md).
+Everything that needs a board: radio delivery and range, the SPI link at speed, real flash writes and reboots, reset reasons, power, heat and timing. These are listed with procedures in [hardware validation](HARDWARE_VALIDATION.md). Each check has a test issue, tracked in [#94](https://github.com/Kush-Kelaiya22/imPress/issues/94).

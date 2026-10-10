@@ -40,4 +40,4 @@ None. Every issue opened so far (#1–#25) is fixed on its own branch and merged
 
 ## Not yet verified on hardware
 
-The v2 firmware fixes are verified by host tests (ASan/UBSan against real sources) and real ESP-IDF v6.1 builds, **not** yet on boards. Recommended acceptance run: a 2-hour classroom soak with `esp_reset_reason()` logged at boot, `CONFIG_HEAP_POISONING_COMPREHENSIVE=y` on the C6, and a quiz every few minutes.
+The v2 and v2.1 firmware is verified by host tests (ASan/UBSan against real sources), structural tests and real ESP-IDF v6.1 builds, **not** yet on boards. The bench plan is in [hardware validation](../testing/HARDWARE_VALIDATION.md) and tracked in [#94](https://github.com/Kush-Kelaiya22/imPress/issues/94). Recommended acceptance run: a 2-hour classroom soak with `esp_reset_reason()` logged at boot, `CONFIG_HEAP_POISONING_COMPREHENSIVE=y` on the C6, and a quiz every few minutes.
