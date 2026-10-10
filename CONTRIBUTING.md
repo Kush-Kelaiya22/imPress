@@ -717,6 +717,7 @@ tag exists.
 
 - **Documentation ([PR #74](https://github.com/Kush-Kelaiya22/imPress/pull/74)):** Added the GitHub wiki link to the README and integrated the initial contribution guidance, version policy, and Code of Conduct.
 - **Governance (this PR):** Expanded the contributor handbook with issue triage, labels, branch ownership, review, testing, and release guidance; strengthened the Code of Conduct; consolidated version history and removed the separate version-policy document.
+- **Maintenance ([#77](https://github.com/Kush-Kelaiya22/imPress/issues/77)):** Removed the unused `services/participation.py`, whose question broadcast read a field that does not exist; the routers' broadcasts are the only implementation of the device frame contract.
 
 #### Recorded product version and development history
 

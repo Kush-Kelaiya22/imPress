@@ -27,7 +27,6 @@ flowchart TB
         SESS["sessions"]
         FWS["firmware_store"]
         MB["mesh_bridge"]
-        PART["participation"]
     end
     subgraph Core
         AUTH["auth.py<br/>sessions · RBAC deps"]
@@ -80,7 +79,6 @@ flowchart TB
 | `services/deployments.py` | The OTA deployment engine (#38): per-device state machine, stages, retries, timeouts; `deployments_loop` every 5 s. |
 | `device_auth.py` | Device authentication (#66): the shared provisioning key and per-device keys. |
 | `services/mesh_bridge.py` | Helpers that broadcast device commands (`device_command`, e.g. `ota_update`) and data to class rooms. |
-| `services/participation.py` | Helpers for broadcasting a question and aggregating results (used by legacy paths). |
 | `schedule.py` | Timetable clash detection, returned as *warnings*, never hard errors. |
 | `timeutil.py` | IST helpers: naive-IST storage, epoch conversion independent of the host timezone. |
 | `activity.py` | `log_activity()`: adds an `ActivityLog` row to the caller's session; the caller commits. |
