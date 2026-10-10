@@ -717,6 +717,7 @@ tag exists.
 
 - **Documentation ([PR #74](https://github.com/Kush-Kelaiya22/imPress/pull/74)):** Added the GitHub wiki link to the README and integrated the initial contribution guidance, version policy, and Code of Conduct.
 - **Governance (this PR):** Expanded the contributor handbook with issue triage, labels, branch ownership, review, testing, and release guidance; strengthened the Code of Conduct; consolidated version history and removed the separate version-policy document.
+- **Quiz timing ([#73](https://github.com/Kush-Kelaiya22/imPress/issues/73)):** Timed quizzes now advance (`per_question`) and end (`total`) on a durable server-side timer; the class page offers Next in every timing mode; late answers are refused on both answer paths; student modules show a countdown and ignore presses after it. Adds schema migration 8 (`quizzes.question_started_at`).
 
 #### Recorded product version and development history
 

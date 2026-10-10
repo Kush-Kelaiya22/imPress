@@ -151,7 +151,7 @@ Computed from the latest values on every read (`services/health.py`); the first 
 | `heartbeat` | relayed for the sender `device_id` (a student module, or `0` for the S3). The gateway `device_mac` → `last_seen`, mark online; its own battery and RSSI come only from `POST /heartbeat` (#40: a student's 12 % used to overwrite the gateway's). A non-zero `device_id` also updates that module's inventory row: battery, RSSI, connected |
 | `student_join` | **inventory (#40):** upsert the module by `device_id` (by `enrollment_number` when an older firmware omits it): connected, its enrollment, the relaying gateway and that gateway's class. Then, for a known enrollment, `ActivityLog student.connect`, and if `class_code` matches a class, a `StudentEnrollment` if missing |
 | `student_leave` | inventory row → *seen previously*; known enrollment → `ActivityLog student.disconnect` |
-| `quiz_answer` | **stored only if** the student is known, the quiz exists and is `active`, the question exists, `0 ≤ selected_option < len(options)`, all ints, and no answer yet for (quiz, question, student). Otherwise `skipped += 1` |
+| `quiz_answer` | **stored only if** the student is known, the quiz exists and is `active`, the question exists, `0 ≤ selected_option < len(options)`, all ints, no answer yet for (quiz, question, student), and, for a timed quiz, the question's time has not run out more than 2 s ago (#73). Otherwise `skipped += 1` |
 | `poll_vote` | stored only if the student is known, the poll is active, the option is in range, and no vote yet for (poll, student) |
 | `ota_result` | `{mac_address (12 hex, as the S3 registered), version, result: applied\|rolled_back\|failed, error, device_mac}` from the S3 via its C6 (#33). Updates the device: `applied` with the pushed version → `ota_status: applied`; another version → `failed`; `rolled_back` clears the pending version; `failed` keeps it. Logged as `module.ota_result`. Unknown MAC or result → `skipped` |
 
@@ -209,6 +209,7 @@ POST /api/device/ota/status  {"mac_address": "…", "state": "failed", "error": 
 - `device_id` must be a **registered** device (`404` otherwise);
 - the option must be in range for the poll or the **current** question (`422`);
 - the poll/quiz must be active (`400`);
+- for a timed quiz, the current question's time must not have run out more than 2 s ago (`409`, #73);
 - one submission per device (`400`).
 
 ## Presence snapshot

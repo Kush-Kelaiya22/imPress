@@ -13,6 +13,7 @@ from ..models import User, ClassSession, Quiz, QuizQuestion, QuizAnswer, EspDevi
 from ..schemas import QuizCreate, QuizResponse, QuizAnswerSubmit, QuestionImportReport, question_warnings
 from ..services.csv_import import read_upload, text_key
 from ..services.question_import import TEMPLATE, parse_questions
+from ..services import quiz_timer
 from ..auth import get_current_user, require_teacher_or_admin
 from ..ws.manager import manager
 from ..activity import log_activity
@@ -129,7 +130,7 @@ async def create_quiz(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a quiz. Can be planned (started later) or impromptu (started immediately)."""
-    cls = await _verify_class_access(body.class_session_id, user, db)
+    await _verify_class_access(body.class_session_id, user, db)
 
     quiz = Quiz(
         class_session_id=body.class_session_id,
@@ -147,7 +148,7 @@ async def create_quiz(
         quiz.status = "active"
         quiz.is_live = True
         quiz.current_question = 0
-        quiz.started_at = istnow()
+        quiz.started_at = quiz.question_started_at = istnow()
 
     db.add(quiz)
     await db.flush()
@@ -174,7 +175,7 @@ async def create_quiz(
 
     # If impromptu, broadcast question 0 to devices
     if quiz.is_live:
-        await _broadcast_question(quiz, cls.id)
+        await quiz_timer.broadcast(quiz)
 
     resp = _quiz_response(quiz)
     for i, q in enumerate(body.questions, start=1):
@@ -225,7 +226,7 @@ async def start_quiz(
     if not quiz:
         raise HTTPException(404, "Quiz not found")
 
-    cls = await _verify_class_access(quiz.class_session_id, user, db)
+    await _verify_class_access(quiz.class_session_id, user, db)
 
     if quiz.status == "active":
         raise HTTPException(400, "Quiz is already active")
@@ -233,7 +234,7 @@ async def start_quiz(
     quiz.status = "active"
     quiz.is_live = True
     quiz.current_question = 0
-    quiz.started_at = istnow()
+    quiz.started_at = quiz.question_started_at = istnow()
 
     await log_activity(db, "quiz.start", user.id, "quiz", quiz_id, {
         "title": quiz.title,
@@ -242,7 +243,7 @@ async def start_quiz(
     await db.commit()
     await db.refresh(quiz)
 
-    await _broadcast_question(quiz, cls.id)
+    await quiz_timer.broadcast(quiz)
     return _quiz_response(quiz)
 
 
@@ -259,7 +260,7 @@ async def stop_quiz(
     if not quiz:
         raise HTTPException(404, "Quiz not found")
 
-    cls = await _verify_class_access(quiz.class_session_id, user, db)
+    await _verify_class_access(quiz.class_session_id, user, db)
 
     quiz.status = "completed"
     quiz.is_live = False
@@ -269,18 +270,11 @@ async def stop_quiz(
     await db.commit()
     await db.refresh(quiz)
 
-    # Broadcast quiz_ended to devices
-    await manager.broadcast_to_class(cls.id, {
-        "event": "quiz_end",  # device (C6) contract
-        "type": "quiz_ended",
-        "quiz_id": quiz_id,
-        "title": quiz.title,
-    })
-
+    await quiz_timer.broadcast(quiz)   # quiz_ended to devices
     return _quiz_response(quiz)
 
 
-# ── Next Question (manual timing mode) ──────────────────────────────
+# ── Next Question (any timing mode) ─────────────────────────────────
 
 @router.post("/{quiz_id}/next", response_model=QuizResponse)
 async def next_question(
@@ -288,39 +282,23 @@ async def next_question(
     user: User = Depends(require_teacher_or_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Advance to the next question. Used in manual and per_question timing modes."""
+    """Advance to the next question, or complete the quiz after the last one.
+    Works in every timing mode: the teacher can always move on before the timer."""
     result = await db.execute(select(Quiz).where(Quiz.id == quiz_id))
     quiz = result.scalar_one_or_none()
     if not quiz:
         raise HTTPException(404, "Quiz not found")
 
-    cls = await _verify_class_access(quiz.class_session_id, user, db)
+    await _verify_class_access(quiz.class_session_id, user, db)
 
     if quiz.status != "active":
         raise HTTPException(400, "Quiz is not active")
 
-    next_idx = (quiz.current_question or 0) + 1
-    if next_idx >= len(quiz.questions):
-        # No more questions — end quiz
-        quiz.status = "completed"
-        quiz.is_live = False
-        quiz.ended_at = istnow()
-        await db.commit()
-        await db.refresh(quiz)
-
-        await manager.broadcast_to_class(cls.id, {
-            "event": "quiz_end",  # device (C6) contract
-            "type": "quiz_ended",
-            "quiz_id": quiz_id,
-            "title": quiz.title,
-        })
-        return _quiz_response(quiz)
-
-    quiz.current_question = next_idx
+    moved = await quiz_timer.advance(db, quiz)
     await db.commit()
     await db.refresh(quiz)
-
-    await _broadcast_question(quiz, cls.id)
+    if moved:                   # else the timer moved it a moment ago and already broadcast
+        await quiz_timer.broadcast(quiz)
     return _quiz_response(quiz)
 
 
@@ -346,6 +324,8 @@ async def submit_answer(
         raise HTTPException(409, "Quiz has no current question")
     if body.selected_option >= len(question.options):
         raise HTTPException(422, "selected_option out of range for this question")
+    if quiz_timer.answer_closed(quiz, current_q, istnow()):
+        raise HTTPException(409, "Time is up for this question")
     # device_id is the de-dup key, so it must be a real registered device,
     # not an arbitrary integer a caller can increment.
     device = await db.get(EspDevice, body.device_id)
@@ -448,27 +428,3 @@ async def quiz_results(
         "timing_mode": quiz.timing_mode,
         "results": results,
     }
-
-
-# ── Helpers ──────────────────────────────────────────────────────────
-
-async def _broadcast_question(quiz: Quiz, class_id: int):
-    """Send the current question to all devices in the class."""
-    current_q = quiz.current_question or 0
-    q = next((q for q in quiz.questions if q.order_num == current_q), None)
-    if not q:
-        return
-
-    await manager.broadcast_to_class(class_id, {
-        "event": "quiz_question",  # device (C6) + React contract
-        "type": "quiz_question",
-        "quiz_id": quiz.id,
-        "title": quiz.title,
-        "question_order": q.order_num,
-        "total_questions": len(quiz.questions),
-        "question_text": q.question_text,
-        "options": q.options,
-        "timing_mode": quiz.timing_mode,
-        "time_limit": quiz.question_time_limit if quiz.timing_mode == "per_question" else 0,
-        "time_limit_s": quiz.question_time_limit if quiz.timing_mode == "per_question" else 0,
-    })

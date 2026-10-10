@@ -25,8 +25,8 @@ Every frame has `type` (the vanilla SPA dispatches on it). Frames the C6 gateway
 
 | `event` | `type` | Payload | Sent when | Audience |
 |---|---|---|---|---|
-| `quiz_question` | `quiz_question` | `quiz_id, title, question_order, total_questions, question_text, options, timing_mode, time_limit, time_limit_s` | quiz started, `next`, impromptu create | everyone |
-| `quiz_end` | `quiz_ended` | `quiz_id, title` | stop, or `next` past the last question | everyone |
+| `quiz_question` | `quiz_question` | `quiz_id, title, question_order, total_questions, question_text, options, timing_mode, time_limit, time_limit_s` (seconds the module has for this question: the per-question limit, what is left of a `total` limit, `0` = no limit) | quiz started, `next`, impromptu create, per-question timer | everyone |
+| `quiz_end` | `quiz_ended` | `quiz_id, title` | stop, `next` past the last question, or the quiz timer (#73) | everyone |
 | `poll_start` | `poll_started` | `poll_id, title, options` | live poll created, planned poll started | everyone |
 | `poll_end` | `poll_ended` | `poll_id, title, option_counts, total_votes` | poll ended | everyone |
 | – | `quiz_answer` | `quiz_id, question_order, total_answers` (+ `device_id` from the HTTP route) | an answer stored | everyone |

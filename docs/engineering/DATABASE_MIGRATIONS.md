@@ -30,6 +30,7 @@ flowchart TD
 | 1 | `add_v2_columns` | Adds the columns older databases lack (the former `database._ADD_COLUMNS` list) | additive |
 | 2 | `repair_dangling_references` | Runs `PRAGMA foreign_key_check`. A **nullable** reference to a missing parent is set to `NULL`. A row whose **required** parent is gone is deleted (it was unreachable in the app). Repeats until clean (deleting a row can orphan its children). | Old code could leave these: a hard-deleted student's answers, attendance of deleted classes. Counts are logged. |
 | 3 | `add_unique_constraints` | Creates the six unique indexes below. Before each one, it looks for existing duplicates. | Answers, votes and enrollments: **the earliest row is kept**, the same "first one wins" rule the application always applied, and counts are logged. Duplicate course sections **stop the upgrade** with the offending keys, because they need a human decision. |
+| 8 | `add_quiz_question_started_at` | Adds `quizzes.question_started_at`, when the current question went live (quiz timer, #73) | additive; a quiz already running a per-question timer starts counting on the timer's first tick |
 
 ### Unique indexes
 

@@ -220,10 +220,12 @@ stateDiagram-v2
     [*] --> draft: POST / (planned)
     [*] --> active: POST / (quiz_mode = impromptu)
     draft --> active: POST /{id}/start
-    active --> active: POST /{id}/next (more questions)
-    active --> completed: POST /{id}/next past the last question
-    active --> completed: POST /{id}/stop
+    active --> active: POST /{id}/next, or per_question time up (more questions)
+    active --> completed: POST /{id}/next or per_question time up, past the last question
+    active --> completed: POST /{id}/stop, or total time up
 ```
+
+**Timing (`timing_mode`, #73).** `manual`: only the teacher advances. `per_question`: the server moves to the next question `question_time_limit` seconds after the current one went live (and completes the quiz after the last). `total`: the server completes the quiz `total_time_limit` seconds after it started, whatever question it is on. A limit of `0` means no limit. The scheduler checks every second and keeps its state in the database, so it resumes after a restart. In every mode the teacher can still call `next` or `stop` early; `next` restarts the per-question timer. Answers that arrive more than 2 s (mesh latency allowance) after the deadline are refused: `409` on the HTTP route, skipped in a device batch.
 
 | Method & path | Guard | Notes |
 |---|---|---|
@@ -231,7 +233,7 @@ stateDiagram-v2
 | `GET /api/quizzes/class/{class_id}` | class access | newest first |
 | `GET /api/quizzes/{id}` | class access (#20) | `QuizResponse {id, class_session_id, title, status, quiz_mode, timing_mode, question_time_limit, total_time_limit, current_question, is_live, question_count, created_at, started_at}` |
 | `POST /api/quizzes/{id}/start` | class access | already active → 400; broadcasts `quiz_question` (q 0) |
-| `POST /api/quizzes/{id}/next` | class access | not active → 400; broadcasts the next `quiz_question`, or completes |
+| `POST /api/quizzes/{id}/next` | class access | any timing mode; not active → 400; broadcasts the next `quiz_question`, or completes. If the timer advanced the same question a moment earlier, returns the current state without advancing again |
 | `POST /api/quizzes/{id}/stop` | class access | → completed; broadcasts `quiz_end` |
 | `GET /api/quizzes/{id}/results` | class access (#20) | below |
 
