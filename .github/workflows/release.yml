@@ -205,10 +205,10 @@ jobs:
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" -q .object.sha)" = "$SHA"
       - name: Publish
         run: |
-          # Published as Beta first; the status job sets the real status.
-          python3 scripts/release.py render "$TAG" beta < /dev/null > body.md
+          # Published as a pre-release; the status job adds the badge and the
+          # open test issues, and sets Beta or Stable a few seconds later.
           gh release create "$TAG" --verify-tag --prerelease --title "imPress $VERSION (Beta)" \
-            --notes-file body.md dist/*.zip dist/SHA256SUMS.txt
+            --notes-file "docs/releases/$TAG.md" dist/*.zip dist/SHA256SUMS.txt
           echo "Published $TAG at $SHA" >> "$GITHUB_STEP_SUMMARY"
 
   status:
