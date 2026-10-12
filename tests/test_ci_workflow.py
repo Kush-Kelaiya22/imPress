@@ -167,3 +167,12 @@ def test_test_reports_are_uploaded(workflow):
 def test_workflow_is_linted_in_ci(workflow):
     text = _steps_text(workflow["jobs"]["repo"])
     assert re.search(r"rhysd/actionlint:\d+\.\d+\.\d+", text), "actionlint must run, pinned to a release"
+
+
+def test_hosted_documentation_is_built_in_ci(workflow):
+    job = workflow["jobs"]["docs"]
+    text = _steps_text(job)
+    assert "docs/requirements.txt" in text
+    assert "sphinx-build -E -W --keep-going -b html" in text
+    assert "graph.html" in text and "graph.json" in text and "searchindex.js" in text
+    assert "docs" in workflow["jobs"]["result"]["needs"]
