@@ -61,5 +61,6 @@ replace CI. To remove them, run `graphify hook uninstall`.
 If generation fails, confirm Python 3.12+, `graphify --version`, and that the
 working tree has no ignored runtime files that should be modeled. Run the two
 commands in the local-generation section and inspect the workflow log. A stale
-graph fails validation when source changes exist after `built_at_commit`; a
-graph-only automation commit is accepted as current.
+graph fails validation when its `built_at_commit` is not the latest commit that
+changed graph input; graph-only automation commits are therefore current and do
+not create churn on a manual rerun.

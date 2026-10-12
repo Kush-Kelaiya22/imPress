@@ -41,6 +41,14 @@ def tracked_files() -> list[str]:
     return subprocess.check_output(["git", "ls-files"], cwd=ROOT, text=True).splitlines()
 
 
+def source_commit() -> str:
+    """Latest commit that changed input, rather than a graph-only bot commit."""
+    return subprocess.check_output(
+        ["git", "log", "-1", "--format=%H", "--", ".", ":(exclude)graphify-out/**"],
+        cwd=ROOT, text=True,
+    ).strip()
+
+
 def node_id(prefix: str, path: str) -> str:
     return f"impress_{prefix}_" + "".join(c if c.isalnum() else "_" for c in path).strip("_").lower()
 
@@ -55,6 +63,7 @@ def component_for(path: str) -> str | None:
 def enrich() -> None:
     graph_path = OUT / "graph.json"
     graph = json.loads(graph_path.read_text())
+    graph["built_at_commit"] = source_commit()
     nodes, links = graph["nodes"], graph["links"]
     ids = {node["id"] for node in nodes}
     pairs = {(edge["source"], edge["target"], edge.get("relation")) for edge in links}
