@@ -67,7 +67,7 @@ A firmware structural test, `firmware/tests/test_hardware_requirements.py`, fail
 Use this to run the hub on a cheaper and more common ESP32-S3 with **8 MB quad flash**, with or without quad PSRAM. It needs a rebuild and **one serial flash**: the bootloader, the flash mode and the partition table can't change over the air.
 
 1. Add a partition table, `firmware/class_s3/partitions_8mb.csv`:
-   ```csv
+   ```text
    # Name,   Type, SubType, Offset,   Size,     Flags
    nvs,      data, nvs,     0x9000,   0x6000,
    otadata,  data, ota,     0xf000,   0x2000,

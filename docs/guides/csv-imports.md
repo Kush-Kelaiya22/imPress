@@ -32,7 +32,7 @@ Common rules for every import:
 
 Student modules have four buttons, so a question has **2–4 options**. They show about 139 bytes of a question and 14 bytes of an option (non-Latin scripts use 2–3 bytes per letter). Longer text is accepted with a warning.
 
-```csv
+```text
 question_text,option_a,option_b,option_c,option_d,correct_option
 "What is 2 + 2?",3,4,5,6,B
 "Which planet is closest to the Sun?",Mercury,Venus,,,A
@@ -61,7 +61,7 @@ To add questions to an **existing draft quiz** from a script, use `POST /api/qui
 | `teacher_username` | yes | an existing, active teacher account |
 | `class_name`, `classroom_code` (room), `term`, `year`, `capacity`, `location` | no | as in the classroom form |
 
-```csv
+```text
 course_code,course_name,section,class_code,teacher_username,classroom_code,term,year
 CS101,Introduction to Computing,A,CS101-A-2026,teacher1,RM-201,Monsoon,2026
 CS101,Introduction to Computing,B,CS101-B-2026,teacher2,,Monsoon,2026

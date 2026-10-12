@@ -1,0 +1,6 @@
+# Pinned solely for documentation builds; application dependencies are not needed.
+Sphinx==8.2.3
+myst-parser==4.0.1
+sphinx-rtd-theme==3.0.2
+sphinx-copybutton==0.5.2
+sphinxcontrib-mermaid==1.0.0
