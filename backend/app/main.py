@@ -3,11 +3,13 @@
 import asyncio
 import logging
 import secrets
+import re
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -191,6 +193,9 @@ app.include_router(ws_router)
 
 STATIC_DIR = Path(__file__).parent / "static"
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DOCS_DIR = REPO_ROOT / "docs"
+GRAPH_DIR = REPO_ROOT / "graphify-out"
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -204,6 +209,51 @@ async def health():
     from .database import engine
     from .migrations import schema_version
     return {"status": "healthy", "version": APP_VERSION, "schema_version": await schema_version(engine)}
+
+
+# ── Public engineering documentation ─────────────────────────────────
+
+def _documentation_index() -> list[dict[str, str]]:
+    """Small, dependency-free searchable catalog of the committed Markdown docs."""
+    entries = []
+    for path in sorted(DOCS_DIR.rglob("*.md")):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        title = next((line[2:].strip() for line in text.splitlines() if line.startswith("# ")), path.stem)
+        plain = re.sub(r"[`*_>#\[\]()|]", " ", text)
+        plain = re.sub(r"\s+", " ", plain).strip()
+        entries.append({"path": str(path.relative_to(REPO_ROOT)), "title": title, "excerpt": plain[:360]})
+    return entries
+
+
+@app.get("/graph", include_in_schema=False)
+async def graph_portal(request: Request):
+    """Documentation and architecture portal; intentionally public and read-only."""
+    return templates.TemplateResponse(request, "graph_portal.html", {"docs": _documentation_index()})
+
+
+@app.get("/graph/search", include_in_schema=False)
+async def graph_search(q: str = ""):
+    query = q.casefold().strip()
+    docs = _documentation_index()
+    if query:
+        docs = [doc for doc in docs if query in (doc["title"] + " " + doc["excerpt"] + " " + doc["path"]).casefold()]
+    return JSONResponse({"query": q, "results": docs[:50], "total": len(docs)})
+
+
+@app.get("/graph/visualization", include_in_schema=False)
+async def graph_visualization():
+    graph = GRAPH_DIR / "graph.html"
+    if not graph.is_file():
+        raise HTTPException(503, "Knowledge graph has not been generated yet")
+    return FileResponse(graph, media_type="text/html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/graph/data", include_in_schema=False)
+async def graph_data():
+    graph = GRAPH_DIR / "graph.json"
+    if not graph.is_file():
+        raise HTTPException(503, "Knowledge graph has not been generated yet")
+    return FileResponse(graph, media_type="application/json", headers={"Cache-Control": "no-cache"})
 
 
 # ── Frontend (catch-all SPA route — must be last) ────────────────────
