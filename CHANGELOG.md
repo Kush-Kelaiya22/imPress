@@ -14,6 +14,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Added
 
+- A keyless, committed Graphify knowledge graph with Codex guidance, local hooks, validation, and automated GitHub synchronization for `varun/v2.1`.
 - `CHANGELOG.md`, kept by every pull request. A CI check fails a pull request that doesn't add an entry, unless it has the `no-changelog` label. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 - Releases for every owner's integration line (`kush/v2.1`, `aamna/v2.1`, `encrypted/v2.1`), not only `varun/v2.1`. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 - A "Setup problems" section in the troubleshooting guide, linked from the release page. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))

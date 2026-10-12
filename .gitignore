@@ -51,6 +51,12 @@ coverage.xml
 *.gcno
 ui_tests/screenshots/
 
+# ── Graphify local incremental state (the three published graph files stay tracked) ──
+graphify-out/cache/
+graphify-out/.graphify_root
+graphify-out/.graphify_analysis.json
+graphify-out/manifest.json
+
 # ── Node / frontend ─────────────────────────────────────────────────────────
 node_modules/
 frontend/dist/
