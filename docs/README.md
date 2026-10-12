@@ -2,6 +2,12 @@
 
 This folder is the long-form documentation for imPress. The [project README](../README.md) gives the one-page overview and quick start; everything detailed lives here.
 
+## Documentation portal and search
+
+When the backend is running, open **[`/graph`](http://127.0.0.1:8000/graph)** for the searchable engineering portal. It indexes every committed Markdown document, links each guide to its revision-pinned source, and embeds the interactive Graphify architecture map. The same resources are available directly at `/graph/search?q=<term>`, `/graph/data`, and `/graph/visualization` for automation or an external documentation site.
+
+The portal is deliberately served by imPress rather than embedded from GitHub: it works on private deployments, ships in the container image, has no third-party runtime dependency, and always uses the graph committed for the deployed source revision. For generation, freshness, hooks, and CI behaviour, see the [Graphify guide](guides/graphify.md).
+
 ## Map
 
 | Section | Read it when you want to… |

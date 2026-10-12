@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>imPress engineering documentation</title>
+  <link rel="stylesheet" href="/static/css/graph_portal.css">
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="/">imPress</a><nav><a href="#guides">Guides</a><a href="#architecture">Architecture</a><a href="#knowledge-graph">Knowledge graph</a><a href="https://github.com/Kush-Kelaiya22/imPress/tree/varun/v2.1/docs">Repository docs</a></nav></header>
+  <main>
+    <section class="hero"><p class="eyebrow">ENGINEERING PORTAL</p><h1>Documentation that follows the classroom system end to end.</h1><p>Find deployment procedures, protocol contracts, security decisions, firmware guidance, and a live map of the current codebase.</p><label class="search"><span>Search documentation</span><input id="doc-search" type="search" autocomplete="off" placeholder="Try “SPI”, “OTA”, “sessions”, or “deployment”"></label><p id="search-status" class="status">{{ docs|length }} documents indexed from this release.</p></section>
+    <section id="guides" class="content"><aside><h2>Start here</h2><a href="https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/README.md">Product overview</a><a href="https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/docs/guides/development-setup.md">Development setup</a><a href="https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/docs/guides/deployment.md">Deployment</a><a href="https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/docs/guides/troubleshooting.md">Troubleshooting</a><a href="https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/docs/guides/graphify.md">Graphify workflow</a></aside><div><h2 id="architecture">Browse documentation</h2><div id="results" class="results">{% for doc in docs %}<article class="doc-card"><p class="path">{{ doc.path }}</p><h3><a href="https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/{{ doc.path }}">{{ doc.title }}</a></h3><p>{{ doc.excerpt }}</p></article>{% endfor %}</div></div></section>
+    <section id="knowledge-graph" class="graph-section"><div><p class="eyebrow">LIVE ARCHITECTURE MAP</p><h2>Explore relationships, not just files.</h2><p>The graph is regenerated on source and documentation changes. Search nodes, inspect links, and use it alongside the detailed Markdown guides.</p><div class="actions"><a class="button" href="/graph/visualization" target="graph-view">Open full graph</a><a class="button secondary" href="/graph/data">Download graph JSON</a></div></div><iframe title="Interactive imPress knowledge graph" src="/graph/visualization" loading="lazy"></iframe></section>
+  </main>
+  <footer>imPress engineering documentation · Generated graph is tracked with the current source revision.</footer>
+  <script>
+    const input=document.querySelector('#doc-search'), results=document.querySelector('#results'), status=document.querySelector('#search-status');
+    const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));let timer; input.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(async()=>{const r=await fetch('/graph/search?q='+encodeURIComponent(input.value));const d=await r.json();status.textContent=`${d.total} document${d.total===1?'':'s'} found.`;results.innerHTML=d.results.map(x=>`<article class="doc-card"><p class="path">${esc(x.path)}</p><h3><a href="https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/${esc(x.path)}">${esc(x.title)}</a></h3><p>${esc(x.excerpt)}</p></article>`).join('')||'<p class="empty">No documents match. Try a component, protocol, or task.</p>';},180)});
+  </script>
+</body></html>

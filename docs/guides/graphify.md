@@ -46,6 +46,16 @@ Graphify installed and GitHub will update the graph. Its cache contains only
 downloaded Graphify dependencies; source is always re-scanned against the
 checked-out commit.
 
+## Viewing the graph and documentation
+
+The deployed backend exposes a public documentation portal at `/graph`. It has
+client-side search backed by `/graph/search`, an interactive embedded graph at
+`/graph/visualization`, and the raw graph at `/graph/data`. The portal indexes
+the committed Markdown documentation and links to the exact `varun/v2.1`
+source on GitHub. It does not use a GitHub iframe, so it also works from a
+private or offline classroom deployment. Docker images copy both `docs/` and
+the three published Graphify files to make these routes available.
+
 ## Hooks and troubleshooting
 
 Each contributor must opt in on their own machine:

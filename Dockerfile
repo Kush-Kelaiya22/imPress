@@ -23,6 +23,8 @@ RUN pip install --require-hashes -r backend/requirements-lock.txt
 
 COPY VERSION ./
 COPY backend/app backend/app
+COPY docs docs
+COPY graphify-out graphify-out
 COPY backend/.env.example backend/.env.example
 COPY scripts/init_env.py scripts/docker-entrypoint.sh scripts/
 

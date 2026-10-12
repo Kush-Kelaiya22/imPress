@@ -2,6 +2,8 @@
 *
 !VERSION
 !backend/app
+!docs
+!graphify-out
 !backend/requirements-lock.txt
 !backend/.env.example
 !scripts/init_env.py
