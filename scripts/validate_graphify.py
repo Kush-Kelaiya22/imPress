@@ -13,6 +13,13 @@ OUT = ROOT / "graphify-out"
 SENSITIVE = re.compile(r"(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_|sk-[A-Za-z0-9]{20,}|BEGIN (?:RSA |EC )?PRIVATE KEY)")
 
 
+def source_commit() -> str:
+    return subprocess.check_output(
+        ["git", "log", "-1", "--format=%H", "--", ".", ":(exclude)graphify-out/**"],
+        cwd=ROOT, text=True,
+    ).strip()
+
+
 def main() -> int:
     required = [OUT / "graph.json", OUT / "graph.html", OUT / "GRAPH_REPORT.md"]
     missing = [str(path) for path in required if not path.is_file() or path.stat().st_size == 0]
@@ -28,10 +35,9 @@ def main() -> int:
         raise SystemExit(f"missing component coverage: {sorted(needed - labels)}")
     built = graph.get("built_at_commit")
     head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
-    if built and not head.startswith(built):
-        changed = subprocess.check_output(["git", "diff", "--name-only", built, "HEAD"], cwd=ROOT, text=True).splitlines()
-        if any(not path.startswith("graphify-out/") for path in changed):
-            raise SystemExit(f"stale graph: built from {built}, HEAD is {head}")
+    expected = source_commit()
+    if built and not expected.startswith(built):
+        raise SystemExit(f"stale graph: built from {built}, latest source commit is {expected}")
     text = "\n".join(path.read_text(errors="replace") for path in required)
     if str(ROOT) in text or SENSITIVE.search(text):
         raise SystemExit("generated graph contains a sensitive value or local absolute path")

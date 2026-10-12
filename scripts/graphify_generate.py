@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -41,6 +42,14 @@ def tracked_files() -> list[str]:
     return subprocess.check_output(["git", "ls-files"], cwd=ROOT, text=True).splitlines()
 
 
+def source_commit() -> str:
+    """Latest commit that changed input, rather than a graph-only bot commit."""
+    return subprocess.check_output(
+        ["git", "log", "-1", "--format=%H", "--", ".", ":(exclude)graphify-out/**"],
+        cwd=ROOT, text=True,
+    ).strip()
+
+
 def node_id(prefix: str, path: str) -> str:
     return f"impress_{prefix}_" + "".join(c if c.isalnum() else "_" for c in path).strip("_").lower()
 
@@ -55,6 +64,7 @@ def component_for(path: str) -> str | None:
 def enrich() -> None:
     graph_path = OUT / "graph.json"
     graph = json.loads(graph_path.read_text())
+    graph["built_at_commit"] = source_commit()
     nodes, links = graph["nodes"], graph["links"]
     ids = {node["id"] for node in nodes}
     pairs = {(edge["source"], edge["target"], edge.get("relation")) for edge in links}
@@ -102,7 +112,8 @@ def enrich() -> None:
 
 def append_coverage() -> None:
     report = OUT / "GRAPH_REPORT.md"
-    report.write_text(report.read_text().rstrip() + "\n\n## Repository Coverage\n"
+    text = re.sub(r"(?m)^- Built from commit: `[^`]+`$", f"- Built from commit: `{source_commit()[:8]}`", report.read_text())
+    report.write_text(text.rstrip() + "\n\n## Repository Coverage\n"
                       "- Python/FastAPI backend, frontend, and ESP32 firmware are AST-extracted by Graphify.\n"
                       "- Tracked Markdown documentation and configuration files are cataloged deterministically.\n"
                       "- Verified protocol nodes cover REST, WebSocket live sessions, and SPI framed batches.\n"
