@@ -1,0 +1,81 @@
+name: Graphify knowledge graph
+
+on:
+  push:
+    branches: [varun/v2.1]
+    paths-ignore:
+      - graphify-out/**
+  workflow_dispatch:
+
+# `contents: write` publishes changed generated files; PR write is only the
+# branch-protection fallback.
+permissions:
+  contents: write
+  pull-requests: write
+
+# Queue runs: each verifies its source SHA is still branch HEAD before publish.
+concurrency:
+  group: graphify-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  generate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.cache/uv
+          key: graphify-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-graphifyy-0.9.63
+          restore-keys: graphify-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-graphifyy-
+      - name: Install the official Graphify CLI
+        run: |
+          python -m pip install --disable-pip-version-check uv
+          uv tool install --python "${{ env.PYTHON_VERSION }}" graphifyy==0.9.63
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          graphify --version
+      - name: Generate the complete keyless repository graph
+        run: python scripts/graphify_generate.py
+      - name: Validate generated graph and workflow contract
+        run: |
+          python scripts/validate_graphify.py
+          python -m pip install --disable-pip-version-check pytest pyyaml
+          pytest -q tests/test_graphify.py
+      - name: Publish only a graph built from the current source commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+          TARGET_BRANCH: varun/v2.1
+        run: |
+          if git diff --quiet -- graphify-out; then
+            echo "Graph output is unchanged."
+            exit 0
+          fi
+          git fetch origin "$TARGET_BRANCH"
+          if [ "$(git rev-parse "origin/$TARGET_BRANCH")" != "$SOURCE_SHA" ]; then
+            echo "A newer source commit is already on $TARGET_BRANCH; leaving publication to its queued run."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add graphify-out/graph.json graphify-out/graph.html graphify-out/GRAPH_REPORT.md
+          git commit -m "chore(graphify): refresh knowledge graph [skip graphify]"
+          if git push origin "HEAD:$TARGET_BRANCH"; then
+            echo "Published Graphify output to $TARGET_BRANCH."
+            exit 0
+          fi
+          fallback="automation/graphify-${SOURCE_SHA}"
+          git push origin "HEAD:$fallback"
+          gh pr create --base "$TARGET_BRANCH" --head "$fallback" \
+            --title "chore(graphify): refresh knowledge graph" \
+            --body "Automated Graphify update for ${SOURCE_SHA}. Direct write was rejected, likely by branch protection."

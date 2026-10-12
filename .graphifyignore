@@ -1,0 +1,14 @@
+# Generated, dependency, runtime, and credential-bearing paths are never graph input.
+graphify-out/
+.git/
+.venv/
+node_modules/
+frontend/dist/
+firmware/*/build/
+backend/firmware_bins/
+logs/
+*.db
+.env
+.env.*
+*.pem
+*.key

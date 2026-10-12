@@ -39,3 +39,4 @@ backend/tests/fixtures/signing/*.img  binary
 # GitHub language stats: vendored ESP-IDF registry components aren't ours.
 firmware/class_c6/managed_components/** linguist-vendored
 firmware/contract/*.json linguist-generated=false
+graphify-out/graph.json merge=graphify
