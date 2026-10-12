@@ -250,8 +250,9 @@ jobs:
         run: |
           pip install -r docs/requirements.txt
           sphinx-build -E -W --keep-going -b html docs docs/_build/html
-          test -s docs/_build/html/graph.html
-          test -s docs/_build/html/graph.json
+          test -s docs/_build/html/graph/index.html
+          test -s docs/_build/html/graph/visualization.html
+          test -s docs/_build/html/graph/graph.json
           test -s docs/_build/html/searchindex.js
 
   ui:

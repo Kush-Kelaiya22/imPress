@@ -18,11 +18,11 @@ def test_readthedocs_configuration_uses_reproducible_sphinx_build():
 
 def test_sphinx_site_has_searchable_navigation_and_graph_page():
     index = (ROOT / "docs" / "index.md").read_text()
-    graph = (ROOT / "docs" / "graph.md").read_text()
+    graph = (ROOT / "docs" / "graph" / "index.md").read_text()
     assert "{toctree}" in index
-    for document in ("README", "graph", "architecture/overview", "api/rest-api", "guides/deployment"):
+    for document in ("README", "graph/index", "architecture/overview", "api/rest-api", "guides/deployment"):
         assert document in index
-    assert 'src="../graph.html"' in graph
+    assert 'src="visualization.html"' in graph
     assert "/graph/visualization" in graph
 
 
@@ -39,5 +39,6 @@ def test_docs_build_inputs_are_pinned_and_valid_python():
 def test_sphinx_copies_the_committed_graph_at_build_time():
     config = (ROOT / "docs" / "conf.py").read_text()
     assert "graphify-out" in config
-    assert "graph.html" in config and "graph.json" in config
+    assert "visualization.html" in config and "graph.json" in config
+    assert 'output / "graph"' in config
     assert "builder-inited" in config
