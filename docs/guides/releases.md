@@ -1,6 +1,6 @@
 # Releases
 
-How imPress releases are made, what a release contains, how its **Beta** or **Stable** status is decided, and how to use the published files. The policy (version numbers, sign-off, change history) is in [CONTRIBUTING §14–15](../../CONTRIBUTING.md#14-version-policy-and-change-history). This page describes the automation that carries it out (#96).
+How imPress releases are made, what a release contains, how its **Beta** or **Stable** status is decided, and how to use the published files. The policy (version numbers, sign-off, change history) is in [CONTRIBUTING §14–15](https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/CONTRIBUTING.md#14-version-policy-and-change-history). This page describes the automation that carries it out (#96).
 
 ## Contents
 
@@ -97,7 +97,7 @@ To add an owner, change `RELEASE_OWNERS` in `release.yml` and the branch lists i
 
 ## The changelog
 
-[`CHANGELOG.md`](../../CHANGELOG.md) is kept by every pull request; the rules are in [CONTRIBUTING §14.4](../../CONTRIBUTING.md#144-recording-changes). In short:
+[`CHANGELOG.md`](https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/CHANGELOG.md) is kept by every pull request; the rules are in [CONTRIBUTING §14.4](https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/CONTRIBUTING.md#144-recording-changes). In short:
 
 - entries go under `## [Unreleased]`, in the categories **Added**, **Changed**, **Removed**, **Fixed** and **Security**;
 - one `- ` bullet per change, written for users, ending with its issue link;
@@ -112,7 +112,7 @@ A release page's **What changed** section shows the `[Unreleased]` entries that 
 1. **Create the branch** `varun/v2.2` from the agreed source (CONTRIBUTING §8.2).
 2. **Prepare one pull request into it:**
    - set `VERSION` and the three `firmware/*/version.txt` files to `2.2.0`;
-   - add `docs/releases/v2.2.md`, the line's page template. Keep the headings of the [release page structure](../../CONTRIBUTING.md#153-release-page-structure) (a test checks them);
+- add `docs/releases/v2.2.md`, the line's page template. Keep the headings of the [release page structure](https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/CONTRIBUTING.md#153-release-page-structure) (a test checks them);
    - in `CHANGELOG.md`, rename `## [Unreleased]` to the old line's last release and start a new `## [Unreleased]`.
 3. **Create the milestone** `varun/v2.2`, and add the test issues (label `testing`) that must pass before the line is Stable.
 4. **Merge** after review and green CI. The merge becomes `varun/v2.2.0`, and every later push `varun/v2.2.<n>`.
@@ -153,7 +153,7 @@ The status is checked again when an issue is opened, edited, closed, reopened, d
 
 ## The release page
 
-The page structure is fixed for every release: see [CONTRIBUTING §15.3](../../CONTRIBUTING.md#153-release-page-structure). It leads with what a reader needs to install and use imPress; detail is linked, not copied.
+The page structure is fixed for every release: see [CONTRIBUTING §15.3](https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/CONTRIBUTING.md#153-release-page-structure). It leads with what a reader needs to install and use imPress; detail is linked, not copied.
 
 The **status section** at the top (between `<!-- release-status:start -->` and `<!-- release-status:end -->`) is written by the workflow:
 
@@ -226,7 +226,7 @@ Install the tools once: `pip install "esptool>=5" esp-idf-nvs-partition-gen` (th
 1. Make a settings file. Use the key names exactly as shown. The first data row (`init_done` or `init`) stops the firmware from replacing your values with its defaults on the first start.
 
    Gateway (`c6-settings.csv`):
-   ```csv
+   ```text
    key,type,encoding,value
    impress,namespace,,
    init_done,data,u8,1
@@ -238,7 +238,7 @@ Install the tools once: `pip install "esptool>=5" esp-idf-nvs-partition-gen` (th
    class_id,data,i32,0
    ```
    Hub (`s3-settings.csv`). The namespace, the flag and two key names are different, and the port is `i32`:
-   ```csv
+   ```text
    key,type,encoding,value
    s3_cfg,namespace,,
    init,data,u8,1
@@ -274,6 +274,6 @@ Limits: the hub's server address is at most 63 characters and its key at most 64
 | No release after a merge | Check that CI passed on the merge commit, that the branch is named exactly `<owner>/vMAJOR.MINOR` with a listed owner and the same line as `VERSION`, and that `docs/releases/vMAJOR.MINOR.md` exists. The *Plan* step summary shows the plan and the reason. |
 | *Publish release* failed | The tag may not exist yet. Fix the cause and run the workflow manually. If the tag was created but the release wasn't, delete the tag only after checking that it points to the intended commit, then run the workflow again. |
 | The status did not change | The issue must be in milestone `<owner>/vMAJOR.MINOR` or `<owner>/vMAJOR.MINOR.PATCH` (the exact title) and labelled `testing`. Run the workflow manually to force a check. |
-| CI fails with *Add an entry under '## [Unreleased]'* | Add a `CHANGELOG.md` entry ([CONTRIBUTING §14.4](../../CONTRIBUTING.md#144-recording-changes)), or ask a maintainer for the `no-changelog` label. |
+| CI fails with *Add an entry under '## [Unreleased]'* | Add a `CHANGELOG.md` entry ([CONTRIBUTING §14.4](https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/CONTRIBUTING.md#144-recording-changes)), or ask a maintainer for the `no-changelog` label. |
 | A status badge is out of date | The workflow redraws the table on every issue change. Check the latest *Release* run under Actions, or run the workflow manually. |
 | `docker pull` asks for credentials | The package is private; see [the backend container image](#the-backend-container-image). |

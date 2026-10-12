@@ -15,6 +15,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Added
 
+- A Read the Docs-ready Sphinx/MyST documentation site with responsive navigation, full-text search, Mermaid diagrams, local build commands and an embedded revision-matched Graphify visualization.
 - A public `/graph` engineering documentation portal with searchable Markdown guides and the interactive Graphify architecture map.
 - A keyless, committed Graphify knowledge graph with Codex guidance, local hooks, validation, and automated GitHub synchronization for `varun/v2.1`.
 - `CHANGELOG.md`, kept by every pull request. A CI check fails a pull request that doesn't add an entry, unless it has the `no-changelog` label. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))

@@ -1,6 +1,12 @@
 # imPress documentation
 
-This folder is the long-form documentation for imPress. The [project README](../README.md) gives the one-page overview and quick start; everything detailed lives here.
+This folder is the long-form documentation for imPress. The [project README](https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/README.md) gives the one-page overview and quick start; everything detailed lives here.
+
+## Hosted documentation
+
+Read the Docs builds this folder with Sphinx and MyST whenever its project is connected to this repository. It provides responsive navigation, a full-text search box, versioned builds, edit-on-GitHub links and the interactive graph at the hosted [knowledge-graph page](graph.md). The build uses the committed Graphify output from the exact source revision; it does not regenerate or fetch an unpinned graph during publishing.
+
+For a local equivalent, install the pinned tooling with `python -m pip install -r docs/requirements.txt`, then run `make -C docs html`. Open `docs/_build/html/index.html`; the documentation search is in the left navigation and `graph.html` is the full-page graph. On Windows, run `docs\\make.bat html` instead. Read the Docs validates warnings as errors, so the same command is a useful pre-push check.
 
 ## Documentation portal and search
 
@@ -12,48 +18,48 @@ The portal is deliberately served by imPress rather than embedded from GitHub: i
 
 | Section | Read it when you want to… |
 |---|---|
-| **[Architecture](architecture/)** | understand how the system is put together |
+| **[Architecture](architecture/overview.md)** | understand how the system is put together |
 | ↳ [System overview](architecture/overview.md) | see every component, how they connect, and why it's split this way |
 | ↳ [Backend architecture](architecture/backend.md) | work on the FastAPI service: layers, request lifecycle, background tasks |
 | ↳ [Firmware architecture](architecture/firmware.md) | work on the ESP32 code: tasks, priorities, memory, state machines per board |
 | ↳ [Data flows](architecture/data-flows.md) | follow a quiz, an answer, a join, presence or an OTA end to end (sequence diagrams) |
-| **[Design](design/)** | understand *why* things work the way they do |
+| **[Design](design/decisions.md)** | understand *why* things work the way they do |
 | ↳ [Wire protocols](design/protocols.md) | encode or decode any byte on any link |
 | ↳ [Mesh design](design/mesh.md) | understand ESP-NOW relaying, root discovery, de-duplication, timing |
 | ↳ [Security model](design/security-model.md) | reason about threats, auth, keys, sessions, OTA integrity |
 | ↳ [Design decisions](design/decisions.md) | read the decision records behind non-obvious choices |
-| **[API](api/)** | integrate with the backend |
+| **[API](api/rest-api.md)** | integrate with the backend |
 | ↳ [REST API](api/rest-api.md) | call any HTTP endpoint (request/response contracts, errors) |
 | ↳ [WebSocket API](api/websocket-api.md) | consume or produce live class events |
 | ↳ [Device API](api/device-api.md) | implement or change gateway ↔ backend communication |
-| **[Guides](guides/)** | get something done |
+| **[Guides](guides/development-setup.md)** | get something done |
 | ↳ [Development setup](guides/development-setup.md) | run the backend, UIs and firmware builds locally |
 | ↳ [Configuration](guides/configuration.md) | look up any backend setting or device Kconfig/NVS key |
 | ↳ [Deployment](guides/deployment.md) | put imPress in a real classroom |
 | ↳ [CSV imports](guides/csv-imports.md) | bulk-create quiz questions, courses and sections from a spreadsheet; export sections |
 | ↳ [OTA updates](guides/ota-updates.md) | ship firmware to deployed hubs and gateways |
 | ↳ [Releases](guides/releases.md) | release names, how releases are made, Beta and Stable, the container image, flashing prebuilt images |
-| ↳ [Changelog](../CHANGELOG.md) | what was added, changed, removed and fixed in each release |
+| ↳ [Changelog](https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/CHANGELOG.md) | what was added, changed, removed and fixed in each release |
 | ↳ [Testing](guides/testing.md) | run, read or write tests; understand CI |
 | ↳ [Troubleshooting](guides/troubleshooting.md) | diagnose resets, connectivity and data problems |
-| **[Reference](reference/)** | look up facts |
+| **[Reference](reference/data-model.md)** | look up facts |
 | ↳ [Data model](reference/data-model.md) | every table, column and relationship |
 | ↳ [Hardware](reference/hardware.md) | boards, pins, wiring, partitions |
 | ↳ [Known issues](reference/known-issues.md) | open observations not yet fixed |
 | ↳ [Changelog: v2](reference/changelog-v2.md) | what the audit fixed (#1–#25) |
 | ↳ [Changelog: v2.1](reference/changelog-v2.1.md) | what v2.1 changes, issue by issue, with upgrade notes |
-| **[Testing](testing/)** | understand what is tested and what isn't |
+| **[Testing](testing/TEST_STRATEGY.md)** | understand what is tested and what isn't |
 | ↳ [Test strategy](testing/TEST_STRATEGY.md) | test layers, coverage, faults covered, rules for new tests |
 | ↳ [Hardware validation](testing/HARDWARE_VALIDATION.md) | bench checks per feature and their status (all *not run* so far) |
-| **[Hardware](hardware/)** | choose boards for a classroom |
+| **[Hardware](hardware/CLASSROOM_NODE_REQUIREMENTS.md)** | choose boards for a classroom |
 | ↳ [Classroom node requirements](hardware/CLASSROOM_NODE_REQUIREMENTS.md) | measured footprints; minimum, reduced-flash and high-capacity configurations; pending bench figures |
 | ↳ [Device compatibility](hardware/DEVICE_COMPATIBILITY.md) | which image runs where, what OTA can and can't change, firmware ↔ backend version mixes |
-| **[Firmware](firmware/)** | understand firmware delivery |
+| **[Firmware](firmware/OTA_ARCHITECTURE.md)** | understand firmware delivery |
 | ↳ [OTA architecture](firmware/OTA_ARCHITECTURE.md) | image validation, registry, deployment state machine, staged rollout, per-device paths |
 | ↳ [Firmware versioning](firmware/FIRMWARE_VERSIONING.md) | where versions come from, immutability, comparison, releasing a version |
 | ↳ [Recovery procedure](firmware/RECOVERY_PROCEDURE.md) | rolled-back devices, paused deployments, fleet rollback, serial reflash, undoing a backend upgrade |
-| **[Deployment](deployment/)** | find the installation, configuration and troubleshooting pages |
-| **[Engineering](engineering/)** | see the evidence behind the v2.1 work |
+| **[Deployment](deployment/README.md)** | find the installation, configuration and troubleshooting pages |
+| **[Engineering](engineering/V2.1_ENGINEERING_REPORT.md)** | see the evidence behind the v2.1 work |
 | ↳ [System audit](engineering/SYSTEM_AUDIT.md) | the v2 baseline: architecture map, device matrix, measured footprints, defects, test baseline |
 | ↳ [Security review](engineering/SECURITY_REVIEW.md) | v2.1 access control, uploads and firmware checked against the brief, with evidence and open findings |
 | ↳ [v2.1 engineering report](engineering/V2.1_ENGINEERING_REPORT.md) | the final report: PRs, issues, v2/v3 decisions, features, test results, deployment, remaining risks |
