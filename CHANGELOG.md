@@ -10,6 +10,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Fixed
 
+- The Read the Docs graph now renders at its intended `/graph/` subpage instead of colliding with Sphinx's generated page.
 - Graphify now treats graph-only automation commits as derived output, preventing a manual unchanged rerun from creating another graph commit.
 - A release line created on the same commit as an older release no longer gates that older release: a line's test issues apply only to releases built on it after it existed. ([#107](https://github.com/Kush-Kelaiya22/imPress/issues/107))
 

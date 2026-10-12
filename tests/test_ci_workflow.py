@@ -174,5 +174,6 @@ def test_hosted_documentation_is_built_in_ci(workflow):
     text = _steps_text(job)
     assert "docs/requirements.txt" in text
     assert "sphinx-build -E -W --keep-going -b html" in text
-    assert "graph.html" in text and "graph.json" in text and "searchindex.js" in text
+    assert "graph/index.html" in text and "graph/visualization.html" in text
+    assert "graph/graph.json" in text and "searchindex.js" in text
     assert "docs" in workflow["jobs"]["result"]["needs"]

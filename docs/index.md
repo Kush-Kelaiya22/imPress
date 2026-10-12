@@ -7,7 +7,7 @@ imPress is a classroom-response system with a FastAPI service, web clients and E
 :caption: Start here
 
 README
-graph
+graph/index
 architecture/overview
 guides/development-setup
 guides/deployment
@@ -75,4 +75,4 @@ releases/v2.1
 
 ## Find what you need
 
-Use the search box in the upper left to search every rendered guide. For code and component relationships, use the interactive [knowledge graph](graph.md). The deployed application also provides the same graph and a fast documentation search at `/graph`.
+Use the search box in the upper left to search every rendered guide. For code and component relationships, use the interactive [knowledge graph](graph/index.md). The deployed application also provides the same graph and a fast documentation search at `/graph`.

@@ -41,15 +41,16 @@ html_context = {
 
 
 def _publish_graph_visualization(app) -> None:
-    """Expose the generated, revision-matched graph at ``/graph.html``."""
+    """Expose the generated graph beneath the hosted ``/graph/`` page."""
     graph_source = REPOSITORY_ROOT / "graphify-out" / "graph.html"
     graph_data = REPOSITORY_ROOT / "graphify-out" / "graph.json"
     if not graph_source.is_file() or not graph_data.is_file():
         raise RuntimeError("Graphify output is required: run `graphify update .`")
     output = Path(app.outdir)
-    output.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(graph_source, output / "graph.html")
-    shutil.copy2(graph_data, output / "graph.json")
+    graph_output = output / "graph"
+    graph_output.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(graph_source, graph_output / "visualization.html")
+    shutil.copy2(graph_data, graph_output / "graph.json")
 
 
 def setup(app) -> dict[str, bool]:

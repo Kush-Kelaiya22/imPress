@@ -4,9 +4,9 @@ This folder is the long-form documentation for imPress. The [project README](htt
 
 ## Hosted documentation
 
-Read the Docs builds this folder with Sphinx and MyST whenever its project is connected to this repository. It provides responsive navigation, a full-text search box, versioned builds, edit-on-GitHub links and the interactive graph at the hosted [knowledge-graph page](graph.md). The build uses the committed Graphify output from the exact source revision; it does not regenerate or fetch an unpinned graph during publishing.
+Read the Docs builds this folder with Sphinx and MyST whenever its project is connected to this repository. It provides responsive navigation, a full-text search box, versioned builds, edit-on-GitHub links and the interactive graph at the hosted [knowledge-graph page](graph/index.md), whose URL is `/graph/`. The build uses the committed Graphify output from the exact source revision; it does not regenerate or fetch an unpinned graph during publishing.
 
-For a local equivalent, install the pinned tooling with `python -m pip install -r docs/requirements.txt`, then run `make -C docs html`. Open `docs/_build/html/index.html`; the documentation search is in the left navigation and `graph.html` is the full-page graph. On Windows, run `docs\\make.bat html` instead. Read the Docs validates warnings as errors, so the same command is a useful pre-push check.
+For a local equivalent, install the pinned tooling with `python -m pip install -r docs/requirements.txt`, then run `make -C docs html`. Open `docs/_build/html/index.html`; the documentation search is in the left navigation, `graph/index.html` is the embedded graph page, and `graph/visualization.html` is the full-page graph. On Windows, run `docs\\make.bat html` instead. Read the Docs validates warnings as errors, so the same command is a useful pre-push check.
 
 ## Documentation portal and search
 

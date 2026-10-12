@@ -58,7 +58,7 @@ the three published Graphify files to make these routes available.
 
 ### Hosted documentation
 
-The Read the Docs configuration in `.readthedocs.yaml` builds this documentation with Sphinx/MyST and copies the committed graph into the hosted output as `graph.html`. The [knowledge-graph page](../graph.md) embeds it and offers a full-page link. Read the Docs' built-in search indexes the rendered Markdown guides; Graphify's own graph search remains available inside the visualization.
+The Read the Docs configuration in `.readthedocs.yaml` builds this documentation with Sphinx/MyST and copies the committed graph into `graph/visualization.html`. The hosted [knowledge-graph page](../graph/index.md) is the `/graph/` subpage and embeds it with a full-page link. Read the Docs' built-in search indexes the rendered Markdown guides; Graphify's own graph search remains available inside the visualization.
 
 To preview the hosted site locally, install `docs/requirements.txt` and run `make -C docs html`. This fails on documentation warnings just as the hosted build does. The application-level `/graph` portal remains independent of Read the Docs and is the right choice for private deployments or a locally running server.
 
