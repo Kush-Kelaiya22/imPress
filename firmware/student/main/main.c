@@ -219,6 +219,10 @@ void app_main(void)
 
     /* Load enrollment + profile from NVS (survives OTA) */
     init_student_profile();
+    if (!student_has_identity()) {
+        ESP_LOGI(TAG, "Unprovisioned hardware: setting simulation student target DEMO260001");
+        student_update_profile("DEMO260001", "Aditi Sharma", "B.Tech CSE", "aditi@impress.test");
+    }
     ESP_LOGI(TAG, "Enrollment: %s  provisioned=%d",
              g_student.enrollment, (int)g_student.provisioned);
 

@@ -254,11 +254,19 @@ int http_register_device(const char *mac_address, const char *device_type)
 {
     char url[256];
     _url(url, sizeof(url), "/api/device/register");
-    char json[256];
+    char json[288];
+#ifdef CONFIG_CLASSROOM_CODE
+    snprintf(json, sizeof(json),
+             "{\"mac_address\":\"%s\",\"device_type\":\"%s\","
+             "\"device_name\":\"imPress C6\",\"firmware_version\":\"%s\","
+             "\"classroom_code\":\"%s\"}",
+             mac_address, device_type, FIRMWARE_VERSION, CONFIG_CLASSROOM_CODE);
+#else
     snprintf(json, sizeof(json),
              "{\"mac_address\":\"%s\",\"device_type\":\"%s\","
              "\"device_name\":\"imPress C6\",\"firmware_version\":\"%s\"}",
              mac_address, device_type, FIRMWARE_VERSION);
+#endif
 
     char resp[320];
     int status = _http_post_body(url, json, resp, sizeof(resp));

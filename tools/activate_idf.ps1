@@ -11,12 +11,30 @@
 #>
 
 [CmdletBinding()]
-param()
+param(
+    [string]$IdfRoot = "K:\esp\v6.1"
+)
 
 $activated = $false
 
+# 0. Check user-supplied or default $IdfRoot directly
+if ($IdfRoot -and (Test-Path $IdfRoot)) {
+    $rootCandidates = @(
+        (Join-Path $IdfRoot "esp-idf\export.ps1"),
+        (Join-Path $IdfRoot "export.ps1")
+    )
+    foreach ($cand in $rootCandidates) {
+        if (Test-Path $cand) {
+            $idfDir = Split-Path $cand -Parent
+            $env:IDF_PATH = $idfDir
+            Write-Host "[ESP-IDF] Found ESP-IDF in IdfRoot: $idfDir"
+            break
+        }
+    }
+}
+
 # 1. Check if IDF_PATH is already set and has export.ps1
-if ($env:IDF_PATH -and (Test-Path "$env:IDF_PATH\export.ps1")) {
+if (-not $activated -and $env:IDF_PATH -and (Test-Path "$env:IDF_PATH\export.ps1")) {
     Write-Host "[ESP-IDF] Using existing IDF_PATH: $env:IDF_PATH"
     . "$env:IDF_PATH\export.ps1"
     $activated = $true
