@@ -3161,6 +3161,12 @@ async function renderClassDetail(app, params) {
     document.getElementById('ws-status').textContent = 'Disconnected';
     document.getElementById('ws-status').className = 'badge badge-danger';
   });
+  classSocket.on('forbidden', (ev) => {           // #160: the server refused this page's live feed
+    const why = ev.reason === 'wss:// required' ? 'Open this page with https:// to see live data.'
+      : 'You no longer have access to this class.';
+    document.getElementById('ws-status').textContent = 'No access';
+    showToast(why, 'error');
+  });
   // Live devices: was never started, so the panel stayed on "Loading devices…" (#40).
   // The backend also pushes a fresh snapshot on every change.
   classSocket.on('presence', (msg) => renderLiveDevices(msg.data));

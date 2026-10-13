@@ -540,9 +540,22 @@ class ClassSocket {
       }
     };
 
-    this.ws.onclose = () => {
-      this._emit('disconnected', {});
-      this._scheduleReconnect();
+    this.ws.onclose = (ev) => {
+      this._emit('disconnected', { code: ev.code });
+      // The server closed it on purpose (#160): retrying would fail forever.
+      if (ev.code === 4401) {                      // session revoked or expired (#118)
+        this.classId = null;
+        clearToken();
+        if (typeof showToast === 'function') showToast('Your session ended. Please log in again.', 'error');
+        window.location.hash = '#/login';
+        return;
+      }
+      if (ev.code === 4403 || ev.code === 4404) {  // no access to this class, or HTTPS required (#121, #152)
+        this.classId = null;
+        this._emit('forbidden', { code: ev.code, reason: ev.reason });
+        return;
+      }
+      this._scheduleReconnect();                   // network trouble, server restart: try again
     };
 
     this.ws.onerror = () => {

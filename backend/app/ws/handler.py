@@ -108,6 +108,19 @@ async def _ws_user_from_token(token: str):
     return user if error is None else None
 
 
+async def _refuse(websocket: WebSocket, role: str, code: int, reason: str) -> None:
+    """Refuse a socket so that its client can tell why (#160).
+
+    Browsers only see a close code after the handshake succeeded; a refusal
+    before accept reaches them as a failed handshake (1006), which looks like
+    a network error and makes the page retry forever. So teacher sockets are
+    accepted and then closed with the code. Gateways keep the HTTP 403 on the
+    handshake, which their firmware reports (#132)."""
+    if role == "teacher":
+        await websocket.accept()
+    await websocket.close(code=code, reason=reason)
+
+
 @router.websocket("/ws/class/{class_id}")
 async def class_websocket(websocket: WebSocket, class_id: int):
     """
@@ -141,7 +154,7 @@ async def class_websocket(websocket: WebSocket, class_id: int):
     client = websocket.client.host if websocket.client else None
     if (https_required() and websocket.url.scheme != "wss" and not is_loopback(client)
             and (role != "device" or settings.DEVICE_HTTPS_ONLY)):
-        await websocket.close(code=4403, reason="wss:// required")
+        await _refuse(websocket, role, 4403, "wss:// required")
         return
 
     # ── Auth gate ──────────────────────────────────────────────────────────
@@ -150,23 +163,23 @@ async def class_websocket(websocket: WebSocket, class_id: int):
             key = websocket.headers.get("x-api-key") or websocket.query_params.get("api_key")
             refusal = await _device_refusal(key, class_id)
             if refusal:
-                await websocket.close(code=refusal[0], reason=refusal[1])
+                await _refuse(websocket, role, refusal[0], refusal[1])
                 return
         elif role == "teacher":
             token = websocket.query_params.get("token", "")
             user = await _ws_user_from_token(token)
             if not is_staff(user):
-                await websocket.close(code=4401, reason="unauthorized teacher token")
+                await _refuse(websocket, role, 4401, "unauthorized teacher token")
                 return
             refusal = await _teacher_refusal(user, class_id)
             if refusal:
-                await websocket.close(code=refusal[0], reason=refusal[1])
+                await _refuse(websocket, role, refusal[0], refusal[1])
                 return
         else:
-            await websocket.close(code=4400, reason="invalid role")
+            await _refuse(websocket, role, 4400, "invalid role")
             return
     elif role not in ("teacher", "device"):
-        await websocket.close(code=4400, reason="invalid role")
+        await _refuse(websocket, role, 4400, "invalid role")
         return
 
     await manager.connect(websocket, class_id, role, user_id=user.id if user is not None else None)
