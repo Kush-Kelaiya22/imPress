@@ -76,6 +76,7 @@ engineering/V2.1_ENGINEERING_REPORT
 engineering/V2_V3_COMPARISON
 engineering/REFACTOR_ROADMAP
 releases/v2.1
+releases/v2.2
 ```
 
 ## Find what you need
