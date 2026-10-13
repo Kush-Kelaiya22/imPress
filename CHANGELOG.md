@@ -47,6 +47,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Security
 
+- Live-class connections are limited to the classes a user may open: a teacher can no longer join another teacher's class room, a gateway with its own device key can only join the class it is linked to, and browser pages can no longer send commands to classroom devices. The server refuses to start with WebSocket authentication turned off unless debug mode is on. ([#121](https://github.com/Kush-Kelaiya22/imPress/issues/121))
 - Deactivating a user, changing their role or resetting their password now signs them out everywhere, including open live-class pages; reactivating an account no longer brings back its old sessions. Changing your own password signs out your other sessions. ([#118](https://github.com/Kush-Kelaiya22/imPress/issues/118))
 
 ## [varun/v2.1.3] - 2026-10-10

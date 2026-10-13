@@ -134,18 +134,19 @@ def test_required_mode_accepts_the_shared_key_for_registration_only(client, monk
 
 
 def test_websocket_accepts_device_keys_and_refuses_reset_ones(client, h, monkeypatch):
+    cid = make_class(client, h, activate=True)              # the gateway auto-links to it
     key = _key(client)
-    with client.websocket_connect("/ws/class/1?role=device", headers={"X-API-Key": key}) as ws:
+    with client.websocket_connect(f"/ws/class/{cid}?role=device", headers={"X-API-Key": key}) as ws:
         assert ws.receive_json()["event"] == "connected"
     dev_id = _register(client, headers={"X-API-Key": key}).json()["device_id"]
     client.post(f"/api/admin/modules/{dev_id}/reset-key", headers=h)
     with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/ws/class/1?role=device", headers={"X-API-Key": key}) as ws:
+        with client.websocket_connect(f"/ws/class/{cid}?role=device", headers={"X-API-Key": key}) as ws:
             ws.receive_json()
     from app.config import settings
     monkeypatch.setattr(settings, "DEVICE_KEYS_REQUIRED", True)
     with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/ws/class/1?role=device", headers={"X-API-Key": DEVICE_KEY}) as ws:
+        with client.websocket_connect(f"/ws/class/{cid}?role=device", headers={"X-API-Key": DEVICE_KEY}) as ws:
             ws.receive_json()
 
 

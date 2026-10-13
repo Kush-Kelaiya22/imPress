@@ -16,19 +16,36 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def _device_key_ok(key: str | None) -> bool:
-    """The shared key (unless IMPRESS_DEVICE_KEYS_REQUIRED) or an active-able
-    per-device key of an enabled device (#66)."""
-    from ..database import async_session
+async def _device_refusal(key: str | None, class_id: int) -> tuple[int, str] | None:
+    """Why a device may not join this class room, or None (#66, #121).
+
+    A per-device key identifies the gateway: it may join only the class it is
+    linked to (class_sessions.device_id). The shared provisioning key names no
+    device, so it can't be bound to a class; it is accepted only while
+    IMPRESS_DEVICE_KEYS_REQUIRED is off (firmware from before #66)."""
     from ..device_auth import caller_for_key
     async with async_session() as db:
         caller = await caller_for_key(db, key)
         if caller is None:
-            return False
+            return 4401, "invalid device api_key"
         if caller.shared:
-            return not settings.DEVICE_KEYS_REQUIRED
+            return (4401, "per-device key required") if settings.DEVICE_KEYS_REQUIRED else None
+        if caller.device.is_active is False:
+            return 4401, "device disabled"
         await db.commit()                       # first use activates the key
-        return caller.device.is_active is not False
+        linked = (await db.execute(select(ClassSession.id).where(
+            ClassSession.id == class_id, ClassSession.device_id == caller.device.id))).scalar_one_or_none()
+        return None if linked else (4403, "device is not linked to this class")
+
+
+async def _teacher_refusal(user, class_id: int) -> tuple[int, str] | None:
+    """The REST class-access rule (primary teacher, co-faculty, admin) (#121)."""
+    from ..routers.classes import _has_access
+    async with async_session() as db:
+        cls = (await db.execute(select(ClassSession).where(ClassSession.id == class_id))).scalar_one_or_none()
+        if cls is None:
+            return 4404, "class not found"
+        return None if _has_access(cls, user) else (4403, "no access to this class")
 
 
 async def _touch_device_on_message(class_id: int, msg: dict | None) -> None:
@@ -97,9 +114,14 @@ async def class_websocket(websocket: WebSocket, class_id: int):
     Connect with: ws://host/ws/class/{class_id}?role=teacher|device&api_key=...&token=...
 
     Roles:
-      - teacher   (browser): must present ?token=<login session token> (teacher/admin/super_admin)
+      - teacher   (browser): must present ?token=<login session token> of a user with
+                             access to this class (primary teacher, co-faculty, admin)
       - device    (C6):      must present the device key as an X-API-Key header
-                             (or ?api_key= for older firmware)
+                             (or ?api_key= for older firmware); a per-device key
+                             joins only the class its gateway is linked to (#121)
+
+    Commands for the devices come from the server (services/mesh_bridge.py),
+    never relayed from a browser socket (#121).
 
     Teacher connections receive:
       - quiz_question, quiz_end
@@ -116,14 +138,19 @@ async def class_websocket(websocket: WebSocket, class_id: int):
     if settings.WS_REQUIRE_AUTH:
         if role == "device":
             key = websocket.headers.get("x-api-key") or websocket.query_params.get("api_key")
-            if not await _device_key_ok(key):
-                await websocket.close(code=4401, reason="invalid device api_key")
+            refusal = await _device_refusal(key, class_id)
+            if refusal:
+                await websocket.close(code=refusal[0], reason=refusal[1])
                 return
         elif role == "teacher":
             token = websocket.query_params.get("token", "")
             user = await _ws_user_from_token(token)
             if user is None or user.role not in ("teacher", "admin", "super_admin"):
                 await websocket.close(code=4401, reason="unauthorized teacher token")
+                return
+            refusal = await _teacher_refusal(user, class_id)
+            if refusal:
+                await websocket.close(code=refusal[0], reason=refusal[1])
                 return
         else:
             await websocket.close(code=4400, reason="invalid role")
@@ -158,16 +185,7 @@ async def class_websocket(websocket: WebSocket, class_id: int):
             if event == "ping":
                 await websocket.send_json({"event": "pong"})
 
-            elif event == "broadcast_command":
-                # Teacher sends command to all devices (e.g., start quiz)
-                # Forward to device connections
-                await manager.broadcast_to_class(class_id, {
-                    "event": "device_command",
-                    "command": msg.get("command"),
-                    "payload": msg.get("payload", {}),
-                })
-
-            elif event == "device_data":
+            elif event == "device_data" and role == "device":
                 # C6 device sends student data batch
                 # Forward to teacher connections
                 await manager.broadcast_to_class(class_id, {

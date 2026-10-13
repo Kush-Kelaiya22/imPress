@@ -69,7 +69,7 @@ flowchart TB
 | `schemas.py` | Pydantic request/response models, including `Role` and enrollment-number validation. |
 | `auth.py` | Password hashing (bcrypt), opaque session creation/validation (hash-only storage), `get_current_user[_light]`, `require_admin` / `require_super_admin` / `require_teacher_or_admin`. |
 | `routers/*.py` | HTTP endpoints. See [REST API](../api/rest-api.md) and [device API](../api/device-api.md). |
-| `ws/handler.py` | `/ws/class/{id}`: authenticates teacher (session token) or device (API key), registers the socket with its role, handles `ping`, `broadcast_command`, `device_data`, and refreshes device presence on any device message. |
+| `ws/handler.py` | `/ws/class/{id}`: authenticates teacher (session token) or device (API key), registers the socket with its role, checks class access (#121), handles `ping` and `device_data` (devices only), and refreshes device presence on any device message. |
 | `ws/manager.py` | `ConnectionManager`: `class_id → {socket: role}`, `broadcast_to_class`, `broadcast_to_role`, dead-socket pruning. |
 | `services/presence.py` | Online/offline transitions (logged once per transition), 15 s offline sweep, presence snapshot (gateway tree BFS), teacher push. The sweep also marks student modules silent for 90 s as *seen* (#40). |
 | `services/student_modules.py` | Student module inventory (#40): upserts from batch join/leave/heartbeat, keyed on the firmware `device_id`; no history. |
