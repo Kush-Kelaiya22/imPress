@@ -26,6 +26,29 @@ flowchart LR
 | S3 client | `firmware/class_s3/main/ota.c` | Wi-Fi hop, HTTP status and size checks, `esp_ota_*`, result after reboot (#33) |
 | C6 client | `firmware/class_c6/main/ota.c`, `ota_logic.c` | check, download + SHA-256, verify, install, reboot, health check, report each step (#34) |
 
+## TrustedInstaller
+
+The deployment engine and the download route never decide on their own that an image may go to a device. Both ask `services/trusted_installer.py` (Ring −2 in the [authorization model](../design/authorization.md), #123), which re-runs its checks every time instead of trusting the request or the database:
+
+```{mermaid}
+flowchart LR
+    A[Admin requests a deployment<br/>firmware.deploy] --> P[Policy: permission + scope]
+    P --> E[Deployment engine<br/>stages, canary, windows]
+    E -->|before each offer| TI{TrustedInstaller}
+    D[Device GET /firmware/download] -->|before serving| TI
+    TI -->|approved, type + chip match,<br/>site signature or site accepts unsigned,<br/>file SHA-256 intact| OK[offer / serve]
+    TI -->|any check fails| NO[target failed:<br/>refused by TrustedInstaller]
+```
+
+| Check | Why it is repeated |
+|---|---|
+| status `approved` with an approver (deprecated: only for an update already offered) | a row edited to `approved` in the database is not enough |
+| device type and chip equal the image's target and chip | the device type is self-reported at registration |
+| signed with the site key, or `IMPRESS_FIRMWARE_ALLOW_UNSIGNED` | the site key or policy can change after a deployment was created |
+| stored file size and SHA-256 equal the registered values | the file on disk could be replaced |
+
+The TrustedInstaller has no HTTP route and no say over user accounts; administrators cannot bypass it. Approval is separated from upload (another administrator approves, unless `IMPRESS_FIRMWARE_SINGLE_APPROVER`).
+
 ## Per-device state machine
 
 ```mermaid

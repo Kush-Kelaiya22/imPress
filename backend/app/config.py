@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     # scripts/firmware_key.sh). Set: uploads must be signed with it, and images
     # that aren't are never deployed. Empty: signatures are recorded, not required.
     FIRMWARE_SIGNING_KEY: str = ""
+    # Without a signing key, the TrustedInstaller refuses to deploy unless the
+    # site accepts unsigned images explicitly (#123). DEBUG implies true.
+    FIRMWARE_ALLOW_UNSIGNED: bool = False
+    # Separation of duties (#123): the uploader of an image can't approve it.
+    # A site with a single administrator sets this; a super admin may then
+    # approve their own upload, and the approval is logged as such.
+    FIRMWARE_SINGLE_APPROVER: bool = False
 
     # ── First-run super admin ──
     # Empty → a random password is generated and logged ONCE at first start.

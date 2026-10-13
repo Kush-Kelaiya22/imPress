@@ -129,7 +129,7 @@ def test_unsigned_images_from_before_are_not_deployed_once_signing_is_required(c
     site_key("key_a.pub")
     assert client.get("/api/admin/firmware", headers=h).json()[0]["signed_by_site_key"] is False
     r = client.post("/api/admin/deployments?dry_run=true", headers=h, json={"artifact_id": art["id"], "device_ids": [1]})
-    assert r.json()["excluded"][0]["reason"] == "image is not signed with the site firmware key (#66)"
+    assert r.json()["excluded"][0]["reason"] == "image is not signed with the site firmware key"
 
 
 def test_an_unreadable_site_key_is_reported(site_key):

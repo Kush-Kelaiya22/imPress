@@ -78,6 +78,8 @@ A test (`test_policy.py`) fails if this table and `GRANTS` differ.
 | A deleted user's references are settled by documented rules | `accounts.DELETE_RULES` (#117) | `409 USER_OWNS_CLASSES` while they own a class |
 | Account changes that end access revoke sessions and sockets | `accounts.revoke` (#118) | old tokens and sockets stop working |
 
+The firmware trust domain (Ring −2) is described in [OTA architecture → TrustedInstaller](../firmware/OTA_ARCHITECTURE.md#trustedinstaller).
+
 Recovery when a database already has no usable super admin is an offline command on the server (`python -m app.manage restore-super-admin`, #120), never an HTTP route.
 
 ## Errors

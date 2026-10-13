@@ -45,6 +45,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 - Deleting a user now removes the account permanently (it used to only deactivate it). Classes, students and firmware they created are kept; the activity log keeps their name. Deleting the primary teacher of a class is refused until another teacher is assigned. Use *Deactivate* to keep an account but block access. ([#117](https://github.com/Kush-Kelaiya22/imPress/issues/117))
 - `PUT /api/admin/users/{id}` (now also `PATCH`) only edits the name and email; send status and role changes to the new endpoints. A body with `is_active` or `role` is refused with `USE_LIFECYCLE_ENDPOINT`. ([#119](https://github.com/Kush-Kelaiya22/imPress/issues/119))
 - Who may do what is now decided in one place, with a named permission for every action and a published permission matrix ([authorization model](docs/design/authorization.md)). Access is unchanged; refused requests now carry a code (for example `FORBIDDEN`) next to the message. ([#122](https://github.com/Kush-Kelaiya22/imPress/issues/122))
+- A site without a firmware signing key no longer deploys unsigned firmware by default: set up signing, or set `IMPRESS_FIRMWARE_ALLOW_UNSIGNED=true` to keep deploying unsigned images. A site with a single administrator sets `IMPRESS_FIRMWARE_SINGLE_APPROVER=true` to approve its own uploads. ([#123](https://github.com/Kush-Kelaiya22/imPress/issues/123))
 
 ### Removed
 
@@ -52,6 +53,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Security
 
+- Firmware is checked again right before a device is offered or downloads it: it must be approved, built for that device's type and chip, signed with the site key, and its stored file must be unchanged. An image you uploaded must be approved by another administrator. ([#123](https://github.com/Kush-Kelaiya22/imPress/issues/123))
 - Live-class connections are limited to the classes a user may open: a teacher can no longer join another teacher's class room, a gateway with its own device key can only join the class it is linked to, and browser pages can no longer send commands to classroom devices. The server refuses to start with WebSocket authentication turned off unless debug mode is on. ([#121](https://github.com/Kush-Kelaiya22/imPress/issues/121))
 - Deactivating a user, changing their role or resetting their password now signs them out everywhere, including open live-class pages; reactivating an account no longer brings back its old sessions. Changing your own password signs out your other sessions. ([#118](https://github.com/Kush-Kelaiya22/imPress/issues/118))
 

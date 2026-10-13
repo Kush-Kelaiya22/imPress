@@ -71,7 +71,8 @@ def server():
     port = _free_port()
     env = {**os.environ, "IMPRESS_DATABASE_URL": f"sqlite+aiosqlite:///{tmp}/ui.db", "IMPRESS_DEBUG": "false",
            "IMPRESS_JWT_SECRET": "ui-secret-not-default", "IMPRESS_DEVICE_API_KEY": DEVICE_KEY,
-           "IMPRESS_INITIAL_ADMIN_PASSWORD": ADMIN_PASSWORD, "IMPRESS_FIRMWARE_DIR": str(tmp / "fw")}
+           "IMPRESS_INITIAL_ADMIN_PASSWORD": ADMIN_PASSWORD, "IMPRESS_FIRMWARE_DIR": str(tmp / "fw"),
+           "IMPRESS_FIRMWARE_ALLOW_UNSIGNED": "true", "IMPRESS_FIRMWARE_SINGLE_APPROVER": "true"}   # #123
     log = open(tmp / "server.log", "w")
     proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(port),
                              "--log-level", "warning"], cwd=ROOT / "backend", env=env, stdout=log,

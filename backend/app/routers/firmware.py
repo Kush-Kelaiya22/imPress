@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..activity import log_activity
 
-from ..policy import require
+from ..config import settings
+from ..policy import allowed, require
 from ..database import commit_or_conflict, get_db
 from ..models import ActivityLog, EspDevice, FirmwareArtifact, User
 from ..schemas import FirmwareArtifactResponse
@@ -183,12 +184,19 @@ async def approve_firmware(
     user: User = Depends(require("firmware.approve")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Allow this image to be pushed to devices."""
+    """Allow this image to be pushed to devices. The uploader can't approve
+    their own image (separation of duties, #123) unless the site runs with
+    IMPRESS_FIRMWARE_SINGLE_APPROVER and the approver is a super admin."""
     a = await _get(db, artifact_id)
     if a.status == "approved":
         return FirmwareArtifactResponse.model_validate(a)
+    self_approval = a.uploaded_by is not None and a.uploaded_by == user.id
+    if self_approval and not (settings.FIRMWARE_SINGLE_APPROVER and allowed(user, "users.assign_role")):
+        raise HTTPException(403, {"code": "SEPARATION_OF_DUTIES",
+                                  "message": "Another administrator must approve an image you uploaded"})
     a.status, a.approved_by, a.approved_at, a.deprecated_at = "approved", user.id, istnow(), None
-    await log_activity(db, "firmware.approve", user.id, "firmware", a.id, {"target": a.target, "version": a.version})
+    await log_activity(db, "firmware.approve", user.id, "firmware", a.id,
+                       {"target": a.target, "version": a.version, "self_approval": self_approval})
     await db.commit()
     return FirmwareArtifactResponse.model_validate(a)
 

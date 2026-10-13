@@ -20,6 +20,10 @@ os.environ.update({
     "IMPRESS_DEVICE_API_KEY": "test-device-key",
     "IMPRESS_INITIAL_ADMIN_PASSWORD": "admin123",
     "IMPRESS_FIRMWARE_DIR": str(_TMP / "firmware_bins"),
+    # A test site: unsigned test images, one administrator approving their own
+    # uploads (#123). test_trusted_installer.py checks the strict defaults.
+    "IMPRESS_FIRMWARE_ALLOW_UNSIGNED": "true",
+    "IMPRESS_FIRMWARE_SINGLE_APPROVER": "true",
 })
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
