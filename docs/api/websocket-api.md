@@ -63,6 +63,8 @@ Malformed JSON closes the socket.
 
 ## Client guidance
 
+- **Close codes are final (#160).** A teacher socket refused or closed by the server ends with a close code: `4401` (no valid session: signed out, deactivated, role changed, password reset) → stop, clear the token, go to the login page; `4403`/`4404` (no access to the class, `wss://` required, unknown class) → stop and show why. Reconnect only after other closes (network, server restart). The web app does this. Teacher refusals are sent after accepting the socket, so browsers can read the code; gateway refusals stay an HTTP 401/403 on the handshake.
+
 - **Reconnect** with backoff. The server holds no per-socket state beyond room membership.
 - After a reconnect, fetch the current state over REST (`GET /api/quizzes/{id}`, `/results`, `/api/classes/{id}/presence`): events are not replayed.
 - Browsers can't set WebSocket headers, so the teacher token is in the query string. **Use `wss://`** and keep access logs free of query strings at the proxy.
