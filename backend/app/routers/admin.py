@@ -324,13 +324,16 @@ async def reset_user_password(
     return {"status": "ok", "message": "Password reset"}
 
 
-@router.delete("/users/{user_id}")
+@router.delete("/users/{user_id}", status_code=204)
 async def delete_user(
     user_id: int,
     user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Admin deletes a user (soft deactivate so historical records stay intact)."""
+    """Permanently delete a user (#117). Their sessions and co-faculty links
+    go; records they created stay without the link; activity entries keep the
+    username. Refused while they are the primary teacher of a class.
+    To keep the account but block access, use /deactivate."""
     result = await db.execute(select(User).where(User.id == user_id))
     target = result.scalar_one_or_none()
     if not target:
@@ -339,13 +342,10 @@ async def delete_user(
     if target.role == "super_admin" and user.role != "super_admin":
         raise HTTPException(403, "Cannot delete super admin")
 
-    target.is_active = False
-    await accounts.revoke(db, target)
-    await log_activity(db, "user.delete", user.id, "user", user_id, {
-        "username": target.username,
-    })
+    await log_activity(db, "user.delete", user.id, "user", user_id, {"username": target.username})
+    await accounts.delete_user(db, target)
     await accounts.commit(db, revoked=target)
-    return {"status": "ok", "message": "User deactivated", "user_id": user_id}
+    return Response(status_code=204)
 
 
 # ── Class Management ────────────────────────────────────────────────

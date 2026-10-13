@@ -48,3 +48,51 @@ async def commit(db: AsyncSession, revoked: User | None = None) -> None:
     if revoked_id is not None:
         from ..ws.manager import manager
         await manager.close_user(revoked_id)
+
+
+# What happens to each reference when a user is deleted (#117). Every foreign
+# key to users.id must appear here; test_user_delete.py checks that.
+#   "delete":   the row only makes sense with the user (sessions, co-faculty links)
+#   "null":     keep the record, forget who did it (provenance)
+#   "audit":    keep the activity entry, record the deleted username in details
+#   "refuse":   the user still owns something that needs an owner
+DELETE_RULES = {
+    ("user_sessions", "user_id"): "delete",
+    ("class_faculty", "user_id"): "delete",
+    ("class_sessions", "teacher_id"): "refuse",
+    ("class_sessions", "created_by"): "null",
+    ("users", "created_by"): "null",
+    ("students", "registered_by"): "null",
+    ("student_enrollments", "enrolled_by"): "null",
+    ("firmware_artifacts", "uploaded_by"): "null",
+    ("firmware_artifacts", "approved_by"): "null",
+    ("firmware_deployments", "requested_by"): "null",
+    ("activity_logs", "user_id"): "audit",
+}
+
+
+async def delete_user(db: AsyncSession, target: User) -> None:
+    """Permanently delete `target` and settle every reference to it, in the
+    caller's transaction. The caller commits with commit(db, revoked=target)."""
+    from sqlalchemy import select, text
+    from ..models import ClassSession
+
+    owned = (await db.execute(select(ClassSession.id, ClassSession.name)
+                              .where(ClassSession.teacher_id == target.id))).all()
+    if owned:
+        raise error(409, "USER_OWNS_CLASSES",
+                    "Assign another primary teacher first: " + ", ".join(f"{n} (#{i})" for i, n in owned))
+    uid = {"u": target.id}
+    for (table, column), rule in DELETE_RULES.items():
+        if rule == "delete":
+            await db.execute(text(f"DELETE FROM {table} WHERE {column} = :u"), uid)
+        elif rule == "null":
+            await db.execute(text(f"UPDATE {table} SET {column} = NULL WHERE {column} = :u"), uid)
+        elif rule == "audit":
+            await db.execute(text(
+                f"UPDATE {table} SET details = json_set(COALESCE(details, '{{}}'), '$.deleted_user', :name), "
+                f"{column} = NULL WHERE {column} = :u"), {**uid, "name": target.username})
+    # SQL, not db.delete(): the ORM would also try to remove the class_faculty
+    # rows through User.taught_classes, which are already gone.
+    await db.execute(text("DELETE FROM users WHERE id = :u"), uid)
+    db.expunge(target)

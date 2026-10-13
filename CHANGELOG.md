@@ -36,6 +36,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 - The release test table is more compact, and its columns are now **No.**, **Issue**, **Assigned to** and **Status**. A Stable release shows a **Note** box. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 - The milestone that gates a release is named after its line, for example `varun/v2.1`. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 - The line of a release comes from its branch name, and the release rules and page templates always come from the default branch, so any owner's line releases without extra setup. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
+- Deleting a user now removes the account permanently (it used to only deactivate it). Classes, students and firmware they created are kept; the activity log keeps their name. Deleting the primary teacher of a class is refused until another teacher is assigned. Use *Deactivate* to keep an account but block access. ([#117](https://github.com/Kush-Kelaiya22/imPress/issues/117))
 
 ### Removed
 

@@ -885,10 +885,15 @@ window.editUser = async function (userId) {
 };
 
 window.deleteUser = async function (userId, username) {
-  if (!confirm(`Delete user "${username || userId}"? They will be deactivated, not removed from history.`)) return;
+  // Permanent (#117): ask for the username, not just OK.
+  const typed = prompt(`Permanently delete "${username}"?\n\nThe account and its sessions are removed and cannot be restored. ` +
+    `Records they created stay; the activity log keeps their name. To only block access, use Deactivate instead.\n\n` +
+    `Type the username to confirm:`);
+  if (typed === null) return;
+  if (typed.trim() !== username) { showToast('Username did not match; nothing was deleted', 'error'); return; }
   try {
     await adminApi.deleteUser(userId);
-    showToast('User deleted', 'success');
+    showToast(`User "${username}" permanently deleted`, 'success');
     renderAdminUsers(document.getElementById('app'));
   } catch (err) {
     showToast(err.message, 'error');

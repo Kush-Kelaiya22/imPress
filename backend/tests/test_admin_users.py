@@ -70,12 +70,12 @@ def test_admin_cannot_reset_super_admin_password(client, su):
     assert r.status_code == 403
 
 
-def test_delete_is_soft_and_guarded(client, su):
+def test_delete_is_permanent_and_guarded(client, su):
     uid, _ = make_user(client, su, "tch1")
     me = client.get("/api/auth/me", headers=su).json()["id"]
     assert client.delete(f"/api/admin/users/{me}", headers=su).status_code == 403
-    assert client.delete(f"/api/admin/users/{uid}", headers=su).status_code == 200
-    assert client.post("/api/auth/login", json={"username": "tch1", "password": PASSWORD}).status_code == 403
+    assert client.delete(f"/api/admin/users/{uid}", headers=su).status_code == 204       # #117
+    assert client.post("/api/auth/login", json={"username": "tch1", "password": PASSWORD}).status_code == 401
 
 
 # ── CSV import ──────────────────────────────────────────────────────────────
