@@ -506,11 +506,15 @@ def test_release_is_built_from_a_tested_image_and_firmware(wf):
     assert wf["jobs"]["firmware"]["container"] == run_tests.IDF_IMAGE
     firmware = "\n".join(s.get("run", "") for s in wf["jobs"]["firmware"]["steps"])
     assert "version.txt" in firmware.split("idf.py build")[0]
+    assert firmware.index("idf.py build") < firmware.index("idf.py merge-bin")       # #155: one file per board
+    assert '-full.bin" "$out/"' in firmware
     publish = "\n".join(s.get("run", "") for s in rel["steps"])
     assert '"$RUNNER_TEMP/release.py" notes "$TAG" prs.md --root . --templates' in publish and "CHANGELOG.md" in publish
     assert 'title="$OWNER/v$LINE"' in publish                                     # the line's milestone
     assert "--verify-tag" in publish and 'page "$TAG" notes.md --sha "$SHA" --out body.md --root .' in publish
     assert "--notes-file body.md" in publish and "--prerelease" in publish
+    assert "dist/*.bin" in publish and "gateway-esp32c6" in publish and "hub-esp32s3" in publish \
+        and "student-esp32" in publish and "./*.bin > SHA256SUMS.txt" in publish
     assert 'git/ref/tags/$TAG" -q .object.sha)" = "$SHA"' in publish
 
 

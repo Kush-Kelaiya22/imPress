@@ -228,6 +228,9 @@ jobs:
           . "$IDF_PATH/export.sh" >/dev/null
           cd firmware/${{ matrix.project }}
           idf.py build
+          # One file for a whole new board (#155): bootloader, partition table,
+          # OTA data and the app at their offsets, flashed at 0x0.
+          idf.py merge-bin -o "${{ matrix.project }}-full.bin"
       - name: Collect the images and their flash layout
         shell: bash
         run: |
@@ -236,6 +239,7 @@ jobs:
           cp "$src"/*.bin "$src/flash_args" "$src/flasher_args.json" "$out/"
           cp "$src/bootloader/bootloader.bin" "$out/bootloader/"
           cp "$src/partition_table/partition-table.bin" "$out/partition_table/"
+          cp "$src/${{ matrix.project }}-full.bin" "$out/"
           (cd "$out" && find . -name '*.bin' -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -303,7 +307,11 @@ jobs:
           cp -r firmware-images "stage/$NAME/release/firmware"
           cp notes.md "stage/$NAME/release/RELEASE_NOTES.md"
           (cd stage && zip -qr "../dist/$NAME.zip" "$NAME")
-          (cd dist && sha256sum ./*.zip > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          # Single-file images per board, flashable at 0x0 (#155).
+          for p in class_c6:gateway-esp32c6 class_s3:hub-esp32s3 student:student-esp32; do
+            cp "firmware-images/${p%%:*}/${p%%:*}-full.bin" "dist/$NAME-${p#*:}-full.bin"
+          done
+          (cd dist && sha256sum ./*.zip ./*.bin > SHA256SUMS.txt && cat SHA256SUMS.txt)
       - name: Milestone for the line
         run: |
           # Test issues for every release of the line (and of lines built on it) go here.
@@ -326,7 +334,7 @@ jobs:
           flags=()
           [ "$(jq -r .prerelease <<<"$meta")" = true ] && flags+=(--prerelease)
           gh release create "$TAG" --verify-tag "${flags[@]}" --title "$(jq -r .title <<<"$meta")" \
-            --notes-file body.md dist/*.zip dist/SHA256SUMS.txt
+            --notes-file body.md dist/*.zip dist/*.bin dist/SHA256SUMS.txt
           echo "Published $TAG at $SHA: $(jq -r .status <<<"$meta")" >> "$GITHUB_STEP_SUMMARY"
 
   status:
