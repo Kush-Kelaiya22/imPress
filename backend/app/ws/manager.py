@@ -17,9 +17,14 @@ class ConnectionManager:
         self.active_connections: Dict[int, Set[WebSocket]] = {}
         # class_id → {websocket: role} for role-aware broadcasting
         self.connection_roles: Dict[int, Dict[WebSocket, str]] = {}
+        # user id → that user's sockets, so revoking access closes them (#118)
+        self.user_sockets: Dict[int, Set[WebSocket]] = {}
 
-    async def connect(self, websocket: WebSocket, class_id: int, role: str | None = None):
+    async def connect(self, websocket: WebSocket, class_id: int, role: str | None = None,
+                      user_id: int | None = None):
         await websocket.accept()
+        if user_id is not None:
+            self.user_sockets.setdefault(user_id, set()).add(websocket)
         if class_id not in self.active_connections:
             self.active_connections[class_id] = set()
             self.connection_roles[class_id] = {}
@@ -27,6 +32,8 @@ class ConnectionManager:
         self.connection_roles[class_id][websocket] = role or "unknown"
 
     def disconnect(self, websocket: WebSocket, class_id: int):
+        for sockets in self.user_sockets.values():
+            sockets.discard(websocket)
         if class_id in self.active_connections:
             self.active_connections[class_id].discard(websocket)
             if class_id in self.connection_roles:
@@ -78,6 +85,16 @@ class ConnectionManager:
     async def send_to_class(self, class_id: int, data: dict):
         """Alias for broadcast_to_class."""
         await self.broadcast_to_class(class_id, data)
+
+    async def close_user(self, user_id: int, reason: str = "session revoked") -> int:
+        """Close every socket of a user whose access was revoked (#118)."""
+        sockets = self.user_sockets.pop(user_id, set())
+        for ws in list(sockets):
+            try:
+                await ws.close(code=4401, reason=reason)
+            except Exception:
+                pass
+        return len(sockets)
 
     def get_connection_count(self, class_id: int) -> int:
         return len(self.active_connections.get(class_id, set()))

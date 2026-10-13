@@ -41,6 +41,10 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 - The *Unreleased changes* list in `CONTRIBUTING.md`. Its entries moved to this file. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 
+### Security
+
+- Deactivating a user, changing their role or resetting their password now signs them out everywhere, including open live-class pages; reactivating an account no longer brings back its old sessions. Changing your own password signs out your other sessions. ([#118](https://github.com/Kush-Kelaiya22/imPress/issues/118))
+
 ## [varun/v2.1.3] - 2026-10-10
 
 ### Fixed

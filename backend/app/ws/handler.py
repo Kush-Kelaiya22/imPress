@@ -110,6 +110,7 @@ async def class_websocket(websocket: WebSocket, class_id: int):
       - command to forward to mesh (quiz questions, polls)
     """
     role = websocket.query_params.get("role", "teacher")
+    user = None
 
     # ── Auth gate ──────────────────────────────────────────────────────────
     if settings.WS_REQUIRE_AUTH:
@@ -131,7 +132,7 @@ async def class_websocket(websocket: WebSocket, class_id: int):
         await websocket.close(code=4400, reason="invalid role")
         return
 
-    await manager.connect(websocket, class_id, role)
+    await manager.connect(websocket, class_id, role, user_id=user.id if user is not None else None)
     logger.info(f"WS connected: class={class_id}, role={role}")
 
     try:

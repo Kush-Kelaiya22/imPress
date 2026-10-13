@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..auth import revoke_user_sessions
 from ..models import User
 
 
@@ -26,8 +27,16 @@ def refuse_self_lockout(actor: User, target: User, *, deactivate=False, delete=F
         raise error(403, "SELF_LOCKOUT", f"You cannot {action} your own account")
 
 
-async def commit(db: AsyncSession) -> None:
-    """Commit; a write that would leave no active super admin becomes 409."""
+async def revoke(db: AsyncSession, target: User) -> None:
+    """End the target's access: revoke their sessions in this transaction, and
+    close their WebSockets once `commit(..., revoked=target)` succeeds (#118)."""
+    await revoke_user_sessions(db, target.id)
+
+
+async def commit(db: AsyncSession, revoked: User | None = None) -> None:
+    """Commit; a write that would leave no active super admin becomes 409.
+    After a successful commit, close the open sockets of `revoked`."""
+    revoked_id = revoked.id if revoked is not None else None
     try:
         await db.commit()
     except IntegrityError as e:
@@ -36,3 +45,6 @@ async def commit(db: AsyncSession) -> None:
             raise error(409, "LAST_SUPER_ADMIN",
                         "This is the last active super admin; promote or activate another one first") from e
         raise
+    if revoked_id is not None:
+        from ..ws.manager import manager
+        await manager.close_user(revoked_id)

@@ -257,6 +257,7 @@ async def update_user(
         raise HTTPException(403, "Cannot modify super admin")
 
     accounts.refuse_self_lockout(user, target, deactivate=body.is_active is False, role=body.role)
+    ends_access = False
     if body.full_name is not None:
         target.full_name = body.full_name
     if body.email is not None:
@@ -267,9 +268,14 @@ async def update_user(
         _require_can_grant(user, body.role)     # granting admin-level
         _require_can_grant(user, target.role)   # demoting an admin-level user
         target.role = body.role
+        ends_access = True
+    if body.is_active is False:
+        ends_access = True
+    if ends_access:
+        await accounts.revoke(db, target)
 
     await log_activity(db, "user.update", user.id, "user", user_id, body.model_dump(exclude_unset=True))
-    await accounts.commit(db)
+    await accounts.commit(db, revoked=target if ends_access else None)
     await db.refresh(target)
     return target
 
@@ -289,8 +295,9 @@ async def deactivate_user(
         raise HTTPException(403, "Cannot deactivate super admin")
 
     target.is_active = False
+    await accounts.revoke(db, target)
     await log_activity(db, "user.deactivate", user.id, "user", user_id)
-    await accounts.commit(db)
+    await accounts.commit(db, revoked=target)
     return {"status": "deactivated"}
 
 
@@ -311,8 +318,9 @@ async def reset_user_password(
 
     from ..auth import hash_password
     target.hashed_password = hash_password(body.new_password)
+    await accounts.revoke(db, target)
     await log_activity(db, "user.reset_password", user.id, "user", user_id)
-    await db.commit()
+    await accounts.commit(db, revoked=target)
     return {"status": "ok", "message": "Password reset"}
 
 
@@ -332,10 +340,11 @@ async def delete_user(
         raise HTTPException(403, "Cannot delete super admin")
 
     target.is_active = False
+    await accounts.revoke(db, target)
     await log_activity(db, "user.delete", user.id, "user", user_id, {
         "username": target.username,
     })
-    await accounts.commit(db)
+    await accounts.commit(db, revoked=target)
     return {"status": "ok", "message": "User deactivated", "user_id": user_id}
 
 
