@@ -16,6 +16,12 @@ if [ -n "${IMPRESS_SSL_CERTFILE:-}" ] || [ -n "${IMPRESS_SSL_KEYFILE:-}" ]; then
     echo "Set both IMPRESS_SSL_CERTFILE and IMPRESS_SSL_KEYFILE to readable files" >&2; exit 1; }
   TLS=(--ssl-certfile "$IMPRESS_SSL_CERTFILE" --ssl-keyfile "$IMPRESS_SSL_KEYFILE")
 fi
+HOST="${IMPRESS_HOST:-127.0.0.1}" PORT="${IMPRESS_PORT:-8000}"
+if [ "$HOST" = 127.0.0.1 ] || [ "$HOST" = localhost ]; then
+  # Gateways connect over the network; this address only accepts this computer (#132).
+  echo "Listening on $HOST:$PORT: only this computer can connect. For classroom gateways run" \
+       "IMPRESS_HOST=0.0.0.0 scripts/start.sh and allow TCP $PORT in the firewall." >&2
+fi
 cd "$BACKEND"          # .env, the default SQLite path and firmware_bins/ are relative to backend/
-exec .venv/bin/uvicorn app.main:app --host "${IMPRESS_HOST:-127.0.0.1}" --port "${IMPRESS_PORT:-8000}" \
+exec .venv/bin/uvicorn app.main:app --host "$HOST" --port "$PORT" \
   --workers 1 --proxy-headers ${TLS[@]+"${TLS[@]}"}

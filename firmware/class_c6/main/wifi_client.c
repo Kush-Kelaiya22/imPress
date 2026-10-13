@@ -8,6 +8,8 @@
 
 #include "wifi_client.h"
 #include "config.h"
+#include "backend_hint.h"   /* actionable connection errors (#132) */
+#include "esp_tls_errors.h"
 #include "backend_tls.h"   /* http(s)/ws(s) and the server certificate (#66) */
 #include "protocol.h"     /* json_get_string */
 #include "esp_adc/adc_oneshot.h"
@@ -225,7 +227,11 @@ static int _http_post_body(const char *url, const char *json,
         }
         esp_http_client_close(client);
     } else {
-        ESP_LOGW(TAG, "HTTP POST failed: %s", esp_err_to_name(err));
+        int tls_code = 0, tls_flags = 0;
+        esp_err_t tls_err = esp_http_client_get_and_clear_last_tls_error(client, &tls_code, &tls_flags);
+        backend_fail_t why = backend_classify(tls_err == ESP_ERR_ESP_TLS_CONNECTION_TIMEOUT,
+                                              esp_http_client_get_errno(client), tls_code, 0);
+        ESP_LOGW(TAG, "HTTP POST failed: %s: %s", esp_err_to_name(err), backend_hint(why, BACKEND_TLS_ON));
     }
     esp_http_client_cleanup(client);
     _check_auth(status);

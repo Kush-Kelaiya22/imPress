@@ -10,6 +10,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Fixed
 
+- A gateway that cannot reach the server now says why in its serial log (server unreachable: address, 127.0.0.1 or firewall; connection refused; TLS handshake failed; device key refused) and prints the server address and TLS mode it uses at boot. A build with TLS on port 8000 shows a warning, `scripts/start.sh` warns when only the local computer can connect, and the troubleshooting guide covers the Windows Mobile Hotspot firewall. ([#132](https://github.com/Kush-Kelaiya22/imPress/issues/132))
 - Pages load faster for teachers with many quizzes: every request used to read the teacher's entire quiz and answer history, and class lists loaded every quiz just to count them. In a local measurement with 3,000 answers, a typical request went from 42 ms to 3 ms. ([#133](https://github.com/Kush-Kelaiya22/imPress/issues/133))
 - A super admin can no longer lock everyone out by deactivating their own account (or the last active super admin) through any API route; the request is refused with an explanation, and the database itself refuses a change that would leave no active super admin. ([#116](https://github.com/Kush-Kelaiya22/imPress/issues/116))
 - The Read the Docs graph now renders at its intended `/graph/` subpage instead of colliding with Sphinx's generated page.

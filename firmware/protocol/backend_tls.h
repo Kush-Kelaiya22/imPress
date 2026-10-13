@@ -19,6 +19,7 @@
 #include "sdkconfig.h"
 
 #if CONFIG_BACKEND_TLS
+#  define BACKEND_TLS_ON 1
 #  define BACKEND_HTTP_SCHEME "https"
 #  define BACKEND_WS_SCHEME   "wss"
 #  if CONFIG_BACKEND_TLS_CA_FILE
@@ -29,6 +30,7 @@ extern const char backend_ca_pem_start[] asm("_binary_backend_ca_pem_start");
 #    define BACKEND_TLS_APPLY(cfg) do { (cfg).crt_bundle_attach = esp_crt_bundle_attach; } while (0)
 #  endif
 #else
+#  define BACKEND_TLS_ON 0
 #  define BACKEND_HTTP_SCHEME "http"
 #  define BACKEND_WS_SCHEME   "ws"
 #  define BACKEND_TLS_APPLY(cfg) do { (void)(cfg); } while (0)
