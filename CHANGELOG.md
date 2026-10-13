@@ -10,6 +10,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Fixed
 
+- A gateway refused because it joins a class it is not linked to no longer reports only a key problem: its message now names both causes and where to fix the link. ([#159](https://github.com/Kush-Kelaiya22/imPress/issues/159))
 - The live class page no longer keeps trying to reconnect after the server ended the teacher's access: a teacher who was signed out or deactivated is sent to the login page, and a teacher without access to the class is told so. ([#160](https://github.com/Kush-Kelaiya22/imPress/issues/160))
 - The container package page shows the image description and the guide link again for multi-architecture tags: images are now pushed in OCI format, whose index can carry them. ([#136](https://github.com/Kush-Kelaiya22/imPress/issues/136))
 - A brief registry error while uploading the container image no longer fails the whole release; the upload is retried. ([#136](https://github.com/Kush-Kelaiya22/imPress/issues/136))

@@ -23,6 +23,9 @@ int main(void)
     assert(strstr(backend_hint(BACKEND_FAIL_UNREACHABLE, false), "firewall"));
     assert(strstr(backend_hint(BACKEND_FAIL_TLS, true), "HTTPS"));
     assert(strstr(backend_hint(BACKEND_FAIL_REFUSED, false), "BACKEND_PORT"));
+    /* #159: a gateway refused for its class link must not be told only about its key */
+    assert(strstr(backend_hint(BACKEND_FAIL_REJECTED, false), "device key"));
+    assert(strstr(backend_hint(BACKEND_FAIL_REJECTED, false), "not linked to that class"));
     puts("PASS test_backend_hint");
     return 0;
 }
