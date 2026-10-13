@@ -35,6 +35,7 @@ Every frame has `type` (the vanilla SPA dispatches on it). Frames the C6 gateway
 | `poll_end` | `poll_ended` | `poll_id, title, option_counts, total_votes` | poll ended | everyone |
 | – | `quiz_answer` | `quiz_id, question_order, total_answers` (+ `device_id` from the HTTP route) | an answer stored | everyone |
 | – | `poll_vote` | `poll_id, selected_option, total_votes` (+ `device_id`) | a vote stored | everyone |
+| – | `answer_not_counted` | `kind` (`quiz_answer` or `poll_vote`), `enrollment_number, student_name` | an answer or vote from a student who is not enrolled in the class was skipped (#186); once per student per batch | **teachers only** |
 | `presence` | `presence` | `data`: [presence snapshot](device-api.md#presence-snapshot) | device online/offline, heartbeats, device WS messages | **teachers only** |
 | `device_command` | – | `command, payload` (e.g. `ota_update {version, device_type, mac_address}`) | admin OTA push, quiz/poll actions on the server | everyone (the C6 acts on it) |
 | `student_data` | – | `data` | a device sent `device_data` | everyone |

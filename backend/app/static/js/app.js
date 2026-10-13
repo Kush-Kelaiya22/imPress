@@ -3223,6 +3223,16 @@ async function renderClassDetail(app, params) {
       feed.prepend(line);
     }
   });
+  classSocket.on('answer_not_counted', (data) => {      // #186: a student who is not in this class
+    const what = data.kind === 'poll_vote' ? 'vote' : 'answer';
+    showToast(`${data.student_name || data.enrollment_number} (${data.enrollment_number}) is not enrolled in this class: their ${what} was not counted. Enrol them on the Students page if they belong here.`, 'error');
+    const feed = document.getElementById('live-feed');
+    if (feed) {
+      const line = document.createElement('p');
+      line.textContent = `[${istTime(Date.now())}] Not counted: ${data.enrollment_number} is not enrolled in this class`;
+      feed.prepend(line);
+    }
+  });
   classSocket.on('quiz_ended', (data) => {
     // A timed quiz can end on the server's timer (#73): swap Next/Stop for Results.
     const actions = document.getElementById(`quiz-actions-${data.quiz_id}`);

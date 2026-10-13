@@ -16,6 +16,10 @@ All notable changes to imPress, for the people who install and use it. Each pull
 - A gateway can be built with its classroom code (`CLASSROOM_CODE` in menuconfig) so the server links it to the class held in that room when it first registers. Empty by default: gateways are linked in the admin page as before.
 - `firmware/activate_idf.ps1` finds and activates an ESP-IDF installation in PowerShell on Windows. ([#114](https://github.com/Kush-Kelaiya22/imPress/issues/114))
 
+### Changed
+
+- A class with a roster now counts only its enrolled students' answers and votes. An answer from anyone else is not counted, and the teacher sees who it was on the live page, to enrol them if they belong there. A class with no enrolled students at all counts everyone, as before. ([#186](https://github.com/Kush-Kelaiya22/imPress/issues/186))
+
 ### Fixed
 
 - A student's answer or vote lost on the radio is now sent again until the hub confirms it (at most three more times), and the module shows *Answer received*, or *Not delivered: press again* if it never got through. Before, a lost answer was silently missing from the results. Needs the v2.2 hub and module firmware; older hubs and modules keep working as before. ([#181](https://github.com/Kush-Kelaiya22/imPress/issues/181))
