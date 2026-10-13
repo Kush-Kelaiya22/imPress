@@ -1,15 +1,15 @@
-# Graph Report - imPress  (2026-10-12)
+# Graph Report - imPress  (2026-10-13)
 
 ## Corpus Check
 - cluster-only mode — file stats not available
 
 ## Summary
-- 3032 nodes · 8329 edges · 213 communities (94 shown, 119 thin omitted)
+- 3033 nodes · 8329 edges · 214 communities (94 shown, 120 thin omitted)
 - Extraction: 84% EXTRACTED · 16% INFERRED · 0% AMBIGUOUS · INFERRED: 1303 edges (avg confidence: 0.89)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `802b9178`
+- Built from commit: `a93cd773`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -133,9 +133,9 @@
 - Community 116
 - Community 119
 - Community 125
-- Community 210
 - Community 211
 - Community 212
+- Community 213
 
 ## God Nodes (most connected - your core abstractions)
 1. `select()` - 159 edges
@@ -164,7 +164,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (213 total, 119 thin omitted)
+## Communities (214 total, 120 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.04
@@ -544,18 +544,18 @@ Nodes (3): SQLite ignores foreign keys unless asked, per connection., _sqlite_pr
 
 ## Knowledge Gaps
 - **49 isolated node(s):** `StaleRender`, `afl-prepare-linux.sh script`, `afl.sh script`, `ossfuzz.sh script`, `start_server.sh script` (+44 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 914 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **119 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 915 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **120 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `istnow()` connect `Community 3` to `Community 1`, `Community 2`, `Community 4`, `Community 6`, `Community 11`, `Community 13`, `Community 18`, `Community 19`, `Community 20`, `Community 35`, `Community 37`, `Community 40`, `Community 48`, `Community 49`, `Community 51`, `Community 54`, `Community 55`, `Community 68`, `Community 69`?**
-  _High betweenness centrality (0.070) - this node is a cross-community bridge._
+  _High betweenness centrality (0.071) - this node is a cross-community bridge._
 - **Why does `select()` connect `Community 37` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 6`, `Community 13`, `Community 18`, `Community 19`, `Community 20`, `Community 21`, `Community 22`, `Community 23`, `Community 26`, `Community 27`, `Community 30`, `Community 32`, `Community 33`, `Community 39`, `Community 40`, `Community 42`, `Community 43`, `Community 44`, `Community 45`, `Community 48`, `Community 49`, `Community 51`, `Community 53`, `Community 54`, `Community 55`, `Community 68`, `Community 69`, `Community 71`, `Community 74`, `Community 82`, `Community 84`?**
-  _High betweenness centrality (0.053) - this node is a cross-community bridge._
+  _High betweenness centrality (0.055) - this node is a cross-community bridge._
 - **Why does `User` connect `Community 2` to `Community 1`, `Community 68`, `Community 37`, `Community 6`, `Community 39`, `Community 40`, `Community 44`, `Community 13`, `Community 48`, `Community 51`, `Community 22`, `Community 26`, `Community 27`?**
-  _High betweenness centrality (0.032) - this node is a cross-community bridge._
+  _High betweenness centrality (0.031) - this node is a cross-community bridge._
 - **Are the 155 inferred relationships involving `select()` (e.g. with `_load_session_by_hash()` and `validate_session()`) actually correct?**
   _`select()` has 155 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 110 inferred relationships involving `User` (e.g. with `create_session()` and `get_current_user()`) actually correct?**
