@@ -224,24 +224,4 @@ async def get_current_user_light(
     return user
 
 
-# ── Role-based dependencies ──────────────────────────────────────────
-
-async def require_admin(user: User = Depends(get_current_user)) -> User:
-    """Require admin or super_admin role."""
-    if user.role not in ("admin", "super_admin"):
-        raise HTTPException(403, "Admin access required")
-    return user
-
-
-async def require_super_admin(user: User = Depends(get_current_user)) -> User:
-    """Require super_admin role."""
-    if user.role != "super_admin":
-        raise HTTPException(403, "Super admin access required")
-    return user
-
-
-async def require_teacher_or_admin(user: User = Depends(get_current_user)) -> User:
-    """Require teacher, admin, or super_admin role."""
-    if user.role not in ("teacher", "admin", "super_admin"):
-        raise HTTPException(403, "Teacher or admin access required")
-    return user
+# Role and permission checks live in policy.py (#122).

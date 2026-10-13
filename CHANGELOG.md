@@ -44,6 +44,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 - The line of a release comes from its branch name, and the release rules and page templates always come from the default branch, so any owner's line releases without extra setup. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 - Deleting a user now removes the account permanently (it used to only deactivate it). Classes, students and firmware they created are kept; the activity log keeps their name. Deleting the primary teacher of a class is refused until another teacher is assigned. Use *Deactivate* to keep an account but block access. ([#117](https://github.com/Kush-Kelaiya22/imPress/issues/117))
 - `PUT /api/admin/users/{id}` (now also `PATCH`) only edits the name and email; send status and role changes to the new endpoints. A body with `is_active` or `role` is refused with `USE_LIFECYCLE_ENDPOINT`. ([#119](https://github.com/Kush-Kelaiya22/imPress/issues/119))
+- Who may do what is now decided in one place, with a named permission for every action and a published permission matrix ([authorization model](docs/design/authorization.md)). Access is unchanged; refused requests now carry a code (for example `FORBIDDEN`) next to the message. ([#122](https://github.com/Kush-Kelaiya22/imPress/issues/122))
 
 ### Removed
 

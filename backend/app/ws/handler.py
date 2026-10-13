@@ -9,6 +9,7 @@ from .manager import manager
 from ..config import settings
 from ..database import async_session
 from ..models import EspDevice, ClassSession
+from ..policy import is_staff
 from ..services.presence import mark_online, _push_after_commit
 from ..timeutil import istnow
 
@@ -40,12 +41,12 @@ async def _device_refusal(key: str | None, class_id: int) -> tuple[int, str] | N
 
 async def _teacher_refusal(user, class_id: int) -> tuple[int, str] | None:
     """The REST class-access rule (primary teacher, co-faculty, admin) (#121)."""
-    from ..routers.classes import _has_access
+    from ..policy import class_access
     async with async_session() as db:
         cls = (await db.execute(select(ClassSession).where(ClassSession.id == class_id))).scalar_one_or_none()
         if cls is None:
             return 4404, "class not found"
-        return None if _has_access(cls, user) else (4403, "no access to this class")
+        return None if class_access(user, cls) else (4403, "no access to this class")
 
 
 async def _touch_device_on_message(class_id: int, msg: dict | None) -> None:
@@ -145,7 +146,7 @@ async def class_websocket(websocket: WebSocket, class_id: int):
         elif role == "teacher":
             token = websocket.query_params.get("token", "")
             user = await _ws_user_from_token(token)
-            if user is None or user.role not in ("teacher", "admin", "super_admin"):
+            if not is_staff(user):
                 await websocket.close(code=4401, reason="unauthorized teacher token")
                 return
             refusal = await _teacher_refusal(user, class_id)

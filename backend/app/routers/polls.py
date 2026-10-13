@@ -4,15 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..policy import class_access, require
 from ..database import commit_or_conflict, get_db
 from ..models import User, ClassSession, Poll, PollVote, EspDevice
 from ..schemas import PollCreate, PollResponse, PollVoteSubmit, device_text_warnings
-from ..auth import get_current_user, require_teacher_or_admin
 from ..ws.manager import manager
 from ..activity import log_activity
 from ..timeutil import istnow
 from ..device_auth import DeviceCaller, authorize, device_caller
-from .classes import _has_access
 
 router = APIRouter(prefix="/api/polls", tags=["polls"])
 
@@ -23,7 +22,7 @@ async def _verify_class_access(class_id: int, user: User, db: AsyncSession) -> C
     if not cls:
         raise HTTPException(404, "Class not found")
     # Same rule as the class routes: primary teacher, co-faculty or admin.
-    if not _has_access(cls, user):
+    if not class_access(user, cls):
         raise HTTPException(403, "You don't have access to this class")
     return cls
 
@@ -51,7 +50,7 @@ async def _poll_response(poll: Poll, db: AsyncSession) -> PollResponse:
 @router.post("/", response_model=PollResponse, status_code=201)
 async def create_poll(
     body: PollCreate,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("assessments.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a poll. Live polls start immediately, planned polls wait for faculty to go live."""
@@ -103,7 +102,7 @@ async def create_poll(
 @router.get("/class/{class_id}", response_model=list[PollResponse])
 async def list_polls(
     class_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("participation.read")),
     db: AsyncSession = Depends(get_db),
 ):
     await _verify_class_access(class_id, user, db)
@@ -117,7 +116,7 @@ async def list_polls(
 @router.get("/{poll_id}", response_model=PollResponse)
 async def get_poll(
     poll_id: int,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require("participation.read")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Poll).where(Poll.id == poll_id))
@@ -133,7 +132,7 @@ async def get_poll(
 @router.post("/{poll_id}/start", response_model=PollResponse)
 async def start_poll(
     poll_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("assessments.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Make a planned poll live."""
@@ -173,7 +172,7 @@ async def start_poll(
 @router.post("/{poll_id}/end", response_model=PollResponse)
 async def end_poll(
     poll_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("assessments.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Poll).where(Poll.id == poll_id))
@@ -284,7 +283,7 @@ async def vote_poll(
 @router.get("/{poll_id}/results")
 async def poll_results(
     poll_id: int,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require("participation.read")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Poll).where(Poll.id == poll_id))

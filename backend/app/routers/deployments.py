@@ -6,7 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..activity import log_activity
-from ..auth import require_admin
+
+from ..policy import require
 from ..database import commit_or_conflict, get_db
 from ..models import FirmwareArtifact, FirmwareDeployment, User
 from ..services import deployments as engine
@@ -71,7 +72,7 @@ async def _get(db, dep_id) -> FirmwareDeployment:
 async def create_deployment(
     body: DeploymentCreate,
     dry_run: bool = Query(False, description="only show which devices would be included"),
-    user: User = Depends(require_admin),
+    user: User = Depends(require("firmware.deploy")),
     db: AsyncSession = Depends(get_db),
 ):
     """Roll an approved image out to the selected devices: canary first, then
@@ -120,13 +121,13 @@ async def create_deployment(
 
 
 @router.get("")
-async def list_deployments(user: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def list_deployments(user: User = Depends(require("firmware.read")), db: AsyncSession = Depends(get_db)):
     deps = (await db.execute(select(FirmwareDeployment).order_by(FirmwareDeployment.id.desc()).limit(200))).scalars()
     return [deployment_dict(d, with_targets=False) for d in deps]
 
 
 @router.get("/{dep_id}")
-async def get_deployment(dep_id: int, user: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def get_deployment(dep_id: int, user: User = Depends(require("firmware.read")), db: AsyncSession = Depends(get_db)):
     return deployment_dict(await _get(db, dep_id))
 
 
@@ -151,17 +152,17 @@ async def _act(db, user, dep_id, action):
 
 
 @router.post("/{dep_id}/pause")
-async def pause_deployment(dep_id: int, user: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def pause_deployment(dep_id: int, user: User = Depends(require("firmware.deploy")), db: AsyncSession = Depends(get_db)):
     return await _act(db, user, dep_id, "pause")
 
 
 @router.post("/{dep_id}/resume")
-async def resume_deployment(dep_id: int, user: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def resume_deployment(dep_id: int, user: User = Depends(require("firmware.deploy")), db: AsyncSession = Depends(get_db)):
     """Continue a paused deployment, accepting the failures that paused it."""
     return await _act(db, user, dep_id, "resume")
 
 
 @router.post("/{dep_id}/cancel")
-async def cancel_deployment(dep_id: int, user: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def cancel_deployment(dep_id: int, user: User = Depends(require("firmware.deploy")), db: AsyncSession = Depends(get_db)):
     """Cancel devices that haven't started installing; the rest finish."""
     return await _act(db, user, dep_id, "cancel")

@@ -11,6 +11,7 @@ from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..policy import can_grant, require, roster_access, sees_all_classes
 from ..database import commit_or_conflict, get_db
 from ..models import (
     User, ClassSession, Course, Student, StudentEnrollment, EspDevice, ActivityLog, StudentModule,
@@ -29,7 +30,7 @@ from ..schemas import (
 from ..services.firmware_store import normalize_version, resolve as resolve_firmware
 from ..services import deployments as deployment_engine
 from ..timeutil import istnow
-from ..auth import require_admin, require_teacher_or_admin
+
 from ..activity import log_activity
 from ..schedule import find_schedule_conflicts
 from ..services.records import delete_class_records, ensure_section_free
@@ -45,23 +46,15 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 # ── User Management ─────────────────────────────────────────────────
 
-_PRIVILEGED_ROLES = ("admin", "super_admin")
-
-
-def _require_can_grant(actor: User, role: str) -> None:
-    """Only a super admin may grant (or take away) admin-level roles."""
-    if role in _PRIVILEGED_ROLES and actor.role != "super_admin":
-        raise HTTPException(403, "Only super admin can assign admin roles")
-
-
 @router.post("/users", response_model=UserResponse, status_code=201)
 async def create_user(
     body: AdminUserCreate,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("users.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin creates a teacher or admin account. Super admin can also create admins."""
-    _require_can_grant(user, body.role)
+    if not can_grant(user, body.role):
+        raise HTTPException(403, "Only super admin can assign admin roles")
 
     existing = await db.execute(select(User).where(User.username == body.username))
     if existing.scalar_one_or_none():
@@ -91,7 +84,7 @@ async def create_user(
 @router.post("/users/import", response_model=CsvImportResult)
 async def import_users_csv(
     file: UploadFile = File(...),
-    user: User = Depends(require_admin),
+    user: User = Depends(require("users.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -169,7 +162,7 @@ async def import_users_csv(
             errors.append(CsvImportError(row=row_idx, roll_number=username,
                 error="role must be 'teacher' or 'admin'"))
             continue
-        if role == "admin" and user.role != "super_admin":
+        if not can_grant(user, role):
             errors.append(CsvImportError(row=row_idx, roll_number=username,
                 error="only a super admin can create admin accounts"))
             continue
@@ -244,7 +237,7 @@ def _user_out(actor: User, target: User) -> UserResponse:
 
 @router.get("/users", response_model=list[UserResponse])
 async def list_users(
-    user: User = Depends(require_admin),
+    user: User = Depends(require("users.read")),
     db: AsyncSession = Depends(get_db),
     role: str = Query("", description="Filter by role"),
 ):
@@ -260,7 +253,7 @@ async def list_users(
 async def update_user(
     user_id: int,
     body: UserUpdate,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("users.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Edit a user's profile (name, email). Activation and roles have their
@@ -283,7 +276,7 @@ async def update_user(
 @router.post("/users/{user_id}/deactivate", response_model=UserResponse)
 async def deactivate_user(
     user_id: int,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("users.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Block an account's access and sign it out; reversible with /reactivate."""
@@ -300,7 +293,7 @@ async def deactivate_user(
 @router.post("/users/{user_id}/reactivate", response_model=UserResponse)
 async def reactivate_user(
     user_id: int,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("users.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Allow a deactivated account to log in again (old sessions stay revoked)."""
@@ -317,7 +310,7 @@ async def reactivate_user(
 async def change_user_role(
     user_id: int,
     body: RoleChange,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("users.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Change a user's role (super admin only); signs the user out."""
@@ -338,7 +331,7 @@ async def change_user_role(
 async def reset_user_password(
     user_id: int,
     body: PasswordReset,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("users.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin sets a new password for a user (forgot-password flow); signs them out."""
@@ -356,7 +349,7 @@ async def reset_user_password(
 @router.delete("/users/{user_id}", status_code=204)
 async def delete_user(
     user_id: int,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("users.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Permanently delete a user (#117). Their sessions and co-faculty links
@@ -388,7 +381,7 @@ async def import_classes_csv(
     mode: str = Query("create", pattern="^(create|update)$",
                       description="create: new sections only; update: also change existing ones"),
     dry_run: bool = Query(True, description="validate only; pass false to store"),
-    user: User = Depends(require_admin),
+    user: User = Depends(require("classes.manage_all")),
     db: AsyncSession = Depends(get_db),
 ):
     """Create courses and their sections from a CSV. All-or-nothing: any
@@ -420,7 +413,7 @@ async def import_classes_csv(
 
 @router.get("/classes/export.csv")
 async def export_classes_csv(
-    user: User = Depends(require_admin),
+    user: User = Depends(require("classes.manage_all")),
     db: AsyncSession = Depends(get_db),
 ):
     """Every course section in the import layout. Cells that would start a
@@ -437,7 +430,7 @@ async def export_classes_csv(
 @router.post("/classes", response_model=ClassResponse, status_code=201)
 async def admin_create_class(
     body: ClassCreate,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("classes.manage_all")),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin creates a classroom (course section): picks course, faculty, schedule, location."""
@@ -508,7 +501,7 @@ async def admin_create_class(
 async def assign_teacher(
     class_id: int,
     body: ClassAssignTeacher,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("classes.manage_all")),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin assigns a teacher to a class."""
@@ -546,7 +539,7 @@ async def assign_teacher(
 
 @router.get("/classes", response_model=list[ClassResponse])
 async def admin_list_classes(
-    user: User = Depends(require_admin),
+    user: User = Depends(require("classes.manage_all")),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin sees all classes."""
@@ -563,7 +556,7 @@ async def admin_list_classes(
 async def admin_update_class(
     class_id: int,
     body: ClassUpdate,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("classes.manage_all")),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin edits a classroom's name, code, room label, schedule, capacity, etc."""
@@ -622,7 +615,7 @@ async def admin_update_class(
 @router.delete("/classes/{class_id}")
 async def admin_delete_class(
     class_id: int,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("classes.manage_all")),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin permanently deletes a classroom along with its dependent records."""
@@ -645,7 +638,7 @@ async def admin_delete_class(
 async def admin_set_class_faculty(
     class_id: int,
     body: ClassFacultyUpdate,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("classes.manage_all")),
     db: AsyncSession = Depends(get_db),
 ):
     """Replace the set of faculty teaching a class (many-to-many)."""
@@ -672,7 +665,7 @@ async def admin_set_class_faculty(
 async def admin_import_students_csv(
     class_id: int,
     file: UploadFile = File(...),
-    user: User = Depends(require_admin),
+    user: User = Depends(require("classes.manage_all")),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -692,7 +685,7 @@ async def admin_import_students_csv(
 
 @router.get("/activity", response_model=list[ActivityLogResponse])
 async def get_activity_logs(
-    user: User = Depends(require_admin),
+    user: User = Depends(require("audit.read")),
     db: AsyncSession = Depends(get_db),
     limit: int = Query(50, le=200),
     entity_type: str = Query("", description="Filter by entity type"),
@@ -740,7 +733,7 @@ def _student_response(s: Student) -> StudentResponse:
 @router.post("/students", response_model=StudentResponse, status_code=201)
 async def register_student(
     body: StudentRegister,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("students.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a universal Student and optionally enroll them in a class."""
@@ -778,7 +771,7 @@ async def register_student(
 @router.post("/students/bulk", response_model=list[StudentResponse], status_code=201)
 async def bulk_register_students(
     body: BulkStudentRegister,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("students.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Bulk-register universal students, optionally enrolling in a class."""
@@ -822,7 +815,7 @@ async def _enroll_student(
     cls = cls_res.scalar_one_or_none()
     if not cls:
         raise HTTPException(404, "Class not found")
-    if user.role == "teacher" and cls.teacher_id != user.id:
+    if not roster_access(user, cls):
         raise HTTPException(403, "You can only manage students in your own classes")
 
     student_res = await db.execute(select(Student).where(Student.id == student_id))
@@ -864,7 +857,7 @@ async def _enroll_student(
 async def enroll_student(
     class_id: int,
     body: StudentEnroll,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("students.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Enroll an existing student into a classroom."""
@@ -878,7 +871,7 @@ async def enroll_student(
 async def enroll_students_bulk(
     class_id: int,
     body: dict,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("students.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Enroll a list of existing student ids into a classroom."""
@@ -898,7 +891,7 @@ async def enroll_students_bulk(
 async def unenroll_student(
     class_id: int,
     student_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("students.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Remove a student from a classroom."""
@@ -906,7 +899,7 @@ async def unenroll_student(
     cls = cls_res.scalar_one_or_none()
     if not cls:
         raise HTTPException(404, "Class not found")
-    if user.role == "teacher" and cls.teacher_id != user.id:
+    if not roster_access(user, cls):
         raise HTTPException(403, "You can only manage students in your own classes")
 
     res = await db.execute(
@@ -930,7 +923,7 @@ async def unenroll_student(
 @router.get("/students/class/{class_id}", response_model=list[StudentResponse])
 async def list_class_students(
     class_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("students.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """List all students enrolled in a class (roster)."""
@@ -938,7 +931,7 @@ async def list_class_students(
     cls = cls_result.scalar_one_or_none()
     if not cls:
         raise HTTPException(404, "Class not found")
-    if user.role == "teacher" and cls.teacher_id != user.id:
+    if not roster_access(user, cls):
         raise HTTPException(403, "Access denied")
 
     result = await db.execute(
@@ -957,7 +950,7 @@ async def list_class_students(
 @router.get("/students/{student_id}/participation")
 async def student_participation(
     student_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("students.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Get a student's participation summary across quizzes and polls."""
@@ -975,7 +968,7 @@ async def student_participation(
     )
     class_ids = [r[0] for r in enroll_rows.all()]
 
-    if user.role == "teacher":
+    if not sees_all_classes(user):
         verified = await db.execute(
             select(ClassSession).where(
                 ClassSession.id.in_(class_ids),
@@ -1095,7 +1088,7 @@ def _device_response(dev: EspDevice) -> DeviceResponse:
 
 @router.get("/modules", response_model=list[DeviceResponse])
 async def admin_list_modules(
-    user: User = Depends(require_admin),
+    user: User = Depends(require("devices.read")),
     db: AsyncSession = Depends(get_db),
     device_type: str = Query("", description="Filter: c6 | s3 | student"),
 ):
@@ -1110,7 +1103,7 @@ async def admin_list_modules(
 @router.get("/classes/{class_id}/devices", response_model=ClassDevicesResponse)
 async def admin_class_devices(
     class_id: int,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("devices.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Class node + the student devices logically linked to it (R8)."""
@@ -1143,7 +1136,7 @@ async def admin_class_devices(
 
 @router.get("/student-modules")
 async def admin_student_modules(
-    user: User = Depends(require_admin),
+    user: User = Depends(require("devices.read")),
     db: AsyncSession = Depends(get_db),
     class_id: int | None = Query(None),
     gateway_id: int | None = Query(None),
@@ -1167,7 +1160,7 @@ async def admin_student_modules(
 @router.get("/modules/{device_id}", response_model=DeviceResponse)
 async def admin_get_module(
     device_id: int,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("devices.read")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(EspDevice).where(EspDevice.id == device_id))
@@ -1181,7 +1174,7 @@ async def admin_get_module(
 async def admin_toggle_module_access(
     device_id: int,
     body: ModuleAccessUpdate,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("devices.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Enable/disable a module. A disabled module's device calls are refused,
@@ -1202,7 +1195,7 @@ async def admin_toggle_module_access(
 @router.post("/modules/{device_id}/reset-key", response_model=DeviceResponse)
 async def admin_reset_device_key(
     device_id: int,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("devices.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Forget a device's own key (#66): it stops working at once. The device
@@ -1224,7 +1217,7 @@ async def admin_reset_device_key(
 async def admin_push_ota(
     device_id: int,
     body: ModuleOtaRequest,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("firmware.deploy")),
     db: AsyncSession = Depends(get_db),
 ):
     """Queue a firmware version for a node; the device pulls it on its next poll (R8).
@@ -1263,7 +1256,7 @@ async def admin_push_ota(
 @router.post("/modules/{device_id}/verify", response_model=DeviceResponse)
 async def admin_verify_module(
     device_id: int,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("devices.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Stamp a node as officially verified (checked/firmware confirmed)."""
@@ -1284,7 +1277,7 @@ async def admin_verify_module(
 async def admin_link_device(
     node_id: int,
     body: ModuleLinkDevice,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("devices.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Logically connect a student device to a class/gateway node (R7)."""
@@ -1312,7 +1305,7 @@ async def admin_link_device(
 @router.post("/modules/{device_id}/unlink", response_model=DeviceResponse)
 async def admin_unlink_device(
     device_id: int,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("devices.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Detach a student device from its gateway (logical link, R7)."""
