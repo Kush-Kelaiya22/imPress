@@ -7,10 +7,14 @@ One room per class: **`ws(s)://<host>/ws/class/{class_id}?role=teacher|device`**
 | Role | Credentials | Rejected with |
 |---|---|---|
 | `teacher` | `?token=<login session token>`, validated exactly like the REST API (revoked, idle- or hard-expired, inactive user → reject); role must be teacher/admin/super_admin | close **4401** |
+| `teacher` | the user must have access to *this* class, by the same rule as the REST API: primary teacher, co-faculty, or an admin (#121) | close **4403**; unknown class **4404** |
 | `device` | `X-API-Key: <device key>` header (preferred), or legacy `?api_key=` | close **4401** |
+| `device` | a **per-device key** joins only the class its gateway is linked to (`class_sessions.device_id`; set by registration or *Admin → Modules → link*) (#121). The shared provisioning key names no device and can't be bound to a class; it is accepted only while `IMPRESS_DEVICE_KEYS_REQUIRED=false` | close **4403** |
 | anything else | – | close **4400** |
 
-With `IMPRESS_WS_REQUIRE_AUTH=false` (debug only) any `teacher`/`device` connection is accepted.
+With `IMPRESS_WS_REQUIRE_AUTH=false` any `teacher`/`device` connection is accepted. The server refuses to start that way unless `IMPRESS_DEBUG=true` (#121).
+
+An open teacher socket is closed with **4401** when the user is deactivated, deleted, changes role or has their password reset (#118).
 
 On success the server sends:
 ```json
@@ -32,7 +36,7 @@ Every frame has `type` (the vanilla SPA dispatches on it). Frames the C6 gateway
 | – | `quiz_answer` | `quiz_id, question_order, total_answers` (+ `device_id` from the HTTP route) | an answer stored | everyone |
 | – | `poll_vote` | `poll_id, selected_option, total_votes` (+ `device_id`) | a vote stored | everyone |
 | `presence` | `presence` | `data`: [presence snapshot](device-api.md#presence-snapshot) | device online/offline, heartbeats, device WS messages | **teachers only** |
-| `device_command` | – | `command, payload` (e.g. `ota_update {version, device_type, mac_address}`) | admin OTA push, teacher `broadcast_command` | everyone (the C6 acts on it) |
+| `device_command` | – | `command, payload` (e.g. `ota_update {version, device_type, mac_address}`) | admin OTA push, quiz/poll actions on the server | everyone (the C6 acts on it) |
 | `student_data` | – | `data` | a device sent `device_data` | everyone |
 | `pong` | – | – | reply to `ping` | the sender |
 
@@ -51,10 +55,9 @@ The keys the C6 reads are pinned in `firmware/contract/device_ws_frames.json`:
 | Message | From | Effect |
 |---|---|---|
 | `{"event": "ping"}` | any | `{"event": "pong"}` |
-| `{"event": "broadcast_command", "command": "...", "payload": {...}}` | teacher (any role in practice) | re-broadcast as `device_command` |
-| `{"event": "device_data", "data": {...}}` | device | re-broadcast as `student_data` |
+| `{"event": "device_data", "data": {...}}` | device only | re-broadcast as `student_data` (ignored from a teacher socket) |
 | any message | device | refreshes that gateway's presence (`last_seen`, battery, RSSI) |
-| unknown event | any | logged and ignored |
+| unknown event, including the former `broadcast_command` | any | logged and ignored. Device commands come only from the server (REST actions → `services/mesh_bridge.py`), never relayed from a browser (#121) |
 
 Malformed JSON closes the socket.
 

@@ -78,7 +78,11 @@ def insecure_settings(s: Settings) -> list[str]:
 
 
 def check_secure(s: Settings) -> None:
-    """Refuse to run with published secrets unless explicitly in DEBUG mode."""
+    """Refuse to run with published secrets, or with unauthenticated
+    WebSockets (#121), unless explicitly in DEBUG mode."""
+    if not s.WS_REQUIRE_AUTH and not s.DEBUG:
+        raise RuntimeError("IMPRESS_WS_REQUIRE_AUTH=false is for local debugging only: "
+                           "set IMPRESS_DEBUG=true as well, or remove it.")
     bad = insecure_settings(s)
     if bad and not s.DEBUG:
         raise RuntimeError(

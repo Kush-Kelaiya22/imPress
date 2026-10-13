@@ -3,7 +3,7 @@
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
-from conftest import PASSWORD, auth, login, make_user
+from conftest import PASSWORD, auth, login, make_class, make_user
 
 
 @pytest.fixture
@@ -56,8 +56,9 @@ def test_profile_edit_does_not_revoke(client, su):
 
 def test_open_teacher_socket_is_closed_on_deactivation(client, su):
     uid, teacher = make_user(client, su, "tch1")
+    cid = make_class(client, su, teacher_id=uid)
     token = teacher["Authorization"].split()[1]
-    with client.websocket_connect(f"/ws/class/1?role=teacher&token={token}") as ws:
+    with client.websocket_connect(f"/ws/class/{cid}?role=teacher&token={token}") as ws:
         assert ws.receive_json()["event"] == "connected"
         assert client.post(f"/api/admin/users/{uid}/deactivate", headers=su).status_code == 200
         with pytest.raises(WebSocketDisconnect) as e:
