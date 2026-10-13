@@ -71,7 +71,7 @@ flowchart LR
 1. ~~Sign OTA images~~: done in #66 (T8): `scripts/firmware_key.sh`, `scripts/build_signed.sh`, `IMPRESS_FIRMWARE_SIGNING_KEY`. See the [OTA guide](../guides/ota-updates.md#signing-images). Hardware Secure Boot V2 (irreversible) remains an option against physical attackers.
 2. ~~TLS for devices~~: done in #66 (T16): **Backend over TLS** on the hub and gateway, trusting public CAs or an embedded site CA; the server via a reverse proxy or `scripts/start.sh` with `IMPRESS_SSL_*`. Off by default, because it needs the site's certificate and port.
 3. ~~Per-device API keys~~: done in #66 (T15). Turn on `IMPRESS_DEVICE_KEYS_REQUIRED` once every device runs firmware with per-device keys.
-4. **Message authentication on the mesh** (e.g. a per-class key and HMAC over the frame) if answer spoofing becomes a concern. ESP-NOW also supports encrypted unicast peers, but not encrypted broadcast.
+4. **Message authentication on the mesh**: proposed in [mesh frame authentication](mesh-authentication.md) (#187), awaiting decisions. ESP-NOW also supports encrypted unicast peers, but not encrypted broadcast.
 5. **Purge git history** of the databases committed before v2 and rotate the affected passwords.
 
 ## Data handling

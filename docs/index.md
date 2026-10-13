@@ -26,6 +26,7 @@ architecture/firmware
 architecture/data-flows
 design/protocols
 design/mesh
+design/mesh-authentication
 design/security-model
 design/authorization
 design/scheduling
