@@ -28,6 +28,7 @@ design/protocols
 design/mesh
 design/security-model
 design/authorization
+design/scheduling
 design/decisions
 ```
 

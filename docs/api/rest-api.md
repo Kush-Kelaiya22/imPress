@@ -64,6 +64,17 @@ An explicit "user is active" ping. Refreshes the idle timer: `{status, last_acti
 
 ---
 
+## Timetable changes and rooms (#126)
+
+| Method & path | Guard | Body / params | Notes |
+|---|---|---|---|
+| `GET /api/classes/{id}/exceptions` | class access | – | cancelled, moved and extra occurrences of the class, by date |
+| `POST /api/classes/{id}/exceptions` | class access | `{kind: cancelled\|moved\|extra, date, slot_start?, new_date?, new_start?, new_end?, classroom_code?, note?}` | `moved` needs `slot_start`, `new_start`, `new_end`; `extra` needs `new_start`, `new_end`; returns `warnings` when the room is booked then; saved with `source: local` |
+| `DELETE /api/classes/{id}/exceptions/{exception_id}` | class access | – | `204`; an AURIS-sourced change → `409 SOURCE_MANAGED` |
+| `GET /api/admin/rooms/{classroom_code}/occupancy` | admin | `?start=&end=` (ISO, IST, ≤ 31 days) | `{known, busy: [{start, end, class_id, why}]}`; `known: false` = authoritative timetable stale |
+
+See [scheduling and room occupancy](../design/scheduling.md).
+
 ## Users (admin): `/api/admin/users`
 
 | Method & path | Guard | Body / params | Notes |

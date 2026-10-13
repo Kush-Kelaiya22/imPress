@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     # ── Firmware / OTA ──
     FIRMWARE_DIR: str = "./firmware_bins"   # uploaded firmware .bin files live here
 
+    # ── Timetable (#126) ──
+    # When an authoritative source (AURIS, #127) has synchronised before, its
+    # data older than this many hours counts as unknown, and room-occupancy
+    # questions (OTA maintenance windows, #128) fail closed. 0 = never stale.
+    SCHEDULE_MAX_AGE_HOURS: int = 48
+
     # ── WebSocket ──
     # Require auth on /ws/class: devices present ?api_key=<device key>,
     # teachers present ?token=<JWT>. Turn off for LAN debugging.

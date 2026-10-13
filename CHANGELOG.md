@@ -35,6 +35,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 - Separate *Deactivate*, *Reactivate*, *Change role* and *Delete permanently* actions for user accounts, in the web app and as API endpoints (`/deactivate`, `/reactivate`, `/role`). The user list only shows the actions you are allowed to take, and a refused action says why. ([#119](https://github.com/Kush-Kelaiya22/imPress/issues/119))
 - `python -m app.manage restore-super-admin --username <name>`: a server-side command that restores administrator access to an installation where no super admin can log in. It prints a one-time password and is logged; there is no web route for it. ([#120](https://github.com/Kush-Kelaiya22/imPress/issues/120))
 - The backend container image now runs natively on 64-bit ARM (Apple silicon Macs, Raspberry Pi 4/5 with a 64-bit OS, ARM servers) as well as x86_64: every tag covers `linux/amd64` and `linux/arm64`. The package page describes the image and links to a new step-by-step [container guide](docs/deployment/container.md) (network, data, configuration, Compose, TLS, backups, upgrades, recovery). ([#136](https://github.com/Kush-Kelaiya22/imPress/issues/136))
+- **Schedule changes** on the class page: cancel a class on one date, move it to another time or room, or add an extra session. imPress uses the weekly timetable together with these changes to tell when a room is in use, and administrators can view a room's bookings. See [scheduling](docs/design/scheduling.md). ([#126](https://github.com/Kush-Kelaiya22/imPress/issues/126))
 
 ### Changed
 

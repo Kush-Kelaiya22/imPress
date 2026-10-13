@@ -139,6 +139,39 @@ class CourseResponse(BaseModel):
 
 # ── Classes / Classrooms ─────────────────────────────────────────────
 
+_HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"
+
+
+class OccurrenceExceptionCreate(BaseModel):
+    """A dated change to a class's weekly timetable (#126)."""
+    kind: Literal["cancelled", "moved", "extra"]
+    date: date                                   # the regular occurrence (cancelled/moved) or the extra day
+    slot_start: str = Field("", pattern=r"^$|" + _HHMM)   # which slot that day; "" = all (cancelled)
+    new_date: Optional[date] = None              # moved: defaults to `date`
+    new_start: str = Field("", pattern=r"^$|" + _HHMM)
+    new_end: str = Field("", pattern=r"^$|" + _HHMM)
+    classroom_code: str = Field("", max_length=32)
+    note: str = Field("", max_length=255)
+
+
+class OccurrenceExceptionResponse(BaseModel):
+    id: int
+    class_session_id: int
+    kind: str
+    date: date
+    slot_start: str = ""
+    new_date: Optional[date] = None
+    new_start: str = ""
+    new_end: str = ""
+    classroom_code: str = ""
+    source: str = "local"
+    note: str = ""
+    updated_at: Optional[datetime] = None
+    warnings: list[dict] = []
+
+    model_config = {"from_attributes": True}
+
+
 class ScheduleSlot(BaseModel):
     day: str = Field(min_length=1)  # e.g. "Monday"
     start: str = Field(min_length=1)  # "09:00"

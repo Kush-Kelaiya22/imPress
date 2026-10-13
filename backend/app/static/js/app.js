@@ -3022,8 +3022,11 @@ async function renderClassDetail(app, params) {
           </div>
         </div>
       </div>
+      <div id="class-exceptions" class="mt-2"></div>
     </div>
   `;
+
+  renderClassExceptions(classId);
 
   // Wire up student search-and-enroll
   const csSearch = document.getElementById('cs-search');
@@ -3287,6 +3290,69 @@ window.endPoll = async function (pollId) {
 };
 
 // ── Quiz Create ────────────────────────────────────────────────
+
+// ── Timetable changes of a class (#126) ─────────────────────────────
+// Cancelled, moved and extra occurrences. The server decides who may change
+// them; a refused action shows its reason.
+async function renderClassExceptions(classId) {
+  const box = document.getElementById('class-exceptions');
+  if (!box) return;
+  let rows = [];
+  try { rows = await classesApi.exceptions(classId); } catch (err) { box.innerHTML = ''; return; }
+  const label = { cancelled: 'Cancelled', moved: 'Moved', extra: 'Extra session' };
+  const when = (e) => e.kind === 'cancelled'
+    ? `${e.date}${e.slot_start ? ' ' + e.slot_start : ' (all day)'}`
+    : e.kind === 'moved'
+      ? `${e.date} ${e.slot_start} → ${e.new_date} ${e.new_start}–${e.new_end}`
+      : `${e.date} ${e.new_start}–${e.new_end}`;
+  box.innerHTML = `
+    <div class="card">
+      <div class="card-header"><h2>Schedule changes</h2></div>
+      <p class="text-muted text-sm">Changes to the weekly timetable on one date. Firmware updates for this room's
+        hub and gateway wait for times with no class, including these changes.</p>
+      ${rows.length ? `<div class="table-responsive"><table class="table">
+        <thead><tr><th>Change</th><th>When</th><th>Room</th><th>Source</th><th>Note</th><th></th></tr></thead>
+        <tbody>${rows.map(e => `<tr>
+          <td>${label[e.kind] || escHtml(e.kind)}</td><td>${escHtml(when(e))}</td>
+          <td>${escHtml(e.classroom_code || '—')}</td><td>${escHtml(e.source)}</td><td>${escHtml(e.note || '')}</td>
+          <td>${e.source === 'local' ? `<button class="btn btn-sm btn-outline text-danger" onclick="removeClassException(${classId}, ${e.id})">Remove</button>` : ''}</td>
+        </tr>`).join('')}</tbody></table></div>` : '<p class="text-muted">No changes recorded.</p>'}
+      <form id="exception-form" class="mt-1">
+        <div class="flex gap-1" style="flex-wrap:wrap">
+          <label>Change <select id="ex-kind">
+            <option value="cancelled">Cancel a class</option><option value="moved">Move a class</option>
+            <option value="extra">Add an extra session</option></select></label>
+          <label>Date <input type="date" id="ex-date" required /></label>
+          <label>Regular start <input type="time" id="ex-slot" /></label>
+          <label>New date <input type="date" id="ex-new-date" /></label>
+          <label>From <input type="time" id="ex-new-start" /></label>
+          <label>To <input type="time" id="ex-new-end" /></label>
+          <label>Room <input type="text" id="ex-room" maxlength="32" placeholder="same room" /></label>
+          <label>Note <input type="text" id="ex-note" maxlength="255" /></label>
+        </div>
+        <button type="submit" class="btn btn-primary mt-1">Save change</button>
+      </form>
+    </div>`;
+  document.getElementById('exception-form').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const v = (id) => document.getElementById(id).value.trim();
+    const body = { kind: v('ex-kind'), date: v('ex-date'), slot_start: v('ex-slot'), new_start: v('ex-new-start'),
+                   new_end: v('ex-new-end'), classroom_code: v('ex-room'), note: v('ex-note') };
+    if (v('ex-new-date')) body.new_date = v('ex-new-date');
+    try {
+      const saved = await classesApi.addException(classId, body);
+      (saved.warnings || []).forEach(w => showToast(w.message, 'warning'));
+      showToast('Schedule change saved', 'success');
+      renderClassExceptions(classId);
+    } catch (err) { showToast(err.message, 'error'); }
+  };
+}
+
+window.removeClassException = async function (classId, exceptionId) {
+  if (!confirm('Remove this schedule change?')) return;
+  try { await classesApi.removeException(classId, exceptionId); renderClassExceptions(classId); }
+  catch (err) { showToast(err.message, 'error'); }
+};
 
 async function renderQuizCreate(app, params) {
   const user = await authApi.me();

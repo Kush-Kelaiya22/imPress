@@ -37,6 +37,8 @@ flowchart TD
 | 8 | `add_quiz_question_started_at` | Adds `quizzes.question_started_at`, when the current question went live (quiz timer, #73) | additive; a quiz already running a per-question timer starts counting on the timer's first tick |
 | 9 | `guard_last_super_admin` | Adds triggers `users_keep_super_admin_update` / `_delete` that abort (`LAST_SUPER_ADMIN`) any update or delete leaving no active super admin (#116) | additive; a database that already has no active super admin keeps working, and every later change still needs to leave one |
 
+New tables need no step: `create_all` creates missing tables on every start, on fresh and existing databases alike. Added this way: `class_occurrence_exceptions` and `schedule_sources` (#126).
+
 ### Unique indexes
 
 | Index | Columns | Why |

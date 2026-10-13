@@ -7,6 +7,8 @@ ClassResponse.
 """
 
 import re
+from dataclasses import dataclass
+from datetime import date as Date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -138,3 +140,89 @@ async def find_schedule_conflicts(
                         "end": other_slot.get("end", ""),
                     })
     return warnings
+
+# ── Room occupancy (#126) ────────────────────────────────────────────────
+# One question for everything that must not disturb a class (OTA windows,
+# #128): which intervals is this room booked between `start` and `end`?
+# Regular weekly slots within each class's dates, minus cancelled and moved
+# occurrences, plus moved-in and extra ones. None means "unknown": the
+# authoritative timetable is stale, so a caller must fail closed.
+
+WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+@dataclass(frozen=True)
+class Busy:
+    start: datetime
+    end: datetime
+    class_id: int
+    why: str            # "regular" | "moved" | "extra"
+
+
+def _at(day: Date, hhmm: str) -> datetime | None:
+    m = _parse_time(hhmm or "")
+    return None if m is None else datetime(day.year, day.month, day.day) + timedelta(minutes=m)
+
+
+def _span(day: Date, start: str, end: str) -> tuple[datetime, datetime] | None:
+    a, b = _at(day, start), _at(day, end)
+    if a is None or b is None:
+        return None
+    return a, (b if b > a else b + timedelta(days=1))
+
+
+async def schedule_is_current(db: AsyncSession, now: datetime) -> bool:
+    """False when an authoritative source has synced before but not recently."""
+    from .config import settings
+    from .models import ScheduleSource
+    if settings.SCHEDULE_MAX_AGE_HOURS <= 0:
+        return True
+    rows = (await db.execute(select(ScheduleSource))).scalars().all()
+    limit = timedelta(hours=settings.SCHEDULE_MAX_AGE_HOURS)
+    return all(now - r.last_synced_at <= limit for r in rows)
+
+
+async def occupancy(db: AsyncSession, classroom_code: str, start: datetime, end: datetime,
+                    now: datetime | None = None) -> list[Busy] | None:
+    """Booked intervals of a room overlapping [start, end), or None if unknown."""
+    from .models import ClassOccurrenceException
+    from .timeutil import istnow
+    code = (classroom_code or "").strip().lower()
+    if not code or not await schedule_is_current(db, now or istnow()):
+        return None
+    classes = (await db.execute(select(ClassSession))).scalars().all()
+    by_id = {c.id: c for c in classes}
+    rooms = {c.id: (c.classroom_code or "").strip().lower() for c in classes}
+    first, last = start.date() - timedelta(days=1), end.date()    # an overnight slot can start the day before
+    exceptions = (await db.execute(select(ClassOccurrenceException).where(
+        (ClassOccurrenceException.date.between(first, last))
+        | (ClassOccurrenceException.new_date.between(first, last))))).scalars().all()
+    removed = {}                                   # (class, date) -> {slot_start or "" for the whole day}
+    for e in exceptions:
+        if e.kind in ("cancelled", "moved"):
+            removed.setdefault((e.class_session_id, e.date), set()).add(e.slot_start or "")
+
+    busy = []
+    day = first
+    while day <= last:
+        name = WEEKDAYS[day.weekday()]
+        for c in classes:
+            if rooms[c.id] != code or (c.start_date and day < c.start_date) or (c.end_date and day > c.end_date):
+                continue
+            gone = removed.get((c.id, day), set())
+            for slot in c.meeting_schedule or []:
+                if (slot.get("day") or "").strip() != name or "" in gone or (slot.get("start") or "").strip() in gone:
+                    continue
+                span = _span(day, slot.get("start", ""), slot.get("end", ""))
+                if span:
+                    busy.append(Busy(*span, c.id, "regular"))
+        day += timedelta(days=1)
+    for e in exceptions:
+        if e.kind not in ("moved", "extra"):
+            continue
+        cls = by_id.get(e.class_session_id)
+        room = (e.classroom_code or (cls.classroom_code if cls else "") or "").strip().lower()
+        span = _span(e.new_date or e.date, e.new_start, e.new_end)
+        if room == code and span:
+            busy.append(Busy(*span, e.class_session_id, e.kind))
+    return sorted((b for b in busy if b.start < end and start < b.end), key=lambda b: b.start)
