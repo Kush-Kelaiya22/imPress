@@ -312,10 +312,10 @@ async function renderSettings(app) {
               <input type="password" id="settings-current" required autocomplete="current-password">
             </label>
             <label>New password
-              <input type="password" id="settings-new" required minlength="6" autocomplete="new-password">
+              <input type="password" id="settings-new" required minlength="10" autocomplete="new-password">
             </label>
             <label>Confirm new password
-              <input type="password" id="settings-confirm" required minlength="6" autocomplete="new-password">
+              <input type="password" id="settings-confirm" required minlength="10" autocomplete="new-password">
             </label>
           </div>
           <p id="settings-error" class="text-danger" style="display:none"></p>
@@ -337,8 +337,8 @@ async function renderSettings(app) {
       errEl.style.display = 'block';
       return;
     }
-    if (next.length < 6) {
-      errEl.textContent = 'New password must be at least 6 characters';
+    if (next.length < 10) {
+      errEl.textContent = 'New password must be at least 10 characters (not a common password, not your username)';
       errEl.style.display = 'block';
       return;
     }
@@ -626,7 +626,7 @@ async function renderAdminUsers(app) {
         <div style="padding:1rem">
           <p class="form-hint" style="margin-top:0;margin-bottom:0.75rem">
             All 5 columns below are <strong>compulsory</strong> in every row — no extra columns:
-            <strong>username</strong> (3–64 letters/digits/_ .), <strong>email</strong>, <strong>password</strong> (min 6 chars),
+            <strong>username</strong> (3–64 letters/digits/_ .), <strong>email</strong>, <strong>password</strong> (min 10 chars, not common, not the username),
             <strong>full_name</strong>, <strong>role</strong> (teacher or admin). Admin accounts require super-admin rights.
           </p>
           <div class="csv-drop" id="users-csv-drop">
@@ -683,7 +683,7 @@ async function renderAdminUsers(app) {
             </div>
             <div class="form-group">
               <label>Password</label>
-              <input type="password" id="new-password" required minlength="6" />
+              <input type="password" id="new-password" required minlength="10" />
             </div>
             <div class="form-group">
               <label>Role</label>
@@ -850,9 +850,9 @@ window.setUserActive = async function (userId, username, active) {
 };
 
 window.resetUserPassword = async function (userId, username) {
-  const newPassword = prompt(`Set a new password for ${username || `user #${userId}`} (min 6 chars):`);
-  if (!newPassword || newPassword.trim().length < 6) {
-    showToast('Password must be at least 6 characters', 'error');
+  const newPassword = prompt(`Set a new password for ${username || `user #${userId}`} (min 10 characters, not common, not the username):`);
+  if (!newPassword || newPassword.trim().length < 10) {
+    showToast('Password must be at least 10 characters', 'error');
     return;
   }
   try {

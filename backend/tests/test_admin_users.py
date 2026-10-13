@@ -58,9 +58,9 @@ def test_deactivated_user_loses_access_immediately(client, su):
 def test_admin_password_reset(client, su):
     uid, _ = make_user(client, su, "tch1")
     assert client.post(f"/api/admin/users/{uid}/reset-password", headers=su,
-                       json={"new_password": "Reset-123"}).status_code == 200
+                       json={"new_password": "Reset-123x"}).status_code == 200
     assert client.post("/api/auth/login", json={"username": "tch1", "password": PASSWORD}).status_code == 401
-    assert client.post("/api/auth/login", json={"username": "tch1", "password": "Reset-123"}).status_code == 200
+    assert client.post("/api/auth/login", json={"username": "tch1", "password": "Reset-123x"}).status_code == 200
 
 
 def test_admin_cannot_reset_super_admin_password(client, su):
@@ -90,17 +90,17 @@ def _import(client, h, body, name="users.csv"):
 
 def test_csv_import_inserts_valid_rows_and_reports_bad_ones(client, su):
     r = _import(client, su,
-                "alice,alice@x.io,Passw0rd!,Alice A,teacher\n"
+                "alice,alice@x.io,Passw0rd!x,Alice A,teacher\n"
                 "bob,bob@x.io,short,Bob B,teacher\n"          # password too short
-                "carl,carl@x.io,Passw0rd!,Carl C,wizard\n"    # bad role
-                "alice,dup@x.io,Passw0rd!,Alice 2,teacher\n")  # duplicate username
+                "carl,carl@x.io,Passw0rd!x,Carl C,wizard\n"    # bad role
+                "alice,dup@x.io,Passw0rd!x,Alice 2,teacher\n")  # duplicate username
     assert r.status_code == 200, r.text
     res = r.json()
     assert res["inserted"] == 1 and len(res["skipped"]) == 3
-    assert client.post("/api/auth/login", json={"username": "alice", "password": "Passw0rd!"}).status_code == 200
+    assert client.post("/api/auth/login", json={"username": "alice", "password": "Passw0rd!x"}).status_code == 200
 
 
 def test_csv_import_admin_rows_need_super_admin(client, su):
     _, admin = make_user(client, su, "adm", role="admin")
-    res = _import(client, admin, "boss,boss@x.io,Passw0rd!,Boss,admin\n").json()
+    res = _import(client, admin, "boss,boss@x.io,Passw0rd!x,Boss,admin\n").json()
     assert res["inserted"] == 0 and "super admin" in res["skipped"][0]["error"]

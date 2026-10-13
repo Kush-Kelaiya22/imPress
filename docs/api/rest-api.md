@@ -24,7 +24,8 @@ Base URL: `http(s)://<host>:<port>`. All bodies are JSON unless marked *multipar
 | 403 | Authenticated but not allowed (role, class ownership, disabled account at login, wrong device key). `SELF_LOCKOUT`: deactivating, deleting or changing the role of your own account |
 | 404 | Entity not found |
 | 409 | Conflict: quiz without a current question; a section that already exists for the course; a lost race on an enrollment. `LAST_SUPER_ADMIN`: the change would leave no active super admin |
-| 422 | Request body/params failed validation |
+| 422 | Request body/params failed validation (including a new password that is shorter than 10 characters, common, or equal to the username, #153) |
+| 429 | `TOO_MANY_ATTEMPTS`: too many failed logins (or wrong current passwords); wait `Retry-After` seconds (#153) |
 
 ---
 

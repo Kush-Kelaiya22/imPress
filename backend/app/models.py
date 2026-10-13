@@ -496,6 +496,18 @@ class ActivityLog(Base):
     user = relationship("User")
 
 
+# ── Login throttling (#153) ───────────────────────────────────────────
+
+class LoginThrottle(Base):
+    """Failed password attempts per key: user:<name>, ip:<address>, change:<user id>."""
+    __tablename__ = "login_throttle"
+
+    key = Column(String(160), primary_key=True)
+    failures = Column(Integer, default=0, nullable=False)
+    first_at = Column(DateTime, nullable=False)          # start of the counting window
+    blocked_until = Column(DateTime, nullable=True)
+
+
 # ── User Sessions (server-side) ───────────────────────────────────────
 
 class UserSession(Base):
