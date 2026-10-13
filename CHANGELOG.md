@@ -10,6 +10,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Fixed
 
+- The container package page shows the image description and the guide link again for multi-architecture tags: images are now pushed in OCI format, whose index can carry them. ([#136](https://github.com/Kush-Kelaiya22/imPress/issues/136))
 - A brief registry error while uploading the container image no longer fails the whole release; the upload is retried. ([#136](https://github.com/Kush-Kelaiya22/imPress/issues/136))
 - A gateway that cannot reach the server now says why in its serial log (server unreachable: address, 127.0.0.1 or firewall; connection refused; TLS handshake failed; device key refused) and prints the server address and TLS mode it uses at boot. A build with TLS on port 8000 shows a warning, `scripts/start.sh` warns when only the local computer can connect, and the troubleshooting guide covers the Windows Mobile Hotspot firewall. ([#132](https://github.com/Kush-Kelaiya22/imPress/issues/132))
 - Pages load faster for teachers with many quizzes: every request used to read the teacher's entire quiz and answer history, and class lists loaded every quiz just to count them. In a local measurement with 3,000 answers, a typical request went from 42 ms to 3 ms. ([#133](https://github.com/Kush-Kelaiya22/imPress/issues/133))

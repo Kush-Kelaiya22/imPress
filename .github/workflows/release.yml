@@ -124,6 +124,16 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      - name: Use the containerd image store
+        # The classic store pushes Docker v2 manifests; their manifest list
+        # can't carry annotations, so the package page lost its description
+        # (#136). The containerd store pushes OCI images and indexes.
+        run: |
+          f=/etc/docker/daemon.json
+          { sudo test -s "$f" && sudo cat "$f" || echo '{}'; } | jq '.features["containerd-snapshotter"] = true' | sudo tee "$f.new" > /dev/null
+          sudo mv "$f.new" "$f" && sudo systemctl restart docker
+          for _ in $(seq 60); do docker info > /dev/null 2>&1 && break; sleep 1; done
+          docker info --format '{{json .DriverStatus}}' | grep -q io.containerd.snapshotter
       - name: Stamp the release version
         run: printf '%s\n' "${{ needs.plan.outputs.version }}" > VERSION
       - name: Build
@@ -190,7 +200,11 @@ jobs:
             --annotation "index:org.opencontainers.image.revision=$SHA" \
             "$IMAGE:sha-${SHA:0:12}-amd64" "$IMAGE:sha-${SHA:0:12}-arm64"
           docker buildx imagetools inspect "$IMAGE:sha-${SHA:0:12}" | tee -a "$GITHUB_STEP_SUMMARY"
-          docker buildx imagetools inspect "$IMAGE:sha-${SHA:0:12}" --raw | jq -e '[.manifests[].platform.architecture] | index("amd64") and index("arm64")' > /dev/null
+          # Fail loudly rather than publish an index without its annotations again.
+          docker buildx imagetools inspect "$IMAGE:sha-${SHA:0:12}" --raw | jq -e '
+            .mediaType == "application/vnd.oci.image.index.v1+json"
+            and (.annotations["org.opencontainers.image.description"] // "" | length > 0)
+            and ([.manifests[].platform.architecture] | index("amd64") and index("arm64"))' > /dev/null
           for t in "${tags[@]}"; do echo "pushed $IMAGE:$t (amd64, arm64)" >> "$GITHUB_STEP_SUMMARY"; done
 
   firmware:
