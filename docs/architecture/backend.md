@@ -148,6 +148,7 @@ Every frame carries `type` (read by the vanilla UI); device-relevant frames also
 
 - **SQLite via aiosqlite**, file path from `IMPRESS_DATABASE_URL`, relative to the working directory.
 - Versioned, transactional migrations (`migrations.py`, recorded in `schema_migrations`, a backup before the first pending step). See [database migrations](../engineering/DATABASE_MIGRATIONS.md). Foreign keys are enforced on every connection.
+- **Loading related rows.** Collections that grow with use are `lazy="raise"`: `User.classes`, `User.taught_classes`, `ClassSession.quizzes / polls / attendance / enrollments`, `Quiz.answers`, `Poll.votes`. Code that needs them loads them explicitly (`selectinload(...)` or a query); touching one without loading raises at once in tests. Class lists get `quiz_count` / `poll_count` from SQL count subqueries (`column_property`). Before this rule, every authenticated request loaded the teacher's whole quiz history (#133: `GET /api/auth/me` 42 ms → 3 ms median for 5 classes × 10 quizzes × 60 answers).
 - All `DateTime` columns store **naive IST** (`timeutil.istnow()`). `ist_epoch_ms()` converts without depending on the host's timezone.
 
 ## Scaling and limits

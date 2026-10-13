@@ -1386,7 +1386,7 @@ def _class_to_response(cls: ClassSession, student_count: int, warnings: list | N
         teacher_ids=teacher_ids,
         faculty_names=faculty_names,
         student_count=student_count,
-        quiz_count=len(cls.quizzes) if cls.quizzes else 0,
-        poll_count=len(cls.polls) if cls.polls else 0,
+        quiz_count=cls.quiz_count or 0,
+        poll_count=cls.poll_count or 0,
         warnings=warnings or [],
     )
