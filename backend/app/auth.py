@@ -17,7 +17,51 @@ from .database import get_db
 from .timeutil import istnow, istnow_aware
 from .models import User, UserSession
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+SESSION_COOKIE = "impress_session"
+CSRF_HEADER = "x-impress-request"       # the web app sends it on every request
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def session_token_from(request) -> str:
+    """The session token of an HTTP request or WebSocket handshake: the
+    Authorization bearer token (API clients, scripts), else the browser's
+    HttpOnly session cookie. Never a URL parameter (#v2.2: tokens in URLs end
+    up in proxy and server logs)."""
+    authz = request.headers.get("authorization") or ""
+    if authz.lower().startswith("bearer "):
+        return authz.split(" ", 1)[1].strip()
+    return request.cookies.get(SESSION_COOKIE, "")
+
+
+class _SessionToken(OAuth2PasswordBearer):
+    """Bearer header or session cookie. A cookie is sent by the browser on
+    its own, so a state-changing request authenticated by it must also carry
+    the web app's header: another site cannot add a custom header without a
+    CORS preflight this server never grants (CSRF)."""
+
+    async def __call__(self, request: Request) -> str:
+        if (request.headers.get("authorization") or "").lower().startswith("bearer "):
+            return await super().__call__(request)
+        token = request.cookies.get(SESSION_COOKIE)
+        if not token:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated",
+                                headers={"WWW-Authenticate": "Bearer"})
+        if request.method not in _SAFE_METHODS and request.headers.get(CSRF_HEADER) != "1":
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Request refused: missing X-Impress-Request header (CSRF)")
+        return token
+
+
+oauth2_scheme = _SessionToken(tokenUrl="/api/auth/login")
+
+
+def set_session_cookie(response, request, token: str) -> None:
+    response.set_cookie(SESSION_COOKIE, token, max_age=settings.SESSION_HARD_MINUTES * 60, path="/",
+                        httponly=True, samesite="strict", secure=request.url.scheme == "https")
+
+
+def clear_session_cookie(response, request) -> None:
+    response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, samesite="strict",
+                           secure=request.url.scheme == "https")
 
 
 def hash_password(password: str) -> str:

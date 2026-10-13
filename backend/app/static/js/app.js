@@ -213,8 +213,8 @@ function renderNavbar(user, currentHash) {
   `;
 }
 
-window.handleLogout = function () {
-  authApi.logout();
+window.handleLogout = async function () {
+  await authApi.logout();
   navigate('#/login');
 };
 

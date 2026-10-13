@@ -25,7 +25,7 @@ from .ws.handler import router as ws_router
 from .services.presence import presence_sweep_loop
 from .services.sessions import session_cleanup_loop
 from .models import User, UserSession
-from .auth import hash_password, _sha256_hex
+from .auth import hash_password, _sha256_hex, session_token_from
 
 
 logger = logging.getLogger(__name__)
@@ -157,30 +157,28 @@ async def refresh_session_activity(request: Request, call_next):
     """
     path = request.url.path
     if path.startswith("/api") and path not in _ACTIVITY_FREE_PATHS:
-        authz = request.headers.get("authorization")
-        if authz and authz.lower().startswith("bearer "):
-            token = authz.split(" ", 1)[1].strip()
-            if token:
-                try:
-                    now = istnow()
-                    idle_cutoff = now - timedelta(
-                        minutes=settings.SESSION_IDLE_MINUTES
-                    )
-                    async with async_session() as db:
-                        result = await db.execute(
-                            select(UserSession).where(
-                                UserSession.token_hash == _sha256_hex(token),
-                                UserSession.revoked.is_(False),
-                                UserSession.expires_at > now,
-                                UserSession.last_activity_at > idle_cutoff,
-                            )
+        token = session_token_from(request)
+        if token:
+            try:
+                now = istnow()
+                idle_cutoff = now - timedelta(
+                    minutes=settings.SESSION_IDLE_MINUTES
+                )
+                async with async_session() as db:
+                    result = await db.execute(
+                        select(UserSession).where(
+                            UserSession.token_hash == _sha256_hex(token),
+                            UserSession.revoked.is_(False),
+                            UserSession.expires_at > now,
+                            UserSession.last_activity_at > idle_cutoff,
                         )
-                        session = result.scalar_one_or_none()
-                        if session is not None:
-                            session.last_activity_at = now
-                            await db.commit()
-                except Exception:
-                    logger.exception("Session activity refresh error")
+                    )
+                    session = result.scalar_one_or_none()
+                    if session is not None:
+                        session.last_activity_at = now
+                        await db.commit()
+            except Exception:
+                logger.exception("Session activity refresh error")
     return await call_next(request)
 
 # ── Routers ──────────────────────────────────────────────────────────

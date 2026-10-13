@@ -2,33 +2,32 @@
 
 const API_BASE = '/api';
 
-function getToken() {
-  return localStorage.getItem('impress_token');
+/* The session token lives in an HttpOnly cookie that scripts cannot read
+ * (v2.2). Page storage only remembers that someone signed in, so the router
+ * can show the login page without a round trip; the server decides. */
+const SIGNED_IN = 'impress_signed_in';
+const CSRF = { 'X-Impress-Request': '1' };   // required on cookie-authenticated changes
+
+function markSignedIn(on) {
+  try {
+    if (on) localStorage.setItem(SIGNED_IN, '1'); else localStorage.removeItem(SIGNED_IN);
+    localStorage.removeItem('impress_token');   // left by v2.1
+  } catch { /* storage unavailable */ }
 }
 
-function setToken(token) {
-  localStorage.setItem('impress_token', token);
-}
-
-function clearToken() {
-  localStorage.removeItem('impress_token');
-}
+function clearToken() { markSignedIn(false); }
 
 function isLoggedIn() {
-  return !!getToken();
+  try { return localStorage.getItem(SIGNED_IN) === '1'; } catch { return true; }
 }
 
 async function apiRequest(path, options = {}) {
   const url = `${API_BASE}${path}`;
   const headers = {
     'Content-Type': 'application/json',
+    ...CSRF,
     ...options.headers,
   };
-
-  const token = getToken();
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
 
   const res = await fetch(url, { ...options, headers });
 
@@ -56,8 +55,7 @@ function uploadFile(path, file, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${API_BASE}${path}`);
-    const token = getToken();
-    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('X-Impress-Request', '1');
     xhr.upload.onprogress = (e) => {
       if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded * 100) / e.total));
     };
@@ -91,7 +89,7 @@ const authApi = {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     });
-    setToken(res.access_token);
+    markSignedIn(true);
     return res;
   },
   async me() {
@@ -109,7 +107,8 @@ const authApi = {
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     });
   },
-  logout() {
+  async logout() {
+    try { await fetch(`${API_BASE}/auth/logout`, { method: 'POST', headers: CSRF }); } catch { /* offline: the cookie expires */ }
     clearToken();
   },
 };
@@ -127,7 +126,7 @@ const adminApi = {
   /** Download every course section as CSV (authenticated, so via a blob). */
   async exportClassesCsv() {
     const res = await fetch(`${API_BASE}/admin/classes/export.csv`, {
-      headers: { Authorization: `Bearer ${getToken()}` },
+      headers: CSRF,
     });
     if (!res.ok) throw new Error(`Export failed (${res.status})`);
     const url = URL.createObjectURL(await res.blob());
@@ -170,8 +169,7 @@ const adminApi = {
   async importUsersCsv(file) {
     const form = new FormData();
     form.append('file', file);
-    const token = getToken();
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = CSRF;
     const res = await fetch(`${API_BASE}/admin/users/import`, { method: 'POST', headers, body: form });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -205,8 +203,7 @@ const adminApi = {
   async importClassCsv(classId, file) {
     const form = new FormData();
     form.append('file', file);
-    const token = getToken();
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = CSRF;
     const res = await fetch(`${API_BASE}/admin/classes/${classId}/import-students`, { method: 'POST', headers, body: form });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -389,8 +386,7 @@ const studentsApi = {
     const form = new FormData();
     form.append('file', file);
     if (classSessionId) form.append('class_session_id', classSessionId);
-    const token = getToken();
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = CSRF;
     const res = await fetch(`${API_BASE}/students/import`, { method: 'POST', headers, body: form });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -516,8 +512,8 @@ class ClassSocket {
     this.classId = classId;
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const token = encodeURIComponent(getToken() || '');
-    const url = `${protocol}//${window.location.host}/ws/class/${classId}?role=teacher&token=${token}`;
+    // The session cookie authenticates the socket; no token in the URL.
+    const url = `${protocol}//${window.location.host}/ws/class/${classId}?role=teacher`;
 
     try {
       this.ws = new WebSocket(url);

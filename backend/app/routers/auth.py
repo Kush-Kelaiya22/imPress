@@ -1,7 +1,8 @@
 """Auth router: login, me, password change. Registration is admin-only (see admin router)."""
 
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,10 @@ from ..auth import (
     create_session,
     oauth2_scheme,
     revoke_user_sessions,
+    set_session_cookie,
+    clear_session_cookie,
+    session_token_from,
+    validate_session,
 )
 from ..activity import log_activity
 from .. import passwords
@@ -26,7 +31,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: UserLogin, request: Request, db: AsyncSession = Depends(get_db)):
+async def login(body: UserLogin, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     # Password guessing is slowed per username and per address (#153); the
     # password is not even checked while a key is waiting.
     now = istnow()
@@ -48,6 +53,9 @@ async def login(body: UserLogin, request: Request, db: AsyncSession = Depends(ge
     now = istnow()
     expires_at = session.expires_at
     await log_activity(db, "auth.login", user.id, "user", user.id)
+    # The web app keeps the session in an HttpOnly cookie that page scripts
+    # cannot read; API clients use the returned token as a bearer token.
+    set_session_cookie(response, request, raw_token)
 
     return TokenResponse(
         access_token=raw_token,
@@ -109,16 +117,24 @@ async def change_password(
 
 
 @router.post("/logout")
-async def logout(
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Revoke the current session."""
-    session = getattr(request.state, "session", None)
-    if session:
+async def logout(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    """Revoke the current session and clear the browser's cookie. An expired
+    session is still revoked and its cookie cleared; an unknown one is 401."""
+    token = session_token_from(request)
+    session = None
+    if token:
+        if (request.headers.get("authorization") is None
+                and request.headers.get("x-impress-request") != "1"):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Request refused: missing X-Impress-Request header (CSRF)")
+        session, _user, _error = await validate_session(db, token, refresh_activity=False)
+    if session is None:
+        refused = JSONResponse({"detail": "Not authenticated"}, status_code=401)
+        clear_session_cookie(refused, request)
+        return refused
+    if not session.revoked:
         session.revoked = True
         await db.commit()
+    clear_session_cookie(response, request)
     return {"status": "ok"}
 
 

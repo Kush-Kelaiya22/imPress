@@ -97,6 +97,7 @@ def db(client):
 def login(client, username="admin", password="admin123"):
     r = client.post("/api/auth/login", json={"username": username, "password": password})
     assert r.status_code == 200, r.text
+    client.cookies.clear()      # tests authenticate with the bearer token; the cookie path has its own tests
     return r.json()["access_token"]
 
 

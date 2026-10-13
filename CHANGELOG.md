@@ -8,6 +8,13 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ## [Unreleased]
 
+### Security
+
+- The web app no longer keeps the login token where page scripts can read it: the session is an `HttpOnly`, `SameSite=Strict` cookie (`Secure` over HTTPS). Changes made with it need the app's `X-Impress-Request` header (cross-site request forgery). After upgrading, everyone signs in once more. Scripts keep using `Authorization: Bearer`.
+- The live class page's connection no longer carries the session token in its URL, where proxies and servers log it; it uses the cookie, and a connection opened from another website is refused.
+- Logging out now ends the session on the server; it used to be forgotten only by the browser, and the token stayed valid until it expired.
+- A gateway no longer trusts a radio frame's enrollment number to be terminated: a malformed or spoofed frame could make it read past the field.
+
 ### Fixed
 
 - A gateway refused because it joins a class it is not linked to no longer reports only a key problem: its message now names both causes and where to fix the link. ([#159](https://github.com/Kush-Kelaiya22/imPress/issues/159))
