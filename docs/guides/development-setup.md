@@ -73,11 +73,19 @@ docker run --rm -v "$PWD/firmware":/project -w /project/class_c6 espressif/idf:v
 ```
 
 ### Native ESP-IDF
+Linux / macOS:
 ```bash
 . $IDF_PATH/export.sh
 cd firmware/class_c6
-idf.py menuconfig        # "imPress C6 Gateway Configuration": Wi-Fi, backend host/port, API key
+idf.py menuconfig        # "imPress C6 Gateway Configuration": Wi-Fi, backend host/port, API key, classroom code
 idf.py -p /dev/ttyUSB0 flash monitor
+```
+Windows (PowerShell): `firmware/activate_idf.ps1` finds an ESP-IDF install (`IDF_PATH`, the Espressif installer's profiles, `C:\esp`, `K:\esp`) and activates it in the current shell. Pass `-IdfRoot <folder>` if yours is elsewhere.
+```powershell
+. .\firmware\activate_idf.ps1
+cd firmware\class_c6
+idf.py menuconfig
+idf.py -p COM19 flash monitor
 ```
 - Point `BACKEND_HOST` at your laptop's LAN IP, not `localhost`.
 - The C6 console is on its **UART** port (GPIO16/17); GPIO12/13 (native USB) are used as SPI ready lines (see [hardware](../reference/hardware.md)).

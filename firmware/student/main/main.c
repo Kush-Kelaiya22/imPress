@@ -55,6 +55,7 @@ static uint16_t s_current_poll_id;
 /* Answer deadline of a timed question (time_limit_s > 0), in ticks. */
 static volatile bool s_timed;
 static volatile TickType_t s_deadline;
+static volatile TickType_t s_question_start;   /* when the question arrived: response time */
 
 /* Ticks until the deadline; <= 0 once it has passed (wrap-safe). */
 static int32_t ticks_left(void)
@@ -88,7 +89,8 @@ static void on_mesh_message(const msg_t *msg)
                 s_current_quiz_id = q->quiz_id;
                 s_current_question = q->question_num;
                 s_selected_option = -1;
-                s_deadline = xTaskGetTickCount() + pdMS_TO_TICKS((uint64_t)q->time_limit_s * 1000);
+                s_question_start = xTaskGetTickCount();
+                s_deadline = s_question_start + pdMS_TO_TICKS((uint64_t)q->time_limit_s * 1000);
                 s_timed = q->time_limit_s > 0;
                 s_state = STATE_QUIZ_ACTIVE;
 
@@ -162,13 +164,13 @@ static void on_button_press(int button)
             answer.quiz_id = s_current_quiz_id;
             answer.question_num = s_current_question;
             answer.selected_option = (uint8_t)button;
-            answer.response_time_ms = 0;  /* TODO: track actual time */
+            answer.response_time_ms = (uint32_t)((xTaskGetTickCount() - s_question_start) * portTICK_PERIOD_MS);
             strncpy(answer.enrollment, g_student.enrollment,
                     sizeof(answer.enrollment) - 1);
             answer.device_id = s_device_id;   /* routing-only diagnostic */
             mesh_send(MSG_QUIZ_ANSWER, (uint8_t *)&answer, sizeof(answer));
             s_state = STATE_ANSWERED;
-            ESP_LOGI(TAG, "Answer sent: option %d", button);
+            ESP_LOGI(TAG, "Answer sent: option %d after %lu ms", button, (unsigned long)answer.response_time_ms);
         }
     }
     else if (s_state == STATE_POLL_ACTIVE) {

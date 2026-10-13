@@ -50,6 +50,14 @@ menu "imPress C6 Gateway Configuration"
                 Set to 0 to have the backend assign the class on first connect.
                 Set a positive integer to pin this gateway to a specific class.
 
+        config CLASSROOM_CODE
+            string "Classroom code (empty = link the gateway in the admin page)"
+            default ""
+            help
+                The physical room label (for example RM-201), sent at
+                registration so the backend links this gateway to the class
+                held in that room. Leave empty to link it by hand.
+
         config BACKEND_TLS
             bool "Use HTTPS / WSS to reach the backend"
             default n

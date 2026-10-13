@@ -24,6 +24,9 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Added
 
+- Quiz answers from a student module now carry the time the student took to answer, measured on the module from the moment the question arrived (it was always 0).
+- A gateway can be built with its classroom code (`CLASSROOM_CODE` in menuconfig) so the server links it to the class held in that room when it first registers. Empty by default: gateways are linked in the admin page as before.
+- `firmware/activate_idf.ps1` finds and activates an ESP-IDF installation in PowerShell on Windows. ([#114](https://github.com/Kush-Kelaiya22/imPress/issues/114))
 - A Read the Docs-ready Sphinx/MyST documentation site with responsive navigation, full-text search, Mermaid diagrams, local build commands and an embedded revision-matched Graphify visualization.
 - A public `/graph` engineering documentation portal with searchable Markdown guides and the interactive Graphify architecture map.
 - A keyless, committed Graphify knowledge graph with Codex guidance, local hooks, validation, and automated GitHub synchronization for `varun/v2.1`.
