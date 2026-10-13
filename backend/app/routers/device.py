@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import commit_or_conflict, get_db
-from ..models import EspDevice, ClassSession, Attendance, StudentEnrollment, Student, ActivityLog, \
+from ..models import EspDevice, ClassSession, Attendance, StudentEnrollment, Student, StudentModule, ActivityLog, \
     Quiz, QuizAnswer, Poll, PollVote
 from ..schemas import DeviceRegister, DeviceHeartbeat, DeviceStatusPing, DeviceAttendance, \
     DeviceDataBatch, DeviceFirmwareCheck, DeviceOtaApplied, DeviceOtaStatus, OtaStatusResponse
@@ -434,8 +434,10 @@ async def _resolve_student_id_by_enrollment(db: AsyncSession, msg: dict) -> int 
     """Resolve a student row from a batch message.
 
     Student identity is the ENROLLMENT NUMBER (roll_number, 10 chars).
-    Optional 'device_mac'/'device_id' are accepted only as a *fallback* for
-    legacy/relay callers — never as primary identity.
+    Optional device identifiers are accepted only as a fallback for legacy
+    relays: MAC through the student registry, firmware UID through the module
+    inventory. `StudentEnrollment` links students to classes and has no device
+    identifier of its own.
     """
     roll = (msg.get("enrollment_number") or msg.get("roll_number") or "").strip().upper()
     if roll:
@@ -452,11 +454,15 @@ async def _resolve_student_id_by_enrollment(db: AsyncSession, msg: dict) -> int 
             return student.id
 
     dev_id = msg.get("device_id")
-    if isinstance(dev_id, int) and dev_id:
-        res = await db.execute(select(StudentEnrollment).where(StudentEnrollment.device_id == dev_id))
-        enr = res.scalar_one_or_none()
-        if enr:
-            return enr.student_id
+    if isinstance(dev_id, int) and not isinstance(dev_id, bool) and 0 < dev_id <= 0xFFFFFFFF:
+        res = await db.execute(
+            select(Student.id)
+            .join(StudentModule, StudentModule.enrollment_number == Student.roll_number)
+            .where(StudentModule.device_uid == dev_id)
+        )
+        student_id = res.scalar_one_or_none()
+        if student_id is not None:
+            return student_id
     return None
 
 

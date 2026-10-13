@@ -10,6 +10,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Fixed
 
+- A batch answer that identifies a student by firmware module UID now resolves through the module inventory instead of failing with HTTP 500. ([#179](https://github.com/Kush-Kelaiya22/imPress/issues/179))
 - A gateway refused because it joins a class it is not linked to no longer reports only a key problem: its message now names both causes and where to fix the link. ([#159](https://github.com/Kush-Kelaiya22/imPress/issues/159))
 - The live class page no longer keeps trying to reconnect after the server ended the teacher's access: a teacher who was signed out or deactivated is sent to the login page, and a teacher without access to the class is told so. ([#160](https://github.com/Kush-Kelaiya22/imPress/issues/160))
 - The student mesh now refuses a message that would be too large for one ESP-NOW frame, instead of the radio dropping it; today's messages are all well within the limit. ([#170](https://github.com/Kush-Kelaiya22/imPress/issues/170))
