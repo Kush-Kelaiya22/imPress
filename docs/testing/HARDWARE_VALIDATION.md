@@ -20,6 +20,14 @@ The checks below are planned as GitHub issues. Each issue has numbered test case
 | 10 | [#93](https://github.com/Kush-Kelaiya22/imPress/issues/93): range, power, brownout, buttons | H17, H18 |
 | 11 | [#91](https://github.com/Kush-Kelaiya22/imPress/issues/91): hub variants (no PSRAM, 8 MB quad flash) | H15, H16 |
 
+Added for the 2.2 line (milestone `varun/v2.2`), each a step-by-step procedure that does not repeat the cases above:
+
+| Issue | Checks |
+|---|---|
+| [#183](https://github.com/Kush-Kelaiya22/imPress/issues/183) | student identity edge cases after #85: held buttons, lower case, set-once, application vs full re-flash, partial reset combinations, power cut while saving |
+| [#184](https://github.com/Kush-Kelaiya22/imPress/issues/184) | two neighbouring classrooms: radio cross-talk, which hub a module joins, every answer recorded for the right class |
+| [#185](https://github.com/Kush-Kelaiya22/imPress/issues/185) | the v2.2 changes on real boards: response time, gateway classroom code, release flashing files and provenance, browser session cookie |
+
 These issues are in the release line's milestone (`varun/v2.1`) with the `testing` label. While one of them is open, every `varun/v2.1.N` release is marked **Beta**; when the last one closes they become **Stable** automatically ([releases](../guides/releases.md#beta-and-stable)).
 
 ## How to record a result
