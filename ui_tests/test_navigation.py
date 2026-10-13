@@ -28,5 +28,5 @@ def test_normal_navigation_and_in_page_rerender_still_work(server, page):
     row = page.locator("tr", has_text="teach1")
     expect(row).to_be_visible()
     page.on("dialog", lambda d: d.accept())
-    row.locator("button", has_text="Disable").click()   # re-renders the same page
-    expect(page.locator("tr", has_text="teach1").locator("button", has_text="Enable")).to_be_visible()
+    row.locator("button", has_text="Deactivate").click()   # re-renders the same page
+    expect(page.locator("tr", has_text="teach1").locator("button", has_text="Reactivate")).to_be_visible()
