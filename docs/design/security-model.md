@@ -38,7 +38,7 @@ flowchart LR
 | Principal | Mechanism | Details |
 |---|---|---|
 | Users | Opaque server-side **sessions** | `POST /api/auth/login` issues `impress_<urlsafe 64>`. Only `sha256(token)` is stored (`user_sessions.token_hash`; the legacy `session_token` column also holds the hash, #12). Validation checks revoked → hard expiry (6 h) → idle expiry (60 min) → user active. Logout revokes. |
-| Roles | `teacher` < `admin` < `super_admin`, closed `Literal` set | Only a super admin can grant or remove admin-level roles; nobody changes their own role (#10). Teachers only see and operate their classes: one access rule (primary teacher, co-faculty, admin) for class, quiz, poll and results routes (#20, #21). |
+| Roles | `teacher` < `admin` < `super_admin`, closed `Literal` set | Only a super admin can grant or remove admin-level roles; nobody changes their own role (#10), deactivates or deletes their own account. **At least one active super admin always exists:** database triggers abort any write that would remove the last one, so no API route, concurrent pair of requests or internal code path can lock the installation out (#116). Teachers only see and operate their classes: one access rule (primary teacher, co-faculty, admin) for class, quiz, poll and results routes (#20, #21). |
 | Gateways and hubs | Shared `X-API-Key` | Constant-time comparison (`secrets.compare_digest`). WebSocket: `X-API-Key` header (the legacy `?api_key=` still accepted) (#11). |
 | Teacher WebSocket | `?token=` = the login session token | Same validator as REST, no activity refresh (#8). Requires `wss://` in deployment, because browsers can't set WS headers. |
 | Students | **None on air** | ESP-NOW frames are unauthenticated; identity is the enrollment number inside the payload. |

@@ -38,6 +38,7 @@ from ..services.student_modules import module_to_dict
 from ..services.health import health
 from ..services.class_import import TEMPLATE as CLASS_TEMPLATE, apply_class_import, export_rows, plan_class_import
 from ..services.csv_import import read_upload
+from ..services import accounts
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -255,6 +256,7 @@ async def update_user(
     if target.role == "super_admin" and user.role != "super_admin":
         raise HTTPException(403, "Cannot modify super admin")
 
+    accounts.refuse_self_lockout(user, target, deactivate=body.is_active is False, role=body.role)
     if body.full_name is not None:
         target.full_name = body.full_name
     if body.email is not None:
@@ -262,14 +264,12 @@ async def update_user(
     if body.is_active is not None:
         target.is_active = body.is_active
     if body.role is not None and body.role != target.role:
-        if target.id == user.id:
-            raise HTTPException(403, "You cannot change your own role")
         _require_can_grant(user, body.role)     # granting admin-level
         _require_can_grant(user, target.role)   # demoting an admin-level user
         target.role = body.role
 
     await log_activity(db, "user.update", user.id, "user", user_id, body.model_dump(exclude_unset=True))
-    await db.commit()
+    await accounts.commit(db)
     await db.refresh(target)
     return target
 
@@ -284,14 +284,13 @@ async def deactivate_user(
     target = result.scalar_one_or_none()
     if not target:
         raise HTTPException(404, "User not found")
-    if target.id == user.id:
-        raise HTTPException(400, "Cannot deactivate yourself")
+    accounts.refuse_self_lockout(user, target, deactivate=True)
     if target.role == "super_admin" and user.role != "super_admin":
         raise HTTPException(403, "Cannot deactivate super admin")
 
     target.is_active = False
     await log_activity(db, "user.deactivate", user.id, "user", user_id)
-    await db.commit()
+    await accounts.commit(db)
     return {"status": "deactivated"}
 
 
@@ -328,8 +327,7 @@ async def delete_user(
     target = result.scalar_one_or_none()
     if not target:
         raise HTTPException(404, "User not found")
-    if target.id == user.id:
-        raise HTTPException(400, "Cannot delete yourself")
+    accounts.refuse_self_lockout(user, target, delete=True)
     if target.role == "super_admin" and user.role != "super_admin":
         raise HTTPException(403, "Cannot delete super admin")
 
@@ -337,7 +335,7 @@ async def delete_user(
     await log_activity(db, "user.delete", user.id, "user", user_id, {
         "username": target.username,
     })
-    await db.commit()
+    await accounts.commit(db)
     return {"status": "ok", "message": "User deactivated", "user_id": user_id}
 
 

@@ -40,7 +40,10 @@ async function apiRequest(path, options = {}) {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || 'Request failed');
+    const d = err.detail;
+    // {"detail": {"code", "message"}} (#116) or FastAPI's string / validation list
+    const msg = typeof d === 'string' ? d : (d && d.message) || 'Request failed';
+    throw Object.assign(new Error(msg), { status: res.status, code: d && d.code });
   }
 
   if (res.status === 204) return null;
