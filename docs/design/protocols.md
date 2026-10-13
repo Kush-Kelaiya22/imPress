@@ -61,7 +61,8 @@ AA 22 00 12 | 03 00 | 01 | 41 42 43 44 45 31 32 33 34 35 00 | B1 C8 3F D5 | 68 9
 | `0x21` | `POLL_OPTIONS` | legacy alias (handled like `POLL_START`) | same | – |
 | `0x22` | `POLL_VOTE` | student → backend | `poll_id u16 · selected_option u8 · enrollment char[11] · device_id u32` | 18 |
 | `0x23` | `POLL_END` | backend → students | `payload_session_end_t { id u16 }` | 2 |
-| `0x30` / `0x31` | `ACK` / `NACK` | diagnostics | – | 0 |
+| `0x30` | `ACK` | root → students (#181) | `payload_ack_t`: `msg_id u32` (the confirmed frame's `mesh_msg_id`) · `device_id u32` (the module it is for) · `seq u16` (hub counter, so a repeated ACK is a new frame that relays pass on) | 10 |
+| `0x31` | `NACK` | unused | – | 0 |
 | `0x40`–`0x42` | `SPI_AGGREGATE` / `SPI_COMMAND` / `SPI_STATUS` | C6 ↔ S3 internal | `SPI_COMMAND` carries a JSON string; `SPI_STATUS` byte 0 = status | ≤ 240 |
 | `0x50` | `OTA_PROMPT` | C6 → S3 | `version char[32] · token char[64]` | 96 |
 | `0x51` | `OTA_APPLIED` | S3 → C6 (SPI record, sender 0) | `payload_ota_result_t`: `version[32] · mac[13] (12 hex) · result u8 (0 applied, 1 rolled_back, 2 failed) · error i32 (esp_err_t)`; the C6 relays it as batch `ota_result` | 50 |
@@ -85,6 +86,21 @@ Strings are NUL-terminated and zero-padded. Writers always use `strncpy(dst, src
 | `hops` | 0 at origin, +1 per relay |
 
 Duplicates are identified by `mesh_msg_id(sender_id, frame)`, an FNV-1a hash over the origin id and the frame, **never** the header. See [mesh design](mesh.md).
+
+### Delivery acknowledgement (#181)
+
+Broadcast ESP-NOW has no acknowledgement. The hub (with `CONFIG_MESH_ANSWER_ACK`, on by default) answers every `STUDENT_JOIN`, `QUIZ_ANSWER` and `POLL_VOTE` it has **queued for the server, or already had**, with an `ACK` naming the frame's `mesh_msg_id`. It does not acknowledge a frame it dropped because its queue was full: the module's resend is the retry. The ACK's TTL is the frame's hop count + 1 (`ack_ttl()`), so it reaches the module without flooding the room; a module next to the hub gets TTL 1 and nobody relays it.
+
+A module waits for ACKs only after its hub has acknowledged its join, so with an older hub nothing changes. Then, for each answer or vote (`answer_tx_*` in `protocol.c`, host-tested in `test_answer_ack.c`):
+
+| State | What the module does |
+|---|---|
+| pending | resends the **identical** frame after 600 ms + 0–400 ms jitter, at most 3 times (the hub and the server de-duplicate it) |
+| delivered | the matching ACK arrived: the display shows *Answer received* / *Vote received* |
+| failed | no ACK after the last resend: the display shows *Not delivered: press again* and the module accepts a new press |
+
+The end of a quiz or poll cancels a pending delivery. In the classroom simulator (`firmware/sim/classroom_sim.py --ack`), 300 modules at 10 % frame loss in each direction deliver every answer (without ACKs, about 26 are lost); at 30 % loss at most 3 are lost and every module whose confirmation never arrived tells its student. On a real radio the loss rate, and the airtime of one ACK per answer, must be measured (#87, #93).
+
 
 ---
 

@@ -59,6 +59,14 @@ class _Msg(ctypes.Structure):
                 ("payload", ctypes.c_uint8 * MSG_MAX_PAYLOAD), ("crc", ctypes.c_uint16)]
 
 
+class _AnswerTx(ctypes.Structure):          # answer_tx_t (protocol.h, #181)
+    _fields_ = [("state", ctypes.c_int), ("msg_id", ctypes.c_uint32), ("resends", ctypes.c_uint8),
+                ("due_ms", ctypes.c_uint32)]
+
+
+ANSWER_PENDING, ANSWER_DELIVERED, ANSWER_FAILED = 1, 2, 3
+MSG_ACK = 0x30
+
 _lib = None
 
 
@@ -88,6 +96,14 @@ def firmware() -> ctypes.CDLL:
                                         ctypes.POINTER(u8p), ctypes.POINTER(ctypes.c_uint16)]
         lib.spi_slot_encode.argtypes = [u8p, u8p, sz]
         lib.spi_slot_decode.argtypes = [u8p, u8p, sz]
+        tx = ctypes.POINTER(_AnswerTx)
+        lib.answer_tx_start.argtypes = [tx, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32]
+        lib.answer_tx_poll.argtypes = [tx, ctypes.c_uint32, ctypes.c_uint32]
+        lib.answer_tx_poll.restype = ctypes.c_bool
+        lib.answer_tx_ack.argtypes = [tx, u8p, ctypes.c_uint32]
+        lib.answer_tx_ack.restype = ctypes.c_bool
+        lib.ack_ttl.argtypes = [ctypes.c_uint8, ctypes.c_uint8]
+        lib.ack_ttl.restype = ctypes.c_uint8
         _lib = lib
     return _lib
 
@@ -212,26 +228,35 @@ class Hub:
         self.queue: list[tuple[int, bytes]] = []
         self.log = {"accepted": 0, "bad_frame": 0, "duplicate": 0, "queue_full": 0}
 
-    def receive(self, packet: bytes, now_ms: int) -> None:
+    def receive(self, packet: bytes, now_ms: int) -> str:
+        """'queued', 'duplicate', 'full' or 'bad' (mesh_master.c on_espnow_recv)."""
         if len(packet) <= MESH_HDR:
             self.log["bad_frame"] += 1
-            return
+            return "bad"
         _ttl, sender, _hops = struct.unpack("<BIB", packet[:MESH_HDR])
         frame = packet[MESH_HDR:]
         if sender == 0:                                         # the hub's own broadcast, relayed back
-            return
+            return "bad"
         if decode(frame) is None:
             self.log["bad_frame"] += 1
-            return
+            return "bad"
         n = len(frame)
         if firmware().mesh_dedup_check(self.dedup, firmware().mesh_msg_id(sender, _buf(frame), n), now_ms):
             self.log["duplicate"] += 1
-            return
+            return "duplicate"
         if len(self.queue) >= HUB_QUEUE - 1:
             self.log["queue_full"] += 1
-            return
+            return "full"
         self.queue.append((sender, frame))
         self.log["accepted"] += 1
+        return "queued"
+
+    def ack(self, packet: bytes, seq: int) -> bytes:
+        """The MSG_ACK the hub broadcasts for a frame it queued or already had (#181)."""
+        _ttl, sender, hops = struct.unpack("<BIB", packet[:MESH_HDR])
+        frame = packet[MESH_HDR:]
+        payload = struct.pack("<IIH", firmware().mesh_msg_id(sender, _buf(frame), len(frame)), sender, seq & 0xFFFF)
+        return struct.pack("<BIB", firmware().ack_ttl(hops, RELAY_TTL), 0, 0) + encode(MSG_ACK, payload)
 
     def flush_slot(self) -> bytes:
         """One SPI slot (4096 bytes) holding as many queued records as fit."""
@@ -316,12 +341,13 @@ class Report:
     radio: dict
     hub: dict
     gateway: dict
+    delivery: dict = field(default_factory=dict)          # with acknowledgements (#181)
 
     def summary(self) -> dict:
         answered = {d["enrollment_number"] for d in self.delivered if d["type"] in ("quiz_answer", "poll_vote")}
         return {"seed": self.seed, "students": self.students, "answers_sent": self.sent,
                 "answers_delivered": len(self.delivered), "distinct_students_delivered": len(answered),
-                "radio": self.radio, "hub": self.hub, "gateway": self.gateway,
+                "radio": self.radio, "hub": self.hub, "gateway": self.gateway, "delivery": self.delivery,
                 "firmware_sources_sha256": _sources_digest()}
 
 
@@ -335,9 +361,16 @@ def _sources_digest() -> str:
 def run_quiz(students: int = 30, *, seed: int = 1, loss: float = 0.0, duplicate: float = 0.0,
              corrupt: float = 0.0, reorder: float = 0.0, quiz_id: int = 1, question: int = 0,
              spi_corrupt: float = 0.0, roll_prefix: str = "SIM", arrival_gap_ms: int = 20,
-             spi_poll_ms: int = SPI_POLL_MS) -> Report:
+             spi_poll_ms: int = SPI_POLL_MS, ack: bool = False) -> Report:
     """Every student answers one question; the hub drains to the gateway in
-    SPI slots. Returns what reached the gateway's batch."""
+    SPI slots. Returns what reached the gateway's batch.
+
+    ack=False: a hub without acknowledgements (before #181): one send per press.
+    ack=True: the hub confirms with MSG_ACK over the same lossy radio and each
+    module runs the firmware's answer_tx_* state machine (resend, then give up)."""
+    if ack:
+        return _run_acked(students, seed, loss, duplicate, corrupt, quiz_id, question, spi_corrupt,
+                          roll_prefix, arrival_gap_ms, spi_poll_ms)
     rng = random.Random(seed)
     radio = Radio(rng, loss, duplicate, corrupt, reorder)
     hub, gw = Hub(), Gateway()
@@ -363,15 +396,76 @@ def run_quiz(students: int = 30, *, seed: int = 1, loss: float = 0.0, duplicate:
     return Report(seed, students, len(packets), delivered, radio.log, hub.log, gw.log)
 
 
+def _run_acked(students, seed, loss, duplicate, corrupt, quiz_id, question, spi_corrupt, roll_prefix,
+               arrival_gap_ms, spi_poll_ms, tick_ms: int = 10, loop_ms: int = 200) -> Report:
+    """Time-stepped room with acknowledgements: presses spread over
+    students * arrival_gap_ms; radio latency 1-20 ms each way; the module's
+    main loop runs every 200 ms (student main.c); the hub drains every
+    SPI poll interval."""
+    lib = firmware()
+    rng = random.Random(seed)
+    up = Radio(rng, loss, duplicate, corrupt)
+    down = Radio(rng, loss, duplicate, corrupt)
+    hub, gw = Hub(), Gateway()
+    roster = [Student(f"{roll_prefix}{i:07d}"[:10], 0x1000 + i) for i in range(students)]
+    press_at = {s.device_id: rng.randrange(0, max(1, students * arrival_gap_ms)) for s in roster}
+    frames, txs = {}, {s.device_id: _AnswerTx() for s in roster}
+    to_hub, to_modules = [], []                                  # (arrival_ms, packet)
+    delivered, seq, resends = [], 0, 0
+    end = max(press_at.values()) + 10_000
+
+    def jitter():
+        return rng.randrange(0, 401)                             # ANSWER_JITTER_MS
+
+    for now in range(0, end, tick_ms):
+        for s in roster:
+            if press_at[s.device_id] <= now and s.device_id not in frames:
+                frames[s.device_id] = f = s.press(quiz_id, question, rng.randrange(4), rng.randrange(200, 30_000))
+                frame = f[MESH_HDR:]
+                lib.answer_tx_start(ctypes.byref(txs[s.device_id]),
+                                    lib.mesh_msg_id(s.device_id, _buf(frame), len(frame)), now, jitter())
+                to_hub += [(now + rng.randrange(1, 21), p) for p in up.carry([f])]
+        for item in [x for x in to_hub if x[0] <= now]:
+            to_hub.remove(item)
+            outcome = hub.receive(item[1], now)
+            if outcome in ("queued", "duplicate"):
+                seq += 1
+                to_modules += [(now + rng.randrange(1, 21), p) for p in down.carry([hub.ack(item[1], seq)])]
+        for item in [x for x in to_modules if x[0] <= now]:
+            to_modules.remove(item)
+            got = decode(item[1][MESH_HDR:])
+            if got and got[0] == MSG_ACK:
+                _mid, dev, _seq = struct.unpack("<IIH", got[1])
+                if dev in txs:
+                    lib.answer_tx_ack(ctypes.byref(txs[dev]), _buf(got[1]), dev)
+        if now % loop_ms == 0:
+            for dev, tx in txs.items():
+                if lib.answer_tx_poll(ctypes.byref(tx), now, jitter()):
+                    resends += 1
+                    to_hub += [(now + rng.randrange(1, 21), p) for p in up.carry([frames[dev]])]
+        if now % spi_poll_ms == 0 and hub.queue:
+            slot = bytearray(hub.flush_slot())
+            if rng.random() < spi_corrupt:
+                slot[rng.randrange(4, 64)] ^= 0x01
+            delivered += gw.receive_slot(bytes(slot))
+    while hub.queue:
+        delivered += gw.receive_slot(hub.flush_slot())
+    states = [tx.state for tx in txs.values()]
+    return Report(seed, students, len(frames), delivered, up.log, hub.log, gw.log, {
+        "acks_sent": seq, "acks_radio": down.log, "resends": resends,
+        "confirmed": states.count(ANSWER_DELIVERED), "told_not_delivered": states.count(ANSWER_FAILED)})
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--students", type=int, default=30)
     ap.add_argument("--seed", type=int, default=1)
     for f in ("loss", "duplicate", "corrupt", "reorder", "spi-corrupt"):
         ap.add_argument(f"--{f}", type=float, default=0.0)
+    ap.add_argument("--ack", action="store_true", help="hub acknowledgements and module resends (#181)")
     a = ap.parse_args(argv)
     r = run_quiz(a.students, seed=a.seed, loss=a.loss, duplicate=a.duplicate, corrupt=a.corrupt,
-                 reorder=a.reorder, spi_corrupt=a.spi_corrupt)
+                 reorder=a.reorder, spi_corrupt=a.spi_corrupt, ack=a.ack)
     json.dump(r.summary(), sys.stdout, indent=2)
     print()
     return 0

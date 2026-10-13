@@ -72,11 +72,10 @@ def test_corrupted_radio_frames_are_dropped_not_misread(seed):
         assert d["enrollment_number"] in sent and d["selected_option"] == sent[d["enrollment_number"]][0], f"seed={seed}"
 
 
-def test_lost_answers_are_not_resent():
-    """Known limitation (#181): a module sends its answer once
-    over broadcast ESP-NOW, which has no acknowledgement. Every frame the radio
-    loses is a missing answer. This test pins today's behaviour; it changes
-    when module-level acknowledgement is implemented."""
+def test_without_acknowledgements_lost_answers_stay_lost():
+    """A hub without #181 (or MESH_ANSWER_ACK off): the module sends its
+    answer once over broadcast ESP-NOW, which has no acknowledgement, so every
+    frame the radio loses is a missing answer."""
     r = sim.run_quiz(100, seed=4, loss=0.1)
     assert r.radio["lost"] > 0
     assert len(r.delivered) == 100 - r.radio["lost"]
@@ -121,3 +120,48 @@ def test_same_seed_same_run_and_report_names_the_sources():
 def test_command_line_prints_a_json_report(capsys):
     assert sim.main(["--students", "5", "--seed", "2"]) == 0
     assert '"answers_delivered": 5' in capsys.readouterr().out
+
+
+# ── Acknowledgements (#181): the firmware's answer_tx_* state machine ──
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_acknowledged_answers_get_through_ten_percent_loss(seed):
+    r = sim.run_quiz(300, seed=seed, loss=0.1, ack=True).summary()
+    assert r["distinct_students_delivered"] == 300, f"seed={seed}"
+    assert r["delivery"]["told_not_delivered"] == 0, f"seed={seed}"
+    without = sim.run_quiz(300, seed=seed, loss=0.1).summary()
+    assert without["distinct_students_delivered"] < 290, f"seed={seed}"        # what #181 fixes
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_heavy_loss_most_get_through_and_the_rest_are_told(seed):
+    r = sim.run_quiz(300, seed=seed, loss=0.3, ack=True).summary()
+    d = r["delivery"]
+    assert r["distinct_students_delivered"] >= 295, f"seed={seed}"
+    # Every module either got its confirmation or was told to press again.
+    assert d["confirmed"] + d["told_not_delivered"] == 300, f"seed={seed}"
+
+
+def test_a_dead_link_tells_every_student_after_three_resends():
+    r = sim.run_quiz(30, seed=2, loss=1.0, ack=True).summary()
+    assert r["answers_delivered"] == 0
+    assert r["delivery"]["resends"] == 30 * 3 and r["delivery"]["told_not_delivered"] == 30
+
+
+def test_resends_never_reach_the_results_twice():
+    """Resends of an answer the hub already queued are duplicates. In a full
+    room the hub's 64-entry de-duplication table can forget an id within
+    seconds, so a resend may be queued again (hub "accepted" > students); the
+    server keeps one answer per student and question (backend test)."""
+    r = sim.run_quiz(300, seed=1, loss=0.1, ack=True)
+    rolls = {d["enrollment_number"] for d in r.delivered}
+    assert len(rolls) == 300 and r.hub["accepted"] >= 300
+
+
+def test_hub_ack_reaches_only_as_far_as_the_module():
+    hub = sim.Hub()
+    direct = sim.Student("ABCDE12345", 7).press(1, 0, 2, 100)
+    relayed = bytes([4]) + direct[1:5] + bytes([2]) + direct[6:]          # came through 2 relays
+    assert hub.ack(direct, 1)[0] == 1 and hub.ack(relayed, 2)[0] == 3
+    t, p = sim.decode(hub.ack(direct, 1)[sim.MESH_HDR:])
+    assert t == sim.MSG_ACK and len(p) == 10

@@ -334,3 +334,41 @@ int json_get_string(const char *json, const char *key, char *out, size_t out_len
     }
     return -1;
 }
+
+/* ── Delivery acknowledgement (#181) ───────────────────────────────── */
+
+void answer_tx_start(answer_tx_t *t, uint32_t msg_id, uint32_t now_ms, uint32_t jitter_ms)
+{
+    t->state = ANSWER_PENDING;
+    t->msg_id = msg_id;
+    t->resends = 0;
+    t->due_ms = now_ms + ANSWER_RESEND_MS + jitter_ms;
+}
+
+bool answer_tx_poll(answer_tx_t *t, uint32_t now_ms, uint32_t jitter_ms)
+{
+    if (t->state != ANSWER_PENDING || (int32_t)(now_ms - t->due_ms) < 0) {
+        return false;
+    }
+    if (t->resends >= ANSWER_RESENDS) {
+        t->state = ANSWER_FAILED;
+        return false;
+    }
+    t->resends++;
+    t->due_ms = now_ms + ANSWER_RESEND_MS + jitter_ms;
+    return true;
+}
+
+bool answer_tx_ack(answer_tx_t *t, const payload_ack_t *ack, uint32_t my_device_id)
+{
+    if (t->state != ANSWER_PENDING || ack->device_id != my_device_id || ack->msg_id != t->msg_id) {
+        return false;
+    }
+    t->state = ANSWER_DELIVERED;
+    return true;
+}
+
+uint8_t ack_ttl(uint8_t hops, uint8_t max_ttl)
+{
+    return hops >= max_ttl ? max_ttl : (uint8_t)(hops + 1);
+}

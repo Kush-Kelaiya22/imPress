@@ -125,6 +125,15 @@ menu "imPress S3 Class Module Configuration"
                 WiFi channel used for ESP-NOW mesh between S3 and students.
                 Must match student module channel.
 
+        config MESH_ANSWER_ACK
+            bool "Acknowledge joins, answers and votes (#181)"
+            default y
+            help
+                Confirm every join, answer and vote queued for the server with
+                a MSG_ACK, so student modules resend what the radio lost and
+                tell the student when an answer did not get through. Modules
+                without this feature ignore the ACKs.
+
     endmenu
 
 endmenu
