@@ -1,0 +1,317 @@
+# Task: imPress Hardware Deployment, Firmware Flashing, and End-to-End Integration Testing
+
+You are working on **imPress**, an ESP32-based classroom participation system. Your task is to deploy the existing firmware onto three physically connected ESP32 devices, connect them to the running backend, and thoroughly test the complete hardware-to-software communication pipeline.
+
+This is a real hardware integration and debugging task, not a request to redesign or rewrite the project.
+
+Work autonomously wherever possible. Inspect the repository, understand its architecture, identify the correct firmware and configuration files, execute the necessary commands, diagnose failures, and apply minimal, justified fixes.
+
+## 1. Deployment information
+
+The following details were provided by a project collaborator.
+
+**Backend server:**
+- Admin interface: `http://192.168.137.155:8000/#/admin`
+- Backend address: `http://192.168.137.155:8000`
+- Backend host: `192.168.137.155`
+- Backend port: `8000`
+
+**Wi-Fi hotspot:**
+- SSID: `impress-hotspot`
+- Password: `impress123`
+
+**ESP32 serial port assignments (Windows):**
+
+| Device | Port | Function |
+|---|---|---|
+| Student module | COM4 | Student interaction and response submission |
+| ESP32-S3 | COM18 | Mesh hub, response aggregation, and SPI communication |
+| ESP32-C6 | COM19 | Gateway connecting the hardware system to the backend |
+
+These assignments are provided by the collaborator and must be verified before flashing. Do not assume the USB devices still have the same port assignments.
+
+Treat the Wi-Fi password as a deployment secret. Do not commit it to the repository, include it in logs or reports, or embed it in tracked source files.
+
+## 2. Initial repository inspection
+
+Before running deployment commands:
+
+1. Inspect the complete repository structure.
+2. Identify the existing firmware projects for the student module, S3 hub, and C6 gateway.
+3. Read the README, hardware specifications, flashing instructions, configuration documentation, and communication protocol definitions.
+4. Determine the ESP-IDF version and dependencies required by each target.
+5. Identify existing scripts for building, flashing, monitoring, provisioning, and testing.
+6. Check the current Git branch, uncommitted changes, and repository status.
+7. Identify the expected backend authentication, registration, and device enrollment mechanisms.
+8. Check whether the repository contains hardware integration tests or simulator-based tests.
+
+**Important:** The existing repository is the source of truth. Do not invent API endpoints, serial commands, GPIO assignments, firmware protocols, or configuration formats.
+
+Preserve unrelated working-tree changes. Do not reset, rebase, force-push, or overwrite existing work.
+
+## 3. Verify hardware and development environment
+
+Determine whether the current execution environment has direct access to the Windows COM ports.
+
+Verify:
+- COM4, COM18, and COM19 are present.
+- The USB serial devices can be identified.
+- The detected chip types match their assigned roles.
+- The ESP-IDF toolchain is installed and usable.
+- Python, CMake, Ninja, and other required build tools are available.
+- The relevant USB drivers and serial permissions are working.
+- No other applications are holding the serial ports open.
+
+Use appropriate tools such as ESP-IDF, esptool, PowerShell, or the repository's existing scripts.
+
+Do not flash a device if its identity or firmware target remains uncertain.
+
+If direct hardware access is unavailable, clearly explain the limitation, perform all feasible static validation and build tests, and provide exact commands for execution on the Windows host. Do not claim that flashing or physical tests succeeded.
+
+## 4. Configure network connectivity
+
+Configure the applicable firmware components to use:
+
+- SSID: `impress-hotspot`
+- Password: `impress123`
+- Backend: `192.168.137.155`
+- Port: `8000`
+
+Determine which devices actually require Wi-Fi connectivity according to the implemented architecture.
+
+Expected roles:
+- Student ESP32 communicates through the existing ESP-NOW mesh.
+- ESP32-S3 coordinates student responses and communicates with the gateway.
+- ESP32-C6 communicates with the backend over Wi-Fi.
+
+Do not add unnecessary Wi-Fi connections to student modules or alter the established mesh architecture.
+
+For the C6 gateway, inspect and configure the existing HTTP and WebSocket integration. Use the actual endpoints and authentication methods defined in the backend.
+
+Verify that the deployment host can reach the backend, and distinguish between HTTP connectivity, authenticated API access, and working device connectivity.
+
+If credentials or device keys are required, obtain them through an existing authorized provisioning mechanism. Never bypass authentication or introduce hardcoded production credentials.
+
+## 5. Build and flash firmware
+
+Prepare firmware for all three devices.
+
+Use the project's documented ESP-IDF targets, partition tables, board settings, pin mappings, and flash parameters.
+
+Suggested deployment sequence:
+1. Build and validate the ESP32-C6 gateway firmware.
+2. Flash the C6 on COM19.
+3. Verify successful boot and Wi-Fi connection.
+4. Build and flash the ESP32-S3 hub on COM18.
+5. Verify hub initialization and its communication with the C6.
+6. Build and flash the student module on COM4.
+7. Verify student module initialization, enrollment, and mesh communication.
+
+Adjust the sequence if repository documentation requires a different order.
+
+For each device:
+- Record its detected chip and target.
+- Record the firmware version and Git commit.
+- Capture the build outcome.
+- Verify flashing completed successfully.
+- Confirm that the device boots without repeated resets or fatal exceptions.
+- Inspect serial output for initialization and communication errors.
+- Check firmware compatibility across all three devices.
+
+Do not erase NVS, device identities, enrollment data, or existing credentials unless required by the documented process. Explain any destructive operation before executing it.
+
+## 6. Test the complete communication pipeline
+
+The expected architecture is:
+
+Student Module → ESP-NOW → ESP32-S3 Hub → SPI → ESP32-C6 Gateway → Wi-Fi → FastAPI Backend → Teacher/Admin Web Interface
+
+Verify each connection individually before performing end-to-end testing.
+
+### A. Student module → S3 hub
+
+Check:
+- ESP-NOW initialization
+- Device discovery and enrollment
+- Peer registration
+- Channel compatibility
+- Packet transmission and reception
+- Response payload validity
+- Sequence numbers and duplicate handling
+- Packet loss and retransmission behavior, where implemented
+
+### B. S3 hub → C6 gateway
+
+Inspect and validate the existing SPI interface, including:
+- Master/slave roles
+- Configured GPIO mappings
+- SPI initialization
+- Clock frequency and compatibility
+- Existing 4096-byte frame contract, if still applicable
+- Ready/handshake signals
+- Buffer management
+- Frame boundaries
+- Payload integrity
+- Timeout and recovery behavior
+
+Do not change SPI pins, clock settings, or frame structures without verifying both firmware implementations and the hardware specifications.
+
+### C. C6 gateway → Backend
+
+Verify:
+- Wi-Fi association
+- DHCP/IP assignment
+- Backend reachability
+- Device authentication
+- HTTP request formatting
+- Batch submission
+- WebSocket connection and authentication
+- Heartbeats
+- Reconnection after temporary network failure
+- Appropriate logging and error handling
+
+Inspect the backend to determine which requests should produce database entries and UI updates.
+
+### D. Backend → Web Interface
+
+Open or test the provided admin interface using supported browser tooling, if available.
+
+Verify that:
+- The backend is responding.
+- The gateway can authenticate.
+- The applicable devices appear in the inventory or diagnostic interface.
+- Connectivity and presence indicators reflect real device activity.
+- An authorized teacher/admin can create or use a test class and session.
+- Responses submitted by a student module are reflected correctly in the appropriate interface.
+
+Do not mistake successful page loading for successful end-to-end integration.
+
+## 7. Perform end-to-end functional tests
+
+Use existing test infrastructure and authorized test accounts.
+
+Where hardware interaction is required, use actual physical input or a documented test mechanism. Do not claim that physical buttons were pressed if only simulated packets were used.
+
+Test the following scenarios when supported:
+
+| Test | Expected result |
+|---|---|
+| Gateway boot | C6 initializes and connects to the backend |
+| Hub boot | S3 initializes ESP-NOW and SPI |
+| Student boot | Student module initializes correctly |
+| Device enrollment | Student module becomes recognizable to the system |
+| Single response | One valid response reaches the backend |
+| Duplicate response | Duplicate is handled according to the protocol |
+| Multiple responses | All valid responses are processed correctly |
+| Invalid payload | Rejected or handled without crashing |
+| Gateway Wi-Fi interruption | Gateway reconnects as designed |
+| Backend temporarily unreachable | Firmware handles the failure safely |
+| S3 restart | Communication recovers as specified |
+| Student restart | Device reconnects or re-enrolls as appropriate |
+| Repeated responses | No unexpected corruption, memory growth, or crashes |
+| UI updates | Submitted responses appear correctly in the intended session |
+
+Use actual observations to classify each test as PASS, FAIL, BLOCKED, or NOT RUN.
+
+## 8. Debugging and corrective action
+
+If a test fails:
+
+1. Identify the exact failing stage.
+2. Capture the relevant logs and error messages.
+3. Determine whether the root cause is firmware, hardware, network, protocol, backend, or configuration.
+4. Inspect the relevant source code.
+5. Apply the smallest technically sound correction.
+6. Rebuild and reflash affected devices when appropriate.
+7. Repeat the failed test.
+8. Run relevant regression tests.
+
+Avoid speculative changes and large rewrites.
+
+In particular, investigate:
+- ESP32-C6 boot/reset behavior
+- ESP32-S3 Wi-Fi/ESP-NOW initialization sequence
+- SPI synchronization and frame handling
+- Device authentication and enrollment
+- Backend/device WebSocket compatibility
+- Packet duplication and loss
+- Firmware version mismatches
+
+Do not silently reduce security, disable validation, or remove functionality merely to make tests pass.
+
+## 9. Documentation and reporting
+
+Create a detailed Markdown deployment report at:
+
+`docs/hardware-integration-test-report.md`
+
+The report must contain:
+1. Date and environment
+2. Git branch and commit tested
+3. Detected hardware and serial port mapping
+4. Toolchain and firmware versions
+5. Network configuration (without secrets)
+6. Firmware build results
+7. Flashing and boot results
+8. ESP-NOW verification
+9. SPI verification
+10. Backend HTTP/WebSocket verification
+11. Web interface verification
+12. End-to-end functional test matrix
+13. Actual serial logs and relevant error excerpts
+14. Issues found and corrective actions
+15. Tests that could not be performed
+16. Remaining limitations
+17. Final integration status
+
+Separate observations from assumptions. Include sufficient evidence to reproduce results without publishing passwords, authentication tokens, or device secrets.
+
+## 10. Git and delivery rules
+
+- Do not push directly to the main development branch.
+- Do not force-push.
+- Do not commit secrets or generated build artifacts.
+- Do not change unrelated files.
+- Follow existing project contribution guidelines.
+- Use a dedicated working branch for permanent fixes if required.
+- Run relevant available tests before creating a commit.
+- Do not create a pull request or push changes unless the existing instructions or user authorization permit it.
+
+## 11. Completion criteria
+
+The deployment is fully successful only when:
+
+- All three devices are positively identified.
+- All three firmware builds succeed.
+- All three devices are flashed and boot correctly.
+- Student-to-S3 communication works.
+- S3-to-C6 communication works.
+- C6-to-backend communication works.
+- Device authentication succeeds.
+- At least one real student response reaches the correct backend session and is visible through the appropriate web interface.
+- Relevant error/recovery tests pass.
+- The integration report is complete.
+
+If any of these criteria cannot be verified, report the exact limitation and classify the result as PARTIAL or BLOCKED rather than SUCCESS.
+
+## 12. Execution instructions
+
+Start by inspecting the repository and checking the development environment.
+
+Then proceed with configuration, building, flashing, monitoring, debugging, integration testing, and report generation in a logical order.
+
+Work independently and make reasonable technical decisions based on the existing codebase.
+
+Do not stop at writing a plan. Execute the task using the tools and hardware available to you.
+
+At the end, provide a concise technical summary containing:
+- Firmware status for each ESP32
+- Network connectivity status
+- ESP-NOW and SPI status
+- Backend connectivity status
+- End-to-end test results
+- Files modified
+- Remaining issues
+- Overall deployment result
+
+**Primary objective: Prove that the actual imPress hardware pipeline works from student button input to backend response processing and the web interface, using reproducible tests and verifiable evidence.**
