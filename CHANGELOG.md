@@ -26,6 +26,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 - The first release of a line creates its milestone (for example `aamna/v2.4`) automatically. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 - A new release page is complete from the start: status badges, the Beta or Stable box, the test-issue table, the install guide and the changes. Later edits outside the status section are kept. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 - A container image tag per release line (`varun-2.1`, `aamna-2.4`) that points at the line's newest release. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
+- A refactor audit and roadmap (`docs/engineering/REFACTOR_ROADMAP.md`) covering account lifecycle, lockout prevention, the privilege-ring authorization model, AURIS-aligned scheduling and the OTA redesign, with the planned work tracked in GitHub issues. ([#115](https://github.com/Kush-Kelaiya22/imPress/issues/115))
 
 ### Changed
 
