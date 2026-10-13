@@ -69,10 +69,12 @@ An explicit "user is active" ping. Refreshes the idle timer: `{status, last_acti
 | Method & path | Guard | Body / params | Notes |
 |---|---|---|---|
 | `POST /api/admin/users` | admin | `{username (3-64), email, password (≥6), full_name, role}` | `role ∈ teacher|admin|super_admin`; granting `admin`/`super_admin` needs **super_admin**; duplicate username/email → 400 |
-| `GET /api/admin/users` | admin | `?role=` | list `UserResponse` |
-| `PUT /api/admin/users/{id}` | admin | `{full_name?, email?, is_active?, role?}` | super-admin targets need super_admin; changing your own role or `is_active: false` on yourself → 403 `SELF_LOCKOUT`; removing the last active super admin → 409 `LAST_SUPER_ADMIN`; granting or demoting admin-level needs super_admin; unknown role → 422 |
-| `POST /api/admin/users/{id}/deactivate` | admin | – | yourself → 403 `SELF_LOCKOUT`; the last active super admin → 409 `LAST_SUPER_ADMIN`; super admin by an admin → 403; their sessions stop working immediately |
-| `POST /api/admin/users/{id}/reset-password` | admin | `{new_password (≥6)}` | super admin's by an admin → 403 |
+| `GET /api/admin/users` | admin | `?role=` | list of `UserResponse`; each has `allowed_actions`: the subset of `edit, deactivate, reactivate, change_role, reset_password, delete` the caller may perform on that account, computed by the same rule the routes enforce (#119) |
+| `PATCH /api/admin/users/{id}` | admin | `{full_name?, email?}` | profile only; `is_active` or `role` in the body → 422 `USE_LIFECYCLE_ENDPOINT`; duplicate email → 400; super-admin targets need super_admin (403 `FORBIDDEN_TARGET`). `PUT` is accepted as an alias for older clients |
+| `POST /api/admin/users/{id}/deactivate` | admin | – | reversible; signs the user out everywhere (sessions revoked, WebSockets closed). Yourself → 403 `SELF_LOCKOUT`; the last active super admin → 409 `LAST_SUPER_ADMIN`; super admin by an admin → 403 `FORBIDDEN_TARGET`. Returns the user |
+| `POST /api/admin/users/{id}/reactivate` | admin | – | allows logging in again; earlier sessions stay revoked. Returns the user |
+| `POST /api/admin/users/{id}/role` | **super_admin** | `{role}` | `role ∈ teacher|admin|super_admin`; signs the user out; yourself → 403 `SELF_LOCKOUT`; an admin caller → 403 `FORBIDDEN_ROLE`; last active super admin → 409; unknown role → 422 |
+| `POST /api/admin/users/{id}/reset-password` | admin | `{new_password (≥6)}` | signs the user out; a super admin's by an admin → 403 |
 | `DELETE /api/admin/users/{id}` | admin | – | **permanent** delete → `204`; primary teacher of a class → 409 `USER_OWNS_CLASSES`; yourself → 403 `SELF_LOCKOUT`; the last active super admin → 409. Retention rules: [security model → data handling](../design/security-model.md#data-handling). To keep the account, use `/deactivate` |
 | `POST /api/admin/users/import` | admin | *multipart* `file` (CSV) | columns `username,email,password,full_name,role` (all required); per-row errors returned; `admin` rows need super_admin |
 

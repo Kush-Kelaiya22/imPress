@@ -146,11 +146,17 @@ const adminApi = {
   async listUsers(role = '') {
     return apiRequest(`/admin/users${role ? `?role=${role}` : ''}`);
   },
-  async updateUser(userId, data) {
-    return apiRequest(`/admin/users/${userId}`, { method: 'PUT', body: JSON.stringify(data) });
+  async updateUser(userId, data) {   // profile only: full_name, email (#119)
+    return apiRequest(`/admin/users/${userId}`, { method: 'PATCH', body: JSON.stringify(data) });
   },
   async deactivateUser(userId) {
     return apiRequest(`/admin/users/${userId}/deactivate`, { method: 'POST' });
+  },
+  async reactivateUser(userId) {
+    return apiRequest(`/admin/users/${userId}/reactivate`, { method: 'POST' });
+  },
+  async changeRole(userId, role) {
+    return apiRequest(`/admin/users/${userId}/role`, { method: 'POST', body: JSON.stringify({ role }) });
   },
   async deleteUser(userId) {
     return apiRequest(`/admin/users/${userId}`, { method: 'DELETE' });

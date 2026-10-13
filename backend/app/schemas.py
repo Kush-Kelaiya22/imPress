@@ -80,8 +80,13 @@ class UserResponse(BaseModel):
     role: str
     is_active: bool = True
     created_at: Optional[datetime] = None
+    allowed_actions: list[str] = []   # what the caller may do to this account (#119)
 
     model_config = {"from_attributes": True}
+
+
+class RoleChange(BaseModel):
+    role: Role
 
 
 class UserUpdate(BaseModel):

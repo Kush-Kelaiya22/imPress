@@ -22,17 +22,18 @@ def _me(client, headers):
     return client.get("/api/auth/me", headers=headers).json()["id"]
 
 
-def test_super_admin_cannot_deactivate_itself_through_put(client, su):
+def test_put_can_no_longer_deactivate_anyone(client, su):
+    """The original lockout path: PUT with is_active=false on yourself (#116, #119)."""
     me = _me(client, su)
     r = client.put(f"/api/admin/users/{me}", headers=su, json={"is_active": False})
-    assert r.status_code == 403 and r.json()["detail"]["code"] == "SELF_LOCKOUT"
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "USE_LIFECYCLE_ENDPOINT"
     assert client.get("/api/auth/me", headers=su).status_code == 200      # still logged in
 
 
 @pytest.mark.parametrize("call", [
     lambda c, h, me: c.post(f"/api/admin/users/{me}/deactivate", headers=h),
     lambda c, h, me: c.delete(f"/api/admin/users/{me}", headers=h),
-    lambda c, h, me: c.put(f"/api/admin/users/{me}", headers=h, json={"role": "admin"}),
+    lambda c, h, me: c.post(f"/api/admin/users/{me}/role", headers=h, json={"role": "admin"}),
 ])
 def test_no_self_lockout_on_any_route(client, su, call):
     r = call(client, su, _me(client, su))

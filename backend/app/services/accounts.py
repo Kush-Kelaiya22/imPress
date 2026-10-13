@@ -96,3 +96,36 @@ async def delete_user(db: AsyncSession, target: User) -> None:
     # rows through User.taught_classes, which are already gone.
     await db.execute(text("DELETE FROM users WHERE id = :u"), uid)
     db.expunge(target)
+
+
+# ── Who may do what to an account (#119) ─────────────────────────────────
+# One rule used by the routes and by GET /api/admin/users (allowed_actions),
+# so the web app shows exactly the buttons the server will accept.
+
+ACTIONS = ("edit", "deactivate", "reactivate", "change_role", "reset_password", "delete")
+
+
+def check(actor: User, target: User, action: str) -> None:
+    """Raise 403 unless `actor` (an admin or super admin) may do `action` to `target`."""
+    if target.role == "super_admin" and actor.role != "super_admin":
+        raise error(403, "FORBIDDEN_TARGET", "Only a super admin can manage a super admin")
+    if action in ("deactivate", "delete", "change_role"):
+        refuse_self_lockout(actor, target, deactivate=action == "deactivate",
+                            delete=action == "delete", role="" if action == "change_role" else None)
+    if action == "change_role" and actor.role != "super_admin":
+        # every role change involves an admin-level role (teacher ↔ admin ↔ super_admin)
+        raise error(403, "FORBIDDEN_ROLE", "Only a super admin can change roles")
+
+
+def allowed_actions(actor: User, target: User) -> list[str]:
+    """The actions `check` would allow, minus the ones that make no sense now."""
+    out = []
+    for action in ACTIONS:
+        if (action == "deactivate" and not target.is_active) or (action == "reactivate" and target.is_active):
+            continue
+        try:
+            check(actor, target, action)
+        except Exception:
+            continue
+        out.append(action)
+    return out

@@ -650,14 +650,8 @@ async function renderAdminUsers(app) {
                   <td><span class="badge ${u.role === 'super_admin' ? 'badge-primary' : u.role === 'admin' ? 'badge-success' : 'badge-outline'}">${u.role}</span></td>
                   <td><span class="badge ${u.is_active ? 'badge-success' : 'badge-danger'}">${u.is_active ? 'Active' : 'Disabled'}</span></td>
                   <td>
-                    ${u.id !== user.id ? `
-                      <button class="btn btn-sm btn-outline" onclick="editUser(${u.id})">✏️ Edit</button>
-                      <button class="btn btn-sm btn-outline" onclick="toggleUserActive(${u.id}, ${u.is_active})">
-                        ${u.is_active ? 'Disable' : 'Enable'}
-                      </button>
-                      <button class="btn btn-sm btn-outline" onclick="resetUserPassword(${u.id}, '${escHtml(u.username).replace(/'/g, "\\'")}')">Reset pwd</button>
-                      <button class="btn btn-sm btn-outline text-danger" onclick="deleteUser(${u.id}, '${escHtml(u.username).replace(/'/g, "\\'")}')">🗑</button>
-                    ` : '<span class="text-muted text-sm">You</span>'}
+                    ${u.id === user.id ? '<span class="text-muted text-sm">You</span>' : ''}
+                    ${userActionButtons(u)}
                   </td>
                 </tr>
               `).join('')}
@@ -722,12 +716,14 @@ async function renderAdminUsers(app) {
               <label>Email</label>
               <input type="email" id="edit-email" required />
             </div>
-            <div class="form-group">
+            <div class="form-group" id="edit-role-group">
               <label>Role</label>
               <select id="edit-role">
                 <option value="teacher">Teacher</option>
                 <option value="admin">Admin</option>
+                <option value="super_admin">Super admin</option>
               </select>
+              <small class="text-muted">Changing the role signs the user out.</small>
             </div>
             <div class="flex gap-1">
               <button type="submit" class="btn btn-primary">Save</button>
@@ -824,10 +820,25 @@ async function renderAdminUsers(app) {
   };
 }
 
-window.toggleUserActive = async function (userId, currentActive) {
+// Buttons come from the server's allowed_actions (#119): the server decides,
+// the page only shows what it would accept.
+function userActionButtons(u) {
+  const a = new Set(u.allowed_actions || []);
+  const name = escHtml(u.username).replace(/'/g, "\\'");
+  return [
+    a.has('edit') && `<button class="btn btn-sm btn-outline" onclick="editUser(${u.id})">✏️ Edit</button>`,
+    a.has('deactivate') && `<button class="btn btn-sm btn-outline" onclick="setUserActive(${u.id}, '${name}', false)">Deactivate</button>`,
+    a.has('reactivate') && `<button class="btn btn-sm btn-outline" onclick="setUserActive(${u.id}, '${name}', true)">Reactivate</button>`,
+    a.has('reset_password') && `<button class="btn btn-sm btn-outline" onclick="resetUserPassword(${u.id}, '${name}')">Reset pwd</button>`,
+    a.has('delete') && `<button class="btn btn-sm btn-outline text-danger" onclick="deleteUser(${u.id}, '${name}')">Delete permanently</button>`,
+  ].filter(Boolean).join(' ');
+}
+
+window.setUserActive = async function (userId, username, active) {
+  if (!active && !confirm(`Deactivate "${username}"?\n\nThey are signed out everywhere and cannot log in until reactivated. Nothing is deleted.`)) return;
   try {
-    await adminApi.updateUser(userId, { is_active: !currentActive });
-    showToast(currentActive ? 'User disabled' : 'User enabled', 'success');
+    if (active) await adminApi.reactivateUser(userId); else await adminApi.deactivateUser(userId);
+    showToast(active ? `"${username}" reactivated` : `"${username}" deactivated`, 'success');
     const app = document.getElementById('app');
     renderAdminUsers(app);
   } catch (err) {
@@ -861,8 +872,9 @@ window.editUser = async function (userId) {
     document.getElementById('edit-fullname').value = u.full_name || '';
     document.getElementById('edit-email').value = u.email || '';
     const roleSel = document.getElementById('edit-role');
-    roleSel.value = u.role === 'admin' ? 'admin' : 'teacher';
-    roleSel.disabled = u.role === 'super_admin';  // never change super admin
+    const canChangeRole = (u.allowed_actions || []).includes('change_role');
+    roleSel.value = u.role;
+    document.getElementById('edit-role-group').classList.toggle('hidden', !canChangeRole);
     modal.classList.remove('hidden');
     document.getElementById('edit-user-form').onsubmit = async (e) => {
       e.preventDefault();
@@ -870,8 +882,8 @@ window.editUser = async function (userId) {
         await adminApi.updateUser(u.id, {
           full_name: document.getElementById('edit-fullname').value.trim(),
           email: document.getElementById('edit-email').value.trim(),
-          role: document.getElementById('edit-role').value,
         });
+        if (canChangeRole && roleSel.value !== u.role) await adminApi.changeRole(u.id, roleSel.value);
         showToast('User updated!', 'success');
         modal.classList.add('hidden');
         renderAdminUsers(document.getElementById('app'));

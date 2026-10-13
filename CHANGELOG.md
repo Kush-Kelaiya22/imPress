@@ -28,6 +28,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 - A new release page is complete from the start: status badges, the Beta or Stable box, the test-issue table, the install guide and the changes. Later edits outside the status section are kept. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 - A container image tag per release line (`varun-2.1`, `aamna-2.4`) that points at the line's newest release. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 - A refactor audit and roadmap (`docs/engineering/REFACTOR_ROADMAP.md`) covering account lifecycle, lockout prevention, the privilege-ring authorization model, AURIS-aligned scheduling and the OTA redesign, with the planned work tracked in GitHub issues. ([#115](https://github.com/Kush-Kelaiya22/imPress/issues/115))
+- Separate *Deactivate*, *Reactivate*, *Change role* and *Delete permanently* actions for user accounts, in the web app and as API endpoints (`/deactivate`, `/reactivate`, `/role`). The user list only shows the actions you are allowed to take, and a refused action says why. ([#119](https://github.com/Kush-Kelaiya22/imPress/issues/119))
 
 ### Changed
 
@@ -37,6 +38,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 - The milestone that gates a release is named after its line, for example `varun/v2.1`. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 - The line of a release comes from its branch name, and the release rules and page templates always come from the default branch, so any owner's line releases without extra setup. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 - Deleting a user now removes the account permanently (it used to only deactivate it). Classes, students and firmware they created are kept; the activity log keeps their name. Deleting the primary teacher of a class is refused until another teacher is assigned. Use *Deactivate* to keep an account but block access. ([#117](https://github.com/Kush-Kelaiya22/imPress/issues/117))
+- `PUT /api/admin/users/{id}` (now also `PATCH`) only edits the name and email; send status and role changes to the new endpoints. A body with `is_active` or `role` is refused with `USE_LIFECYCLE_ENDPOINT`. ([#119](https://github.com/Kush-Kelaiya22/imPress/issues/119))
 
 ### Removed
 

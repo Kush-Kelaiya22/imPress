@@ -16,7 +16,7 @@ from ..models import (
     User, ClassSession, Course, Student, StudentEnrollment, EspDevice, ActivityLog, StudentModule,
 )
 from ..schemas import (
-    AdminUserCreate, UserResponse, UserUpdate,
+    AdminUserCreate, UserResponse, UserUpdate, RoleChange,
     PasswordReset,
     ClassCreate, ClassUpdate, ClassAssignTeacher, ClassResponse, ClassImportReport,
     ClassFacultyUpdate,
@@ -229,6 +229,19 @@ async def import_users_csv(
     )
 
 
+async def _target(db: AsyncSession, user_id: int) -> User:
+    target = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "User not found")
+    return target
+
+
+def _user_out(actor: User, target: User) -> UserResponse:
+    out = UserResponse.model_validate(target)
+    out.allowed_actions = accounts.allowed_actions(actor, target)
+    return out
+
+
 @router.get("/users", response_model=list[UserResponse])
 async def list_users(
     user: User = Depends(require_admin),
@@ -239,66 +252,86 @@ async def list_users(
     if role:
         q = q.where(User.role == role)
     result = await db.execute(q)
-    return result.scalars().all()
+    return [_user_out(user, u) for u in result.scalars().all()]
 
 
-@router.put("/users/{user_id}", response_model=UserResponse)
+@router.patch("/users/{user_id}", response_model=UserResponse)
+@router.put("/users/{user_id}", response_model=UserResponse, include_in_schema=False)   # pre-#119 clients
 async def update_user(
     user_id: int,
     body: UserUpdate,
     user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(User).where(User.id == user_id))
-    target = result.scalar_one_or_none()
-    if not target:
-        raise HTTPException(404, "User not found")
-    if target.role == "super_admin" and user.role != "super_admin":
-        raise HTTPException(403, "Cannot modify super admin")
-
-    accounts.refuse_self_lockout(user, target, deactivate=body.is_active is False, role=body.role)
-    ends_access = False
+    """Edit a user's profile (name, email). Activation and roles have their
+    own endpoints (#119): /deactivate, /reactivate, /role."""
+    if body.is_active is not None or body.role is not None:
+        raise accounts.error(422, "USE_LIFECYCLE_ENDPOINT",
+                             "Use POST /users/{id}/deactivate, /reactivate or /role to change status or role")
+    target = await _target(db, user_id)
+    accounts.check(user, target, "edit")
     if body.full_name is not None:
         target.full_name = body.full_name
     if body.email is not None:
         target.email = body.email
-    if body.is_active is not None:
-        target.is_active = body.is_active
-    if body.role is not None and body.role != target.role:
-        _require_can_grant(user, body.role)     # granting admin-level
-        _require_can_grant(user, target.role)   # demoting an admin-level user
-        target.role = body.role
-        ends_access = True
-    if body.is_active is False:
-        ends_access = True
-    if ends_access:
-        await accounts.revoke(db, target)
-
     await log_activity(db, "user.update", user.id, "user", user_id, body.model_dump(exclude_unset=True))
-    await accounts.commit(db, revoked=target if ends_access else None)
+    await commit_or_conflict(db, "That email is already used by another account", 400)
     await db.refresh(target)
-    return target
+    return _user_out(user, target)
 
 
-@router.post("/users/{user_id}/deactivate")
+@router.post("/users/{user_id}/deactivate", response_model=UserResponse)
 async def deactivate_user(
     user_id: int,
     user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(User).where(User.id == user_id))
-    target = result.scalar_one_or_none()
-    if not target:
-        raise HTTPException(404, "User not found")
-    accounts.refuse_self_lockout(user, target, deactivate=True)
-    if target.role == "super_admin" and user.role != "super_admin":
-        raise HTTPException(403, "Cannot deactivate super admin")
-
+    """Block an account's access and sign it out; reversible with /reactivate."""
+    target = await _target(db, user_id)
+    accounts.check(user, target, "deactivate")
     target.is_active = False
     await accounts.revoke(db, target)
     await log_activity(db, "user.deactivate", user.id, "user", user_id)
     await accounts.commit(db, revoked=target)
-    return {"status": "deactivated"}
+    await db.refresh(target)
+    return _user_out(user, target)
+
+
+@router.post("/users/{user_id}/reactivate", response_model=UserResponse)
+async def reactivate_user(
+    user_id: int,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Allow a deactivated account to log in again (old sessions stay revoked)."""
+    target = await _target(db, user_id)
+    accounts.check(user, target, "reactivate")
+    target.is_active = True
+    await log_activity(db, "user.reactivate", user.id, "user", user_id)
+    await accounts.commit(db)
+    await db.refresh(target)
+    return _user_out(user, target)
+
+
+@router.post("/users/{user_id}/role", response_model=UserResponse)
+async def change_user_role(
+    user_id: int,
+    body: RoleChange,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change a user's role (super admin only); signs the user out."""
+    target = await _target(db, user_id)
+    accounts.check(user, target, "change_role")
+    if body.role == target.role:
+        return _user_out(user, target)
+    old = target.role
+    target.role = body.role
+    await accounts.revoke(db, target)
+    await log_activity(db, "user.role", user.id, "user", user_id, {"from": old, "to": body.role})
+    await accounts.commit(db, revoked=target)
+    await db.refresh(target)
+    return _user_out(user, target)
 
 
 @router.post("/users/{user_id}/reset-password")
@@ -308,13 +341,9 @@ async def reset_user_password(
     user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Admin sets a new password for a user (forgot-password flow)."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    target = result.scalar_one_or_none()
-    if not target:
-        raise HTTPException(404, "User not found")
-    if target.role == "super_admin" and user.role != "super_admin":
-        raise HTTPException(403, "Cannot reset super admin password")
+    """Admin sets a new password for a user (forgot-password flow); signs them out."""
+    target = await _target(db, user_id)
+    accounts.check(user, target, "reset_password")
 
     from ..auth import hash_password
     target.hashed_password = hash_password(body.new_password)
@@ -334,14 +363,8 @@ async def delete_user(
     go; records they created stay without the link; activity entries keep the
     username. Refused while they are the primary teacher of a class.
     To keep the account but block access, use /deactivate."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    target = result.scalar_one_or_none()
-    if not target:
-        raise HTTPException(404, "User not found")
-    accounts.refuse_self_lockout(user, target, delete=True)
-    if target.role == "super_admin" and user.role != "super_admin":
-        raise HTTPException(403, "Cannot delete super admin")
-
+    target = await _target(db, user_id)
+    accounts.check(user, target, "delete")
     await log_activity(db, "user.delete", user.id, "user", user_id, {"username": target.username})
     await accounts.delete_user(db, target)
     await accounts.commit(db, revoked=target)
