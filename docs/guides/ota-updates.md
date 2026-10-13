@@ -54,7 +54,7 @@ flowchart TB
 
 ![Firmware page: an approved S3 image, marked latest](../assets/ui/firmware-page.png)
 
-Images are grouped by device type, newest first. For each image the page shows:
+Images are grouped by device type, newest first. The tabs at the top (#131) show **All devices** or one family at a time: that family's images, its deployments, and its rules (chip and flash, OTA slot, automatic rollback, maintenance windows, which qualification stages apply, and for student modules that there is no over-the-air path yet). The chosen tab is remembered in this browser. For each image the page shows:
 - its status (*uploaded*, *approved*, *deprecated*), channel, size and short SHA-256;
 - how many devices run it or have it pending;
 - the build date and IDF version.

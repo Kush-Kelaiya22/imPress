@@ -2274,6 +2274,17 @@ async function renderAdminFirmware(app) {
   const [images, deployments] = await Promise.all([firmwareApi.list(), deploymentsApi.list()]);
   const badge = { uploaded: 'badge-outline', approved: 'badge-success', deprecated: 'badge-danger' };
   const targets = { c6: 'C6 gateway', s3: 'S3 hub', student: 'Student module' };
+  // What each family's images must fit and how they reach devices (#131).
+  const family = {
+    c6: ['ESP32-C6, 8 MB flash; OTA slot 3.9 MB; the bootloader rolls back a failed update.',
+         'Updates wait for the room\'s free time (maintenance windows). Qualification: image analysis and the OTA client simulation; no emulator exists for this chip.'],
+    s3: ['ESP32-S3: the standard hub has 32 MB octal flash; the cheaper 8 MB quad-flash hub needs its own build. Images for one do not run on the other.',
+         'OTA slot 4 MB; the bootloader rolls back a failed update. Updates wait for the room\'s free time. Qualification also boots this firmware in an emulator in CI.'],
+    student: ['ESP32, 4 MB flash; OTA slot 1.75 MB. No over-the-air path yet: flash modules over USB with the release\'s full image.',
+              'Current modules\' bootloader cannot roll back. Qualification boots this firmware in an emulator in CI.'],
+  };
+  let tab = 'all';
+  try { tab = localStorage.getItem('impress.fwTab') || 'all'; } catch { /* storage unavailable */ }
 
   app.innerHTML = `
     ${renderNavbar(user, '#/admin/firmware')}
@@ -2301,11 +2312,18 @@ async function renderAdminFirmware(app) {
         </div>
       </div>
 
+      <div class="flex gap-1 mt-2" role="tablist" aria-label="Device family" id="fw-tabs" style="flex-wrap:wrap">
+        ${[['all', 'All devices'], ...Object.entries({ c6: 'Gateways (C6)', s3: 'Hubs (S3)', student: 'Student modules' })].map(([k, l]) =>
+          `<button class="btn btn-sm ${k === tab ? 'btn-primary' : 'btn-outline'}" role="tab" aria-selected="${k === tab}" data-tab="${k}">
+             ${l}${k === 'all' ? '' : ` <span class="text-sm">(${images.filter(a => a.target === k).length})</span>`}</button>`).join('')}
+      </div>
+
       ${Object.entries(targets).map(([t, label]) => {
         const rows = images.filter(a => a.target === t);
         return `
-        <div class="card mt-2">
+        <div class="card mt-2" data-family="${t}">
           <div class="card-header"><h2>${label} <span class="text-muted text-sm">(${t})</span></h2></div>
+          <div class="text-sm text-muted" style="padding:0 1rem">${family[t].map(x => `<p style="margin:0.25rem 0">${escHtml(x)}</p>`).join('')}</div>
           ${rows.length === 0 ? '<p class="text-muted" style="padding:1rem">No images yet.</p>' : `
           <div class="table-wrap"><table class="table">
             <thead><tr><th>Version</th><th>Status</th><th>Devices</th><th>Build</th><th>Notes</th><th></th></tr></thead>
@@ -2341,13 +2359,13 @@ async function renderAdminFirmware(app) {
           <thead><tr><th>#</th><th>Image</th><th>State</th><th>Progress</th><th></th></tr></thead>
           <tbody>${deployments.map(d => {
             const done = (d.counts.success || 0), failed = ['failed', 'rolled_back', 'timed_out', 'unreachable'].reduce((n, k) => n + (d.counts[k] || 0), 0);
-            return `<tr data-dep="${d.id}">
+            return `<tr data-dep="${d.id}" data-family="${escHtml(d.target)}">
               <td>${d.id}</td>
               <td>${escHtml(d.target)} v${escHtml(d.version)}${d.kind === 'rollback' ? ' <span class="badge badge-sm badge-danger">rollback</span>' : ''}</td>
               <td><span class="badge ${{ running: 'badge-primary', paused: 'badge-danger', completed: 'badge-success', cancelled: 'badge-outline' }[d.state]}">${escHtml(d.state)}</span>
                 ${d.note ? `<br><span class="text-sm text-danger">${escHtml(d.note)}</span>` : ''}</td>
               <td class="text-sm"><progress max="${d.total}" value="${done + failed}" style="width:120px"></progress><br>
-                ${done}/${d.total} updated${failed ? `, <span class="text-danger">${failed} failed</span>` : ''} · ${d.stages} stage${d.stages === 1 ? '' : 's'}</td>
+                ${done}/${d.total} updated${failed ? `, <span class="text-danger">${failed} failed</span>` : ''}${d.counts.deferred ? `, ${d.counts.deferred} waiting for a free room` : ''} · ${d.stages} stage${d.stages === 1 ? '' : 's'}</td>
               <td><div class="flex gap-1" style="flex-wrap:wrap">
                 <button class="btn btn-xs btn-outline" data-dact="details">Details</button>
                 ${d.state === 'running' ? '<button class="btn btn-xs btn-outline" data-dact="pause">Pause</button>' : ''}
@@ -2359,6 +2377,19 @@ async function renderAdminFirmware(app) {
         </table></div>`}
       </div>
     </div>`;
+
+  // family tabs (#131): filter images and deployments; remembered per browser
+  const showTab = (k) => {
+    document.querySelectorAll('#fw-tabs [data-tab]').forEach(b => {
+      const on = b.dataset.tab === k;
+      b.className = `btn btn-sm ${on ? 'btn-primary' : 'btn-outline'}`;
+      b.setAttribute('aria-selected', String(on));
+    });
+    document.querySelectorAll('[data-family]').forEach(el => { el.hidden = k !== 'all' && el.dataset.family !== k; });
+    try { localStorage.setItem('impress.fwTab', k); } catch { /* storage unavailable */ }
+  };
+  document.querySelectorAll('#fw-tabs [data-tab]').forEach(b => { b.onclick = () => showTab(b.dataset.tab); });
+  showTab(tab);
 
   // actions
   document.querySelectorAll('[data-fw] [data-act]').forEach(btn => {
