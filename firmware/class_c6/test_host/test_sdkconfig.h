@@ -3,7 +3,7 @@
 #define CONFIG_WIFI_SSID              "impress-hotspot"
 #define CONFIG_WIFI_PASSWORD          "impress123"
 #define CONFIG_WIFI_MAX_RETRY         10
-#define CONFIG_BACKEND_HOST           "192.168.137.1"
+#define CONFIG_BACKEND_HOST           "192.168.137.155"
 #define CONFIG_BACKEND_PORT           8000
 #define CONFIG_DEVICE_API_KEY         "impress-device-key-2024"
 #define CONFIG_CLASS_SESSION_ID       0
