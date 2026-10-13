@@ -492,6 +492,7 @@ def test_release_is_built_from_a_tested_image_and_firmware(wf):
     build = "\n".join(s.get("run", "") for s in wf["jobs"]["image-build"]["steps"])
     assert build.index("> VERSION") < build.index("docker build") < build.index("smoke_test.py") < build.index("docker push")
     assert "--platform linux/${{ matrix.arch }}" in build and "retry docker push" in build
+    assert build.index("containerd-snapshotter") < build.index("docker build")    # OCI pushes keep annotations
     matrix = wf["jobs"]["image-build"]["strategy"]["matrix"]["include"]
     assert {m["arch"] for m in matrix} == {"amd64", "arm64"}                     # #136: both, natively
     assert {m["runner"] for m in matrix} == {"ubuntu-latest", "ubuntu-24.04-arm"}
@@ -499,6 +500,7 @@ def test_release_is_built_from_a_tested_image_and_firmware(wf):
     assert set(wf["jobs"]["image"]["needs"]) == {"plan", "image-build"}          # tags only from tested images
     assert "retry docker buildx imagetools create" in image and "-amd64" in image and "-arm64" in image
     assert "index:org.opencontainers.image.description=" in image             # the package page
+    assert '.mediaType == "application/vnd.oci.image.index.v1+json"' in image  # checked, not assumed
     assert '"$OWNER-$LINE"' in image and '"$OWNER-$VERSION"' in image
     assert sorted(wf["jobs"]["firmware"]["strategy"]["matrix"]["project"]) == sorted(run_tests.IDF_PROJECTS)
     assert wf["jobs"]["firmware"]["container"] == run_tests.IDF_IMAGE
