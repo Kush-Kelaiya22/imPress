@@ -61,8 +61,11 @@ static inline const char *backend_hint(backend_fail_t f, bool tls)
                      "certificate for this host name (or IP) from the trusted CA"
                    : "unexpected TLS error on a plain-HTTP image";
     case BACKEND_FAIL_REJECTED:
-        return "backend refused the device key (re-register with the site key, or ask an "
-               "admin to reset this device's key)";
+        /* HTTP: the key. Class WebSocket: the key, or the gateway is not linked
+         * to the class it joins (#121, #159). */
+        return "backend refused the device: a wrong or reset device key (re-register with the "
+               "site key), or, for the class WebSocket, this gateway is not linked to that class "
+               "(Admin > Modules > link, or CONFIG_CLASS_SESSION_ID)";
     default:
         return "see the error above";
     }
