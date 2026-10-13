@@ -106,6 +106,18 @@ The device checks the server's certificate against the chosen trust and the host
 - `impress.db` is a single SQLite file: back it up with `sqlite3 impress.db ".backup '/backups/impress-$(date +%F).db'"` (safe while running).
 - Also back up `firmware_bins/` and `.env` (store `.env` separately, it holds secrets).
 
+### Recovering administrator access
+
+imPress keeps at least one active super admin (#116), so the API cannot lock you out. A database from an older version, or one edited by hand, can still end up with nobody able to manage users. Recover it on the server; there is no web or API route for this, by design (#120).
+
+1. Back up the database first (see *Backups* above).
+2. Run the command where the database lives:
+   - native install: `cd backend && .venv/bin/python -m app.manage restore-super-admin --username admin`
+   - container: `docker exec -w /app/backend impress python -m app.manage restore-super-admin --username admin`
+3. The command prints a one-time password. Log in with it and change it at once (*⚙️ Settings → Change password*).
+
+The command makes the named account an active super admin, signs out its old sessions and writes a `user.recovery` entry to the activity log. If the username does not exist it stops with exit code 2; add `--create` to create the account.
+
 ## 2. First-run administration
 
 1. Log in as `admin`, change the password, and create other admins (as super admin) and teachers.

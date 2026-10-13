@@ -29,6 +29,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 - A container image tag per release line (`varun-2.1`, `aamna-2.4`) that points at the line's newest release. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 - A refactor audit and roadmap (`docs/engineering/REFACTOR_ROADMAP.md`) covering account lifecycle, lockout prevention, the privilege-ring authorization model, AURIS-aligned scheduling and the OTA redesign, with the planned work tracked in GitHub issues. ([#115](https://github.com/Kush-Kelaiya22/imPress/issues/115))
 - Separate *Deactivate*, *Reactivate*, *Change role* and *Delete permanently* actions for user accounts, in the web app and as API endpoints (`/deactivate`, `/reactivate`, `/role`). The user list only shows the actions you are allowed to take, and a refused action says why. ([#119](https://github.com/Kush-Kelaiya22/imPress/issues/119))
+- `python -m app.manage restore-super-admin --username <name>`: a server-side command that restores administrator access to an installation where no super admin can log in. It prints a one-time password and is logged; there is no web route for it. ([#120](https://github.com/Kush-Kelaiya22/imPress/issues/120))
 
 ### Changed
 
