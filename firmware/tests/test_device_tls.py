@@ -43,3 +43,14 @@ def test_tls_is_off_in_the_default_builds():
     # turning it on needs a server certificate and the TLS port: a site decision
     for project in ("class_c6", "class_s3"):
         assert "CONFIG_BACKEND_TLS=y" not in (FIRMWARE / project / "sdkconfig").read_text(), project
+
+
+def test_connection_failures_say_why():
+    """#132: both backend clients classify a failure and log the hint, and the
+    boot log names the URL scheme the image uses."""
+    for name in ("wifi_client.c", "ws_client.c"):
+        code = strip_comments_and_strings((FIRMWARE / "class_c6/main" / name).read_text())
+        assert "backend_classify(" in code and "backend_hint(" in code, name
+    main = (FIRMWARE / "class_c6/main/main.c").read_text()
+    assert 'ESP_LOGI(TAG, "Backend: " BACKEND_HTTP_SCHEME' in main
+    assert "CONFIG_BACKEND_PORT EQUAL 8000" in (FIRMWARE / "class_c6/main/CMakeLists.txt").read_text()

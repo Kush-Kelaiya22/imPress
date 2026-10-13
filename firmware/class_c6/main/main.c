@@ -36,6 +36,7 @@
 #include "student_set.h"
 #include "ota.h"
 #include "ota_logic.h"
+#include "backend_tls.h"   /* BACKEND_HTTP_SCHEME (#132) */
 #include "esp_efuse.h"
 #include "esp_mac.h"
 
@@ -586,6 +587,10 @@ void app_main(void)
 
     /* 1. NVS + runtime config */
     init_nvs_config();
+    /* The one line to compare with the server when nothing connects (#132). */
+    ESP_LOGI(TAG, "Backend: " BACKEND_HTTP_SCHEME "://%s:%u (%s)", g_cfg.backend_host,
+             (unsigned)g_cfg.backend_port, BACKEND_TLS_ON ? "TLS: the server must serve HTTPS on this port"
+                                                          : "plain HTTP");
 
     /* 2. MAC address */
     uint8_t mac[6];

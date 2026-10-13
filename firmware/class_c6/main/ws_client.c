@@ -10,6 +10,8 @@
 
 #include "ws_client.h"
 #include "config.h"
+#include "backend_hint.h"   /* actionable connection errors (#132) */
+#include "esp_tls_errors.h"
 #include "backend_tls.h"   /* http(s)/ws(s) and the server certificate (#66) */
 
 #include <string.h>
@@ -53,9 +55,14 @@ static void ws_event_handler(void *handler_args, esp_event_base_t base,
             }
         }
         break;
-    case WEBSOCKET_EVENT_ERROR:
-        ESP_LOGE(TAG, "WebSocket error");
+    case WEBSOCKET_EVENT_ERROR: {
+        const esp_websocket_error_codes_t *e = &data->error_handle;
+        backend_fail_t why = backend_classify(e->esp_tls_last_esp_err == ESP_ERR_ESP_TLS_CONNECTION_TIMEOUT,
+                                              e->esp_transport_sock_errno, e->esp_tls_stack_err,
+                                              e->esp_ws_handshake_status_code);
+        ESP_LOGE(TAG, "WebSocket error: %s", backend_hint(why, BACKEND_TLS_ON));
         break;
+    }
     default:
         break;
     }
