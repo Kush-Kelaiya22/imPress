@@ -9,7 +9,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `cdcd48e7`
+- Built from commit: `4fc13659`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -633,7 +633,7 @@ _Questions this graph is uniquely positioned to answer:_
 - **Why does `select()` connect `Community 27` to `Community 0`, `Community 1`, `Community 3`, `Community 4`, `Community 12`, `Community 13`, `Community 18`, `Community 21`, `Community 23`, `Community 24`, `Community 25`, `Community 29`, `Community 30`, `Community 33`, `Community 35`, `Community 36`, `Community 37`, `Community 38`, `Community 42`, `Community 45`, `Community 46`, `Community 47`, `Community 48`, `Community 49`, `Community 50`, `Community 56`, `Community 58`, `Community 63`, `Community 76`, `Community 78`, `Community 81`, `Community 85`, `Community 96`, `Community 102`?**
   _High betweenness centrality (0.040) - this node is a cross-community bridge._
 - **Why does `User` connect `Community 0` to `Community 32`, `Community 3`, `Community 35`, `Community 67`, `Community 38`, `Community 102`, `Community 76`, `Community 12`, `Community 110`, `Community 13`, `Community 47`, `Community 18`, `Community 53`, `Community 30`, `Community 24`, `Community 25`, `Community 27`, `Community 62`?**
-  _High betweenness centrality (0.039) - this node is a cross-community bridge._
+  _High betweenness centrality (0.038) - this node is a cross-community bridge._
 - **Are the 165 inferred relationships involving `select()` (e.g. with `_load_session_by_hash()` and `validate_session()`) actually correct?**
   _`select()` has 165 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 130 inferred relationships involving `User` (e.g. with `create_session()` and `get_current_user()`) actually correct?**

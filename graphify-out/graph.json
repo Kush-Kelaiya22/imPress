@@ -1,5 +1,5 @@
 {
-  "built_at_commit": "cdcd48e737dd51f4f205be9379f0b4c9bed3ecda",
+  "built_at_commit": "4fc13659479b8ce7d11e4d44d41cf75bb1a45ff7",
   "directed": false,
   "graph": {},
   "hyperedges": [],
@@ -85393,7 +85393,7 @@
       "relation": "contains",
       "source": "tests_test_release",
       "source_file": "tests/test_release.py",
-      "source_location": "L517",
+      "source_location": "L521",
       "target": "tests_test_release_test_ci_requires_a_changelog_entry_on_pull_requests",
       "weight": 1.0
     },
@@ -85404,7 +85404,7 @@
       "relation": "contains",
       "source": "tests_test_release",
       "source_file": "tests/test_release.py",
-      "source_location": "L526",
+      "source_location": "L530",
       "target": "tests_test_release_test_actions_are_pinned_to_commit_shas",
       "weight": 1.0
     },
@@ -85415,7 +85415,7 @@
       "relation": "contains",
       "source": "tests_test_release",
       "source_file": "tests/test_release.py",
-      "source_location": "L536",
+      "source_location": "L540",
       "target": "tests_test_release_test_dockerfile_is_pinned_unprivileged_and_health_checked",
       "weight": 1.0
     },
@@ -85426,7 +85426,7 @@
       "relation": "contains",
       "source": "tests_test_release",
       "source_file": "tests/test_release.py",
-      "source_location": "L545",
+      "source_location": "L549",
       "target": "tests_test_release_test_build_context_is_an_allow_list",
       "weight": 1.0
     },
@@ -124613,7 +124613,7 @@
       "label": "test_actions_are_pinned_to_commit_shas()",
       "norm_label": "test_actions_are_pinned_to_commit_shas()",
       "source_file": "tests/test_release.py",
-      "source_location": "L526"
+      "source_location": "L530"
     },
     {
       "_callable": true,
@@ -124637,7 +124637,7 @@
       "label": "test_build_context_is_an_allow_list()",
       "norm_label": "test_build_context_is_an_allow_list()",
       "source_file": "tests/test_release.py",
-      "source_location": "L545"
+      "source_location": "L549"
     },
     {
       "_callable": true,
@@ -124673,7 +124673,7 @@
       "label": "test_ci_requires_a_changelog_entry_on_pull_requests()",
       "norm_label": "test_ci_requires_a_changelog_entry_on_pull_requests()",
       "source_file": "tests/test_release.py",
-      "source_location": "L517"
+      "source_location": "L521"
     },
     {
       "_callable": true,
@@ -124685,7 +124685,7 @@
       "label": "test_dockerfile_is_pinned_unprivileged_and_health_checked()",
       "norm_label": "test_dockerfile_is_pinned_unprivileged_and_health_checked()",
       "source_file": "tests/test_release.py",
-      "source_location": "L536"
+      "source_location": "L540"
     },
     {
       "_callable": true,
