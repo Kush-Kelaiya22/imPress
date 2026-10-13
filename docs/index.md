@@ -29,6 +29,7 @@ design/mesh
 design/security-model
 design/authorization
 design/scheduling
+design/student-ota
 design/decisions
 ```
 
