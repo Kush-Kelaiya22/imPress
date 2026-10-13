@@ -10,6 +10,7 @@ from ..config import settings
 from ..database import async_session
 from ..models import EspDevice, ClassSession
 from ..policy import is_staff
+from ..transport import https_required, is_loopback
 from ..services.presence import mark_online, _push_after_commit
 from ..timeutil import istnow
 
@@ -134,6 +135,14 @@ async def class_websocket(websocket: WebSocket, class_id: int):
     """
     role = websocket.query_params.get("role", "teacher")
     user = None
+
+    # Teachers' sockets carry the session token: wss:// only (#152). Devices
+    # follow IMPRESS_DEVICE_HTTPS_ONLY.
+    client = websocket.client.host if websocket.client else None
+    if (https_required() and websocket.url.scheme != "wss" and not is_loopback(client)
+            and (role != "device" or settings.DEVICE_HTTPS_ONLY)):
+        await websocket.close(code=4403, reason="wss:// required")
+        return
 
     # ── Auth gate ──────────────────────────────────────────────────────────
     if settings.WS_REQUIRE_AUTH:

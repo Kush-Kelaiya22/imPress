@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     # questions (OTA maintenance windows, #128) fail closed. 0 = never stale.
     SCHEDULE_MAX_AGE_HOURS: int = 48
 
+    # ── Transport security (#152) ──
+    # Refuse staff traffic that did not arrive over HTTPS. Unset: on unless
+    # DEBUG. Loopback, health checks and device-key routes are exempt.
+    REQUIRE_HTTPS: bool | None = None
+    # Devices too must use HTTPS/WSS (firmware built with BACKEND_TLS, #66).
+    DEVICE_HTTPS_ONLY: bool = False
+
     # ── WebSocket ──
     # Require auth on /ws/class: devices present ?api_key=<device key>,
     # teachers present ?token=<JWT>. Turn off for LAN debugging.

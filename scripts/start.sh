@@ -24,4 +24,4 @@ if [ "$HOST" = 127.0.0.1 ] || [ "$HOST" = localhost ]; then
 fi
 cd "$BACKEND"          # .env, the default SQLite path and firmware_bins/ are relative to backend/
 exec .venv/bin/uvicorn app.main:app --host "$HOST" --port "$PORT" \
-  --workers 1 --proxy-headers ${TLS[@]+"${TLS[@]}"}
+  --workers 1 --proxy-headers --forwarded-allow-ips "${IMPRESS_FORWARDED_ALLOW_IPS:-127.0.0.1}" ${TLS[@]+"${TLS[@]}"}

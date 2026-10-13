@@ -32,6 +32,8 @@ The release page lists the most common of these. Check them in order: server, th
 | `docker pull` asks for credentials | the package is private | the repository owner makes it public once (package settings) |
 | *exec format error*, or *no matching manifest for linux/arm/v7* | a 32-bit OS (for example 32-bit Raspberry Pi OS); images exist for 64-bit `amd64` and `arm64` only (#136); images before #136 were `amd64` only | use a 64-bit OS, pull a release from #136 on, or install with `scripts/install.sh` |
 | `docker exec impress python -m app.manage …` says *No module named 'app'* | the command must run in `/app/backend` | add `-w /app/backend` |
+| The browser shows *HTTPS required*, or login says *This connection is not encrypted* | the page was opened with `http://` from another computer (#152) | open the `https://` address (Caddy or your proxy, [container guide](../deployment/container.md)); for an isolated lab only, `IMPRESS_REQUIRE_HTTPS=false` |
+| HTTPS through a proxy still says *HTTPS required* | the server does not trust the proxy's `X-Forwarded-Proto` | set `IMPRESS_FORWARDED_ALLOW_IPS` to the proxy's address (`*` in the Compose setup) |
 | The data is gone after `docker run` | the container started without the volume | always pass `-v impress-data:/data`; the database and the secrets are in that volume |
 | `docker logs` does not show the admin password | the volume already holds a database from an earlier start | use the password from that start, or see "The first admin password is lost" above |
 | `docker inspect` shows `unhealthy` | the server did not answer `/health` | `docker logs impress` shows the reason (often the TLS variables) |

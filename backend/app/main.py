@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
+from .transport import enforce_https, https_required
 from .config import APP_VERSION, settings, check_secure, insecure_settings
 from .database import init_db, async_session
 from .timeutil import istnow
@@ -34,6 +35,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Create tables and seed a default super admin on startup."""
     check_secure(settings)
+    if https_required():
+        logger.info("HTTPS required for staff traffic; devices %s (IMPRESS_REQUIRE_HTTPS, #152)",
+                    "too" if settings.DEVICE_HTTPS_ONLY else "may use HTTP")
+    else:
+        logger.warning("IMPRESS_REQUIRE_HTTPS is off: passwords and class data may cross the network unencrypted")
     from .services.firmware_signing import site_key_digest
     signing_key = site_key_digest()          # an unreadable key stops startup here, not at the first upload
     if signing_key:
@@ -120,6 +126,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Transport security (#152): HTTPS for staff, browser security headers ──
+
+app.middleware("http")(enforce_https)
 
 # ── Session Activity Middleware ───────────────────────────────────────
 
