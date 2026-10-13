@@ -1,9 +1,9 @@
 """SQLAlchemy ORM models for imPress."""
 
 from sqlalchemy import (
-    Column, Integer, String, Boolean, DateTime, Date, ForeignKey, Text, JSON, Table, Index, text
+    Column, Integer, String, Boolean, DateTime, Date, ForeignKey, Text, JSON, Table, Index, text, func, select
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import column_property, relationship
 from .database import Base
 from .timeutil import istnow
 
@@ -24,8 +24,8 @@ class User(Base):
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     # Relationships
-    classes = relationship("ClassSession", back_populates="teacher", lazy="selectin", foreign_keys="ClassSession.teacher_id")
-    taught_classes = relationship("ClassSession", secondary="class_faculty", back_populates="faculty", lazy="selectin")
+    classes = relationship("ClassSession", back_populates="teacher", lazy="raise", foreign_keys="ClassSession.teacher_id")
+    taught_classes = relationship("ClassSession", secondary="class_faculty", back_populates="faculty", lazy="raise")
 
 
 # ── Courses (universal catalog) ──────────────────────────────────────
@@ -89,10 +89,10 @@ class ClassSession(Base):
     creator = relationship("User", foreign_keys=[created_by], lazy="selectin")
     device = relationship("EspDevice", back_populates="class_session", lazy="selectin")
     course = relationship("Course", back_populates="sections", lazy="selectin")
-    quizzes = relationship("Quiz", back_populates="class_session", lazy="selectin")
-    polls = relationship("Poll", back_populates="class_session", lazy="selectin")
-    attendance = relationship("Attendance", back_populates="class_session", lazy="selectin")
-    enrollments = relationship("StudentEnrollment", back_populates="class_session", lazy="selectin")
+    quizzes = relationship("Quiz", back_populates="class_session", lazy="raise")
+    polls = relationship("Poll", back_populates="class_session", lazy="raise")
+    attendance = relationship("Attendance", back_populates="class_session", lazy="raise")
+    enrollments = relationship("StudentEnrollment", back_populates="class_session", lazy="raise")
 
 
 # ── ESP Devices ──────────────────────────────────────────────────────
@@ -306,7 +306,7 @@ class Quiz(Base):
 
     class_session = relationship("ClassSession", back_populates="quizzes")
     questions = relationship("QuizQuestion", back_populates="quiz", lazy="selectin")
-    answers = relationship("QuizAnswer", back_populates="quiz", lazy="selectin")
+    answers = relationship("QuizAnswer", back_populates="quiz", lazy="raise")
 
 
 class QuizQuestion(Base):
@@ -366,7 +366,7 @@ class Poll(Base):
     ended_at = Column(DateTime, nullable=True)
 
     class_session = relationship("ClassSession", back_populates="polls")
-    votes = relationship("PollVote", back_populates="poll", lazy="selectin")
+    votes = relationship("PollVote", back_populates="poll", lazy="raise")
 
 
 class PollVote(Base):
@@ -406,6 +406,16 @@ class Attendance(Base):
     class_session = relationship("ClassSession", back_populates="attendance")
     device = relationship("EspDevice")
     enrollment = relationship("StudentEnrollment")
+
+
+# Counts for class lists, as SQL subqueries (#133): reading len(cls.quizzes)
+# used to load every quiz with all of its answers just to count them.
+ClassSession.quiz_count = column_property(
+    select(func.count(Quiz.id)).where(Quiz.class_session_id == ClassSession.id)
+    .correlate_except(Quiz).scalar_subquery())
+ClassSession.poll_count = column_property(
+    select(func.count(Poll.id)).where(Poll.class_session_id == ClassSession.id)
+    .correlate_except(Poll).scalar_subquery())
 
 
 # ── Activity Logs ────────────────────────────────────────────────────
