@@ -38,6 +38,7 @@ flowchart TD
 | 9 | `guard_last_super_admin` | Adds triggers `users_keep_super_admin_update` / `_delete` that abort (`LAST_SUPER_ADMIN`) any update or delete leaving no active super admin (#116) | additive; a database that already has no active super admin keeps working, and every later change still needs to leave one |
 | 10 | `add_deployment_deferral` | Adds `deployment_targets.deferred_until`: when a deferred hub or gateway update looks for a maintenance window again (#128) | additive |
 | 11 | `add_firmware_qualification` | Adds `firmware_artifacts.qualification`, the TrustedInstaller's report (#154) | additive; images registered earlier are checked when first approved or deployed |
+| 12 | `add_device_caps` | Adds `esp_devices.chip_rev`, `flash_mb`, `psram_mb`, `ota_slot_kb`, `rollback_supported`: what each board reported it is (#129) | additive; NULL until a device with new firmware registers |
 
 New tables need no step: `create_all` creates missing tables on every start, on fresh and existing databases alike. Added this way: `class_occurrence_exceptions` and `schedule_sources` (#126).
 

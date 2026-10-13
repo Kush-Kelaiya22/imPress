@@ -141,6 +141,13 @@ class EspDevice(Base):
     s3_uptime_s = Column(Integer, nullable=True)
     diag_at = Column(DateTime, nullable=True)           # when the diagnostics above were reported
 
+    # Board capabilities reported at registration (#129); NULL = not reported
+    chip_rev = Column(Integer, nullable=True)
+    flash_mb = Column(Integer, nullable=True)
+    psram_mb = Column(Integer, nullable=True)
+    ota_slot_kb = Column(Integer, nullable=True)
+    rollback_supported = Column(Boolean, nullable=True)
+
     # Telemetry from classroom node heartbeat
     student_count = Column(Integer, default=0)
     free_heap = Column(Integer, nullable=True)

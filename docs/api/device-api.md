@@ -61,8 +61,10 @@ Batches: a relayed message is accepted only for a gateway the caller may act for
 `POST /api/device/register`
 ```json
 {"mac_address": "48:F6:EE:FF:FE:C7", "device_type": "c6", "device_name": "imPress C6",
- "firmware_version": "1.0.0", "classroom_code": ""}
+ "firmware_version": "1.0.0", "classroom_code": "",
+ "caps": {"chip_rev": 1, "flash_mb": 8, "psram_mb": 0, "slot_kb": 3968, "rollback": true}}
 ```
+`caps` (#129, optional; `firmware/protocol/device_caps.h`): chip revision, flash and PSRAM size in MB, the OTA slot in KB, and whether the bootloader can roll back. The server stores it and refuses updates that don't fit the board.
 ```json
 {"device_id": 12, "status": "registered", "class_id": 3, "device_key": "kq3V…43 characters"}
 ```

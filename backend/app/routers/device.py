@@ -45,6 +45,10 @@ async def register_device(body: DeviceRegister, db: AsyncSession = Depends(get_d
     # deployments need it for "already running" and downgrade checks).
     if body.firmware_version and body.firmware_version != "0.0.0":
         device.firmware_version = body.firmware_version[:32]
+    if body.caps is not None:                      # what the board is (#129)
+        c = body.caps
+        device.chip_rev, device.flash_mb, device.psram_mb = c.chip_rev, c.flash_mb, c.psram_mb
+        device.ota_slot_kb, device.rollback_supported = c.slot_kb, c.rollback
 
     # Presence: log when this classroom ESP comes online.
     await mark_online(db, device)

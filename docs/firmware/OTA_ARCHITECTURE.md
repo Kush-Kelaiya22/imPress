@@ -46,6 +46,7 @@ flowchart LR
 | device type and chip equal the image's target and chip | the device type is self-reported at registration |
 | signed with the site key, or `IMPRESS_FIRMWARE_ALLOW_UNSIGNED` | the site key or policy can change after a deployment was created |
 | stored file size and SHA-256 equal the registered values | the file on disk could be replaced |
+| the image fits the board: header flash size ≤ the board's flash, size ≤ its OTA slot (#129) | hub profiles differ (32 MB octal vs 8 MB quad); only checked where the board reported its capabilities |
 
 The TrustedInstaller has no HTTP route and no say over user accounts; administrators cannot bypass it. Approval is separated from upload (another administrator approves, unless `IMPRESS_FIRMWARE_SINGLE_APPROVER`).
 
