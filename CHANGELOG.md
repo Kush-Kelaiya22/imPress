@@ -21,6 +21,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Added
 
+- A PowerShell helper script (`tools/activate_idf.ps1`) and documentation to discover and activate the ESP-IDF toolchain environment on Windows machines, integrated with the deployment pipeline (`tools/deploy_pipeline.ps1`). ([#114](https://github.com/Kush-Kelaiya22/imPress/issues/114))
 - A Read the Docs-ready Sphinx/MyST documentation site with responsive navigation, full-text search, Mermaid diagrams, local build commands and an embedded revision-matched Graphify visualization.
 - A public `/graph` engineering documentation portal with searchable Markdown guides and the interactive Graphify architecture map.
 - A keyless, committed Graphify knowledge graph with Codex guidance, local hooks, validation, and automated GitHub synchronization for `varun/v2.1`.
