@@ -21,11 +21,16 @@ the TrustedInstaller needs a passing report. Each stage says what it proves:
 4. canary        the first real device of every deployment (existing).
 
 A report is plain data: {"status": "qualified"|"failed", "stages": [...]}.
+The TrustedInstaller stores it attested (attest() below): bound to the image's
+digest and build identity and sealed with a server key, so a report edited
+in the database, or copied from another image, is not trusted.
 """
 
 from __future__ import annotations
 
 import hashlib
+import hmac
+import json
 import struct
 
 from .firmware_image import CHIP_IDS, CHIPS, IMAGE_MAGIC, PROJECTS, SLOT_BYTES, ImageError, image_end, parse_image
@@ -204,3 +209,42 @@ def qualify(data: bytes, target: str, version: str) -> dict:
     stages = [analysis(data, target), ota_client(data, target, version), emulator(target)]
     passed = all(s["passed"] is not False for s in stages)
     return {"status": "qualified" if passed else "failed", "stages": stages}
+
+
+# ── Attestation (v2.2) ───────────────────────────────────────────────────
+# Bump QUALIFIER when the stages change: older reports are then recomputed.
+QUALIFIER = "impress-ti/2"
+SUBJECT_FIELDS = ("sha256", "size", "target", "chip", "project", "version", "idf_version", "elf_sha256", "signer")
+
+
+def _key() -> bytes:
+    """A key only the server holds, derived from IMPRESS_JWT_SECRET (kept out
+    of the database and the repository). Rotating that secret makes every
+    stored report untrusted, so each is recomputed from its image."""
+    from ..config import settings
+    return hashlib.sha256(b"impress.trusted-installer.report\0" + settings.JWT_SECRET.encode()).digest()
+
+
+def subject(artifact) -> dict:
+    """What the report is about: the exact bytes and the build that made them."""
+    return {f: getattr(artifact, f) for f in SUBJECT_FIELDS}
+
+
+def _seal(body: dict) -> str:
+    canonical = json.dumps({k: v for k, v in body.items() if k != "attestation"},
+                           sort_keys=True, separators=(",", ":"), default=str)
+    return hmac.new(_key(), canonical.encode(), hashlib.sha256).hexdigest()
+
+
+def attest(report: dict, artifact) -> dict:
+    body = {**report, "subject": subject(artifact), "qualifier": QUALIFIER}
+    body["attestation"] = _seal(body)
+    return body
+
+
+def attested(report, artifact) -> bool:
+    """Made by this server's TrustedInstaller, by the current stages, for
+    exactly this image."""
+    return (isinstance(report, dict) and isinstance(report.get("attestation"), str)
+            and report.get("qualifier") == QUALIFIER and report.get("subject") == subject(artifact)
+            and hmac.compare_digest(report["attestation"], _seal(report)))

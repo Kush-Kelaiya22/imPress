@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import settings
 from ..models import FirmwareArtifact
 from .csv_import import read_upload
-from .qualification import qualify
+from .qualification import attest, qualify
 from .firmware_image import MAX_IMAGE_BYTES, ImageError, parse_image
 from .firmware_signing import site_key_digest
 
@@ -115,7 +115,8 @@ async def store_upload(db: AsyncSession, file: UploadFile, user_id: int | None, 
         sha256=info.sha256, size=info.size, target=info.target, chip=info.chip, project=info.project,
         version=info.version, idf_version=info.idf_version, build_date=info.build_date,
         elf_sha256=info.elf_sha256, channel=channel, release_notes=release_notes[:5000], uploaded_by=user_id,
-        signer=_signer(info), qualification=qualify(data, info.target, info.version))   # #154
+        signer=_signer(info))
+    artifact.qualification = attest(qualify(data, info.target, info.version), artifact)   # #154, v2.2
     db.add(artifact)
     await db.flush()
     return artifact, True
