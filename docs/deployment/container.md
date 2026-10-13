@@ -10,34 +10,77 @@ It runs on **linux/amd64** (most PCs and servers) and **linux/arm64** (Apple sil
 
 This page covers what you need to run it in a classroom. It assumes Docker Engine 24 or later, or Docker Desktop. For a native install without containers, see the [deployment guide](../guides/deployment.md).
 
-## Quick start
+## Quick start (a classroom: HTTPS for browsers)
 
-1. Start the server. The volume `impress-data` keeps the database, the uploaded firmware and the generated secrets.
+Browsers must reach imPress over **HTTPS**: from version 2.1 with #152, the server refuses logins and class data over plain HTTP from other computers, so that passwords and student records are never sent unencrypted. Gateways and hubs keep talking to the server directly on port 8000 (their own TLS is optional, #66).
 
-   ```bash
-   docker run -d --name impress --restart unless-stopped \
-     -p 8000:8000 -v impress-data:/data \
-     ghcr.io/kush-kelaiya22/impress-backend:varun-latest
+The simplest setup runs the server with [Caddy](https://caddyserver.com/) in front of it. Caddy creates its own certificate authority and serves HTTPS with no further setup.
+
+1. Save this as `compose.yaml`. Replace `192.168.137.1` with the address teachers will type (this computer's IP address on the classroom network, or its host name):
+
+   ```yaml
+   services:
+     impress:
+       image: ghcr.io/kush-kelaiya22/impress-backend:varun-latest
+       restart: unless-stopped
+       ports:
+         - "8000:8000"          # gateways and hubs (device API)
+       volumes:
+         - impress-data:/data
+       environment:
+         IMPRESS_FORWARDED_ALLOW_IPS: "*"   # trust X-Forwarded-Proto from Caddy (see below)
+     https:
+       image: caddy:2.10
+       restart: unless-stopped
+       command: caddy reverse-proxy --from https://192.168.137.1 --to impress:8000 --internal-certs
+       ports:
+         - "443:443"            # teachers' and admins' browsers
+       volumes:
+         - caddy-data:/data
+
+   volumes:
+     impress-data:
+     caddy-data:
    ```
 
-2. Read the first-start output. It contains the **admin password** (only on the very first start) and the **device API key** that every gateway and hub needs (`CONFIG_DEVICE_API_KEY`):
+2. Start it and read the first-start output. It contains the **admin password** (only on the very first start) and the **device API key** that every gateway and hub needs (`CONFIG_DEVICE_API_KEY`):
 
    ```bash
-   docker logs impress
+   docker compose up -d
+   docker compose logs impress
    ```
 
-   To choose the admin password yourself, add `-e IMPRESS_INITIAL_ADMIN_PASSWORD='<a strong password>'` to the first `docker run`.
+   To choose the admin password yourself, add `IMPRESS_INITIAL_ADMIN_PASSWORD: "<a strong password>"` under `environment` before the first start.
 
-3. Open `http://<this computer's address>:8000` in a browser and log in as `admin`. Change the password at once: *⚙️ Settings → Change password*.
-
-4. Check that the server is healthy:
+3. **Trust Caddy's certificate on each staff computer** (once). Copy it out:
 
    ```bash
-   docker inspect -f '{{.State.Health.Status}}' impress    # healthy
-   curl http://127.0.0.1:8000/health
+   docker compose cp https:/data/caddy/pki/authorities/local/root.crt ./impress-root.crt
    ```
 
-Expected result: the web app opens from another computer on the same network, and `/health` answers `{"status": "healthy", "version": …, "schema_version": …}`.
+   Then install `impress-root.crt` as a trusted root: Windows: double-click → *Install Certificate* → *Local Machine* → *Trusted Root Certification Authorities*; macOS: double-click → Keychain *System* → set *Always Trust*; Linux (Chrome/Firefox): import under *Settings → Certificates → Authorities*. Without this step the browser warns about the certificate, but the connection is still encrypted.
+
+4. Open `https://192.168.137.1` and log in as `admin`. Change the password at once: *⚙️ Settings → Change password*.
+
+5. Check that the server is healthy:
+
+   ```bash
+   docker compose ps                       # impress: healthy
+   curl -k https://192.168.137.1/health
+   ```
+
+Expected result: the web app opens over `https://` from another computer on the network; opening `http://192.168.137.1:8000` from another computer shows *HTTPS required*; `/health` answers `{"status": "healthy", "version": …, "schema_version": …}`.
+
+`IMPRESS_FORWARDED_ALLOW_IPS: "*"` lets the server believe the `X-Forwarded-Proto: https` header Caddy adds. Someone sending that header directly to port 8000 only fools the server about their *own* connection, which then stays unencrypted; it gains them nothing. If port 8000 is reachable only from the gateways' network, nothing changes.
+
+### Lab or single-computer use without HTTPS
+
+On the computer that runs the server, `http://127.0.0.1:8000` always works (the traffic never leaves the computer). For an isolated lab network you may switch the rule off, knowing that passwords then cross the network in plain text:
+
+```bash
+docker run -d --name impress --restart unless-stopped -p 8000:8000 -v impress-data:/data \
+  -e IMPRESS_REQUIRE_HTTPS=false ghcr.io/kush-kelaiya22/impress-backend:varun-latest
+```
 
 If something differs, see [troubleshooting → container](../guides/troubleshooting.md#container).
 
@@ -94,6 +137,9 @@ Settings are `IMPRESS_*` environment variables, passed with `-e` or an env file 
 | `IMPRESS_DEVICE_KEYS_REQUIRED=true` | after every device has its own key: refuse the shared key except for registration |
 | `IMPRESS_FIRMWARE_SIGNING_KEY` | require signed firmware ([OTA → signing](../guides/ota-updates.md#signing-images)); mount the public key and give its path |
 | `IMPRESS_SESSION_IDLE_MINUTES`, `IMPRESS_SESSION_HARD_MINUTES` | change how long logins last |
+| `IMPRESS_REQUIRE_HTTPS` | `false` only for an isolated lab: allows logins over plain HTTP (#152) |
+| `IMPRESS_FORWARDED_ALLOW_IPS` | addresses of the reverse proxy whose `X-Forwarded-Proto` is trusted (default `127.0.0.1`) |
+| `IMPRESS_DEVICE_HTTPS_ONLY` | `true` once every gateway and hub uses `BACKEND_TLS`: devices must use HTTPS/WSS too |
 
 Never set `IMPRESS_DEBUG=true` on a classroom server: it allows the public default secrets and unauthenticated WebSockets.
 
@@ -119,9 +165,9 @@ volumes:
 
 ## HTTPS (TLS)
 
-Devices built with `BACKEND_TLS` and browsers on other computers need HTTPS. Two options:
+Browsers on other computers need HTTPS (#152); devices built with `BACKEND_TLS` need it too (#66). Options:
 
-1. **Reverse proxy** (recommended): run nginx or Caddy in front and keep the container on HTTP. The proxy must forward WebSocket upgrades for `/ws/` ([nginx example](../guides/deployment.md#tls-reverse-proxy-websockets-included)).
+1. **Reverse proxy** (recommended): Caddy as in the quick start, or nginx with your own certificate. The proxy must forward WebSocket upgrades for `/ws/` ([nginx example](../guides/deployment.md#tls-reverse-proxy-websockets-included)) and set `X-Forwarded-Proto`; list the proxy's address in `IMPRESS_FORWARDED_ALLOW_IPS`.
 2. **Directly in the container:** mount the certificate and key and set both paths:
 
    ```bash

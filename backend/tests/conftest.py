@@ -24,6 +24,9 @@ os.environ.update({
     # uploads (#123). test_trusted_installer.py checks the strict defaults.
     "IMPRESS_FIRMWARE_ALLOW_UNSIGNED": "true",
     "IMPRESS_FIRMWARE_SINGLE_APPROVER": "true",
+    # The in-process test client is neither HTTPS nor loopback; test_transport.py
+    # checks the HTTPS rule itself (#152).
+    "IMPRESS_REQUIRE_HTTPS": "false",
 })
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 

@@ -16,7 +16,9 @@ if [ -z "${IMPRESS_JWT_SECRET:-}" ] || [ -z "${IMPRESS_DEVICE_API_KEY:-}" ]; the
   fi
 fi
 
-set -- --host "${IMPRESS_HOST}" --port "${IMPRESS_PORT}" --workers 1 --proxy-headers
+# X-Forwarded-Proto (HTTPS behind a proxy, #152) is trusted only from these addresses.
+set -- --host "${IMPRESS_HOST}" --port "${IMPRESS_PORT}" --workers 1 --proxy-headers \
+  --forwarded-allow-ips "${IMPRESS_FORWARDED_ALLOW_IPS:-127.0.0.1}"
 if [ -n "${IMPRESS_SSL_CERTFILE:-}" ] || [ -n "${IMPRESS_SSL_KEYFILE:-}" ]; then
   if [ ! -r "${IMPRESS_SSL_CERTFILE:-}" ] || [ ! -r "${IMPRESS_SSL_KEYFILE:-}" ]; then
     echo "Set both IMPRESS_SSL_CERTFILE and IMPRESS_SSL_KEYFILE to readable files" >&2

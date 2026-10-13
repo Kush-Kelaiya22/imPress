@@ -242,6 +242,9 @@ async function renderLogin(app) {
             <label>Password</label>
             <input type="password" id="login-pass" required autocomplete="current-password" />
           </div>
+          ${location.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)
+            ? `<p class="text-danger text-sm" role="alert">This connection is not encrypted: your password would cross the
+                network in plain text. Use the <strong>https://</strong> address of this server (#152).</p>` : ''}
           <button type="submit" class="btn btn-primary btn-block">Sign In</button>
           <p id="login-error" class="text-danger text-center mt-1" style="display:none"></p>
         </form>

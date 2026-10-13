@@ -356,7 +356,7 @@ jobs:
         run: docker build --platform linux/${{ matrix.arch }} -t impress-backend:ci .
       - name: Smoke test
         run: |
-          docker run -d --name impress -p 8000:8000 -e IMPRESS_INITIAL_ADMIN_PASSWORD impress-backend:ci
+          docker run -d --name impress -p 8000:8000 -e IMPRESS_REQUIRE_HTTPS=false -e IMPRESS_INITIAL_ADMIN_PASSWORD impress-backend:ci
           for _ in $(seq 60); do curl -sf http://127.0.0.1:8000/health && break; sleep 1; done
           key=$(docker exec impress sed -n 's/^IMPRESS_DEVICE_API_KEY=\([^ #]*\).*/\1/p' /data/.env)
           python scripts/smoke_test.py --password "$IMPRESS_INITIAL_ADMIN_PASSWORD" --device-key "$key"

@@ -140,7 +140,7 @@ jobs:
         run: docker build --platform linux/${{ matrix.arch }} --label "org.opencontainers.image.revision=${{ needs.plan.outputs.sha }}" --label "org.opencontainers.image.version=${{ needs.plan.outputs.tag }}" -t impress-backend:ci .
       - name: Smoke test the image
         run: |
-          docker run -d --name impress -p 8000:8000 -e IMPRESS_INITIAL_ADMIN_PASSWORD=smoke-${{ github.run_id }} impress-backend:ci
+          docker run -d --name impress -p 8000:8000 -e IMPRESS_REQUIRE_HTTPS=false -e IMPRESS_INITIAL_ADMIN_PASSWORD=smoke-${{ github.run_id }} impress-backend:ci
           for _ in $(seq 60); do curl -sf http://127.0.0.1:8000/health && break; sleep 1; done
           key=$(docker exec impress sed -n 's/^IMPRESS_DEVICE_API_KEY=\([^ #]*\).*/\1/p' /data/.env)
           python scripts/smoke_test.py --password "smoke-${{ github.run_id }}" --device-key "$key"
