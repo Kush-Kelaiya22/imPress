@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import datetime, date
 from typing import Literal, Optional
 
+from .passwords import NewPassword
+
 # Academic calendar: Monsoon → Winter → Summer (R5)
 SEMESTERS = ("Monsoon", "Winter", "Summer")
 
@@ -19,7 +21,7 @@ Role = Literal["teacher", "admin", "super_admin"]
 class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     email: str
-    password: str = Field(min_length=6)
+    password: NewPassword
     full_name: str = ""
     role: Role = "teacher"
 
@@ -28,7 +30,7 @@ class AdminUserCreate(BaseModel):
     """Admin-only: can create admin or teacher accounts."""
     username: str = Field(min_length=3, max_length=64)
     email: str
-    password: str = Field(min_length=6)
+    password: NewPassword
     full_name: str = ""
     role: Role = "teacher"  # admin/super_admin only grantable by a super admin
 
@@ -37,7 +39,7 @@ class SuperAdminUserCreate(BaseModel):
     """Super admin: can create other admin accounts."""
     username: str = Field(min_length=3, max_length=64)
     email: str
-    password: str = Field(min_length=6)
+    password: NewPassword
     full_name: str = ""
 
 
@@ -49,7 +51,7 @@ class UserLogin(BaseModel):
 class PasswordChange(BaseModel):
     """A user changing their own password (requires current password)."""
     current_password: str
-    new_password: str = Field(min_length=6)
+    new_password: NewPassword
 
 
 class ProfileUpdate(BaseModel):
@@ -59,7 +61,7 @@ class ProfileUpdate(BaseModel):
 
 class PasswordReset(BaseModel):
     """Admin resetting another user's password."""
-    new_password: str = Field(min_length=6)
+    new_password: NewPassword
 
 
 class TokenResponse(BaseModel):

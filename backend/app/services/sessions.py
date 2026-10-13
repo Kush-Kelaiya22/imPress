@@ -40,6 +40,8 @@ async def _cleanup_once() -> int:
                 | (UserSession.revoked.is_(True))
             )
         )
+        from .throttle import prune
+        await prune(db, now)                     # old login-throttle counters (#153)
         await db.commit()
         return result.rowcount or 0
 

@@ -32,6 +32,7 @@ from ..services import deployments as deployment_engine
 from ..timeutil import istnow
 
 from ..activity import log_activity
+from .. import passwords
 from ..schedule import find_schedule_conflicts, occupancy
 from ..services.records import delete_class_records, ensure_section_free
 from ..services.presence import class_modules
@@ -55,6 +56,8 @@ async def create_user(
     """Admin creates a teacher or admin account. Super admin can also create admins."""
     if not can_grant(user, body.role):
         raise HTTPException(403, "Only super admin can assign admin roles")
+    if (why := passwords.problem(body.password, body.username)):
+        raise HTTPException(422, f"Password {why}")
 
     existing = await db.execute(select(User).where(User.username == body.username))
     if existing.scalar_one_or_none():
@@ -154,9 +157,8 @@ async def import_users_csv(
             errors.append(CsvImportError(row=row_idx, roll_number=username,
                 error="email is invalid (must be like name@domain.com)"))
             continue
-        if len(password) < 6:
-            errors.append(CsvImportError(row=row_idx, roll_number=username,
-                error="password must be at least 6 characters"))
+        if (why := passwords.problem(password, username)):          # #153
+            errors.append(CsvImportError(row=row_idx, roll_number=username, error=f"password {why}"))
             continue
         if role not in ("teacher", "admin"):
             errors.append(CsvImportError(row=row_idx, roll_number=username,
@@ -338,6 +340,8 @@ async def reset_user_password(
     target = await _target(db, user_id)
     accounts.check(user, target, "reset_password")
 
+    if (why := passwords.problem(body.new_password, target.username)):
+        raise HTTPException(422, f"Password {why}")
     from ..auth import hash_password
     target.hashed_password = hash_password(body.new_password)
     await accounts.revoke(db, target)

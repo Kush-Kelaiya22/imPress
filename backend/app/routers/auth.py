@@ -17,6 +17,8 @@ from ..auth import (
     revoke_user_sessions,
 )
 from ..activity import log_activity
+from .. import passwords
+from ..services import throttle
 from ..config import settings
 from ..timeutil import istnow
 
@@ -25,10 +27,19 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.post("/login", response_model=TokenResponse)
 async def login(body: UserLogin, request: Request, db: AsyncSession = Depends(get_db)):
+    # Password guessing is slowed per username and per address (#153); the
+    # password is not even checked while a key is waiting.
+    now = istnow()
+    keys = [f"user:{body.username.strip().lower()}"[:160],
+            f"ip:{request.client.host if request.client else '?'}"]
+    await throttle.check(db, keys, now)
     result = await db.execute(select(User).where(User.username == body.username))
     user = result.scalar_one_or_none()
     if not user or not verify_password(body.password, user.hashed_password):
+        await throttle.failed(db, keys, now)
+        await db.commit()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
+    await throttle.succeeded(db, keys[0])
     if not user.is_active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Account is disabled")
 
@@ -79,8 +90,15 @@ async def change_password(
     db: AsyncSession = Depends(get_db),
 ):
     """A logged-in user changes their own password (needs the current one)."""
+    key, now = [f"change:{user.id}"], istnow()
+    await throttle.check(db, key, now)                      # #153
     if not verify_password(body.current_password, user.hashed_password):
+        await throttle.failed(db, key, now)
+        await db.commit()
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
+    if (why := passwords.problem(body.new_password, user.username)):
+        raise HTTPException(422, f"New password {why}")
+    await throttle.succeeded(db, key[0])
 
     user.hashed_password = hash_password(body.new_password)
     current = getattr(request.state, "session", None)
