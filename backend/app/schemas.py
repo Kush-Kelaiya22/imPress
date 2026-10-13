@@ -522,12 +522,22 @@ class StudentEnroll(BaseModel):
 
 # ── ESP Device ───────────────────────────────────────────────────────
 
+class DeviceCaps(BaseModel):
+    """What the board is (#129): firmware/protocol/device_caps.h."""
+    chip_rev: Optional[int] = Field(None, ge=0, le=65535)
+    flash_mb: Optional[int] = Field(None, ge=0, le=1024)
+    psram_mb: Optional[int] = Field(None, ge=0, le=1024)
+    slot_kb: Optional[int] = Field(None, ge=0, le=1 << 20)
+    rollback: Optional[bool] = None
+
+
 class DeviceRegister(BaseModel):
     mac_address: str
     device_name: str = ""
     device_type: str = "student"  # "c6" (class node) | "s3" | "student"
     firmware_version: str = "0.0.0"
     classroom_code: str = ""  # optional: physical room code for auto-assignment
+    caps: Optional[DeviceCaps] = None  # firmware from #129 on
 
 
 class DeviceHeartbeat(BaseModel):
@@ -618,6 +628,12 @@ class DeviceResponse(BaseModel):
     s3_uptime_s: Optional[int] = None
     diag_at: Optional[datetime] = None
     total_flash: int = 0
+    # Board capabilities (#129); None = not reported (older firmware, student modules)
+    chip_rev: Optional[int] = None
+    flash_mb: Optional[int] = None
+    psram_mb: Optional[int] = None
+    ota_slot_kb: Optional[int] = None
+    rollback_supported: Optional[bool] = None
 
     model_config = {"from_attributes": True}
 

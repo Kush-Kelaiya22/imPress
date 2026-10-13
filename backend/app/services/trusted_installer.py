@@ -13,7 +13,8 @@ trusted from the request:
    unsigned images (IMPRESS_FIRMWARE_ALLOW_UNSIGNED, or DEBUG);
 4. the stored file still has the registered size and SHA-256;
 5. it passed qualification (#154): image analysis and the OTA client
-   simulation (services/qualification.py).
+   simulation (services/qualification.py);
+6. it fits the board, where the board reported its flash and slot (#129).
 """
 
 from __future__ import annotations
@@ -52,6 +53,22 @@ def report(artifact: FirmwareArtifact, data: bytes | None = None) -> dict | None
     return None if data is None else qualify(data, artifact.target, artifact.version)
 
 
+# esp_image_header_t byte 3, high nibble: the flash size the image was built for.
+_HEADER_FLASH_MB = {0: 1, 1: 2, 2: 4, 3: 8, 4: 16, 5: 32, 6: 64, 7: 128}
+
+
+def board_refusal(data: bytes, device: EspDevice) -> str | None:
+    """Does the image fit this board (#129)? Only checked where the board
+    reported its capabilities; older firmware keeps the type/chip checks."""
+    built_for = _HEADER_FLASH_MB.get(data[3] >> 4) if len(data) > 3 else None
+    if device.flash_mb and built_for and built_for > device.flash_mb:
+        return (f"incompatible: image built for {built_for} MB flash, this board has {device.flash_mb} MB "
+                "(a different hub profile; see the classroom node requirements)")
+    if device.ota_slot_kb and len(data) > device.ota_slot_kb * 1024:
+        return f"incompatible: image is {len(data) // 1024} KB, this board's OTA slot holds {device.ota_slot_kb} KB"
+    return None
+
+
 def refusal(artifact: FirmwareArtifact, device: EspDevice, *, continuing: bool = False) -> str | None:
     """Why this image must not go to this device, or None.
 
@@ -74,6 +91,9 @@ def refusal(artifact: FirmwareArtifact, device: EspDevice, *, continuing: bool =
     data = _intact_bytes(artifact)
     if data is None:
         return "stored image does not match its registered SHA-256 (file changed or missing)"
+    fits = board_refusal(data, device)
+    if fits:
+        return fits
     r = report(artifact, data)
     if not r or r.get("status") != "qualified":
         failed = next((s for s in (r or {}).get("stages", []) if s.get("passed") is False), None)

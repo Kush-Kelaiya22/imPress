@@ -54,3 +54,15 @@ def test_connection_failures_say_why():
     main = (FIRMWARE / "class_c6/main/main.c").read_text()
     assert 'ESP_LOGI(TAG, "Backend: " BACKEND_HTTP_SCHEME' in main
     assert "CONFIG_BACKEND_PORT EQUAL 8000" in (FIRMWARE / "class_c6/main/CMakeLists.txt").read_text()
+
+
+def test_gateway_and_hub_report_their_capabilities():
+    """#129: both registrations append the caps object from device_caps.h."""
+    for path in ("class_c6/main/wifi_client.c", "class_s3/main/ota.c"):
+        code = strip_comments_and_strings((FIRMWARE / path).read_text())
+        assert "device_caps_append(" in code, path
+    header = (FIRMWARE / "protocol/device_caps.h").read_text()
+    for field in ("chip_rev", "flash_mb", "psram_mb", "slot_kb", "rollback"):
+        assert f'\\"{field}\\"' in header, field
+    assert "spi_flash" in (FIRMWARE / "class_c6/main/CMakeLists.txt").read_text()
+    assert "esp_psram" in (FIRMWARE / "class_s3/main/CMakeLists.txt").read_text()

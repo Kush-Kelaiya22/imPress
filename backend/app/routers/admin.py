@@ -1108,6 +1108,8 @@ def _device_response(dev: EspDevice) -> DeviceResponse:
         s3_link_ok=dev.s3_link_ok,
         s3_uptime_s=dev.s3_uptime_s,
         diag_at=dev.diag_at,
+        chip_rev=dev.chip_rev, flash_mb=dev.flash_mb, psram_mb=dev.psram_mb,
+        ota_slot_kb=dev.ota_slot_kb, rollback_supported=dev.rollback_supported,
     )
 
 

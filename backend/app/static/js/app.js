@@ -2179,6 +2179,11 @@ function _diagnosticsBody(d) {
       ? `<span class="badge badge-success">up</span> S3 uptime ${escHtml(formatUptime(d.s3_uptime_s))}`
       : '<span class="badge badge-danger">down</span>'],
     ['Reported', v(d.diag_at, x => new Date(x).toLocaleString())],
+    // Board capabilities (#129): reported at registration by firmware from 2.1 with #129
+    ['Board', d.flash_mb == null ? na : `${escHtml(d.flash_mb)} MB flash · ${d.psram_mb ? escHtml(d.psram_mb) + ' MB PSRAM' : 'no PSRAM'} · chip rev ${v(d.chip_rev)} · OTA slot ${v(d.ota_slot_kb)} KB`],
+    ['Automatic rollback', d.rollback_supported == null ? na : d.rollback_supported
+      ? '<span class="badge badge-success">yes</span> a failed update returns to the previous image'
+      : '<span class="badge badge-danger">no</span> its bootloader cannot roll back: a bad update needs a serial flash'],
     ['Device key', {
       active: '<span class="badge badge-success">own key</span> in use since ' + escHtml(new Date(d.key_confirmed_at).toLocaleString()),
       issued: '<span class="badge badge-outline">issued</span> not used yet; the shared key still works',

@@ -227,6 +227,12 @@ async def add_firmware_qualification(conn: AsyncConnection) -> None:
     await _add_columns(conn, {"firmware_artifacts": {"qualification": "JSON"}})
 
 
+async def add_device_caps(conn: AsyncConnection) -> None:
+    """What each board reported it is (#129)."""
+    await _add_columns(conn, {"esp_devices": {"chip_rev": "INTEGER", "flash_mb": "INTEGER", "psram_mb": "INTEGER",
+                                              "ota_slot_kb": "INTEGER", "rollback_supported": "BOOLEAN"}})
+
+
 # Append-only. (version, name, step)
 MIGRATIONS: list[tuple[int, str, Step]] = [
     (1, "add_v2_columns", add_v2_columns),
@@ -240,6 +246,7 @@ MIGRATIONS: list[tuple[int, str, Step]] = [
     (9, "guard_last_super_admin", guard_last_super_admin),
     (10, "add_deployment_deferral", add_deployment_deferral),
     (11, "add_firmware_qualification", add_firmware_qualification),
+    (12, "add_device_caps", add_device_caps),
 ]
 
 LATEST = MIGRATIONS[-1][0]

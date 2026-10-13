@@ -21,7 +21,8 @@
 
 #include "ota.h"
 #include "config.h"
-#include "backend_tls.h"   /* http(s)/ws(s) and the server certificate (#66) */
+#include "backend_tls.h"
+#include "device_caps.h"     /* board capabilities for the server (#129) */   /* http(s)/ws(s) and the server certificate (#66) */
 #include "spi_master.h"
 #include "mesh_master.h"
 #include "protocol.h"
@@ -465,11 +466,13 @@ static void _ota_task(void *arg)
     /* 2. Register + heartbeat (so backend knows we're briefly online) */
     char reg_url[256];
     _url(reg_url, sizeof(reg_url), "/api/device/register");
-    char reg[256];
-    snprintf(reg, sizeof(reg),
-             "{\"mac_address\":\"%s\",\"device_type\":\"%s\","
-             "\"device_name\":\"imPress S3\",\"firmware_version\":\"%s\"}",
-             mac, DEVICE_TYPE, FIRMWARE_VERSION);
+    char reg[384];
+    int len = snprintf(reg, sizeof(reg),
+                       "{\"mac_address\":\"%s\",\"device_type\":\"%s\","
+                       "\"device_name\":\"imPress S3\",\"firmware_version\":\"%s\"",
+                       mac, DEVICE_TYPE, FIRMWARE_VERSION);
+    len = device_caps_append(reg, sizeof(reg), len);            /* what this board is (#129) */
+    snprintf(reg + len, sizeof(reg) - (size_t)len, "}");
     _register(reg_url, reg);
 
     char hb_url[256];

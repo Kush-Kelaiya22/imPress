@@ -10,7 +10,8 @@
 #include "config.h"
 #include "backend_hint.h"   /* actionable connection errors (#132) */
 #include "esp_tls_errors.h"
-#include "backend_tls.h"   /* http(s)/ws(s) and the server certificate (#66) */
+#include "backend_tls.h"
+#include "device_caps.h"     /* board capabilities for the server (#129) */   /* http(s)/ws(s) and the server certificate (#66) */
 #include "protocol.h"     /* json_get_string */
 #include "esp_adc/adc_oneshot.h"
 
@@ -254,11 +255,13 @@ int http_register_device(const char *mac_address, const char *device_type)
 {
     char url[256];
     _url(url, sizeof(url), "/api/device/register");
-    char json[256];
-    snprintf(json, sizeof(json),
-             "{\"mac_address\":\"%s\",\"device_type\":\"%s\","
-             "\"device_name\":\"imPress C6\",\"firmware_version\":\"%s\"}",
-             mac_address, device_type, FIRMWARE_VERSION);
+    char json[384];
+    int len = snprintf(json, sizeof(json),
+                       "{\"mac_address\":\"%s\",\"device_type\":\"%s\","
+                       "\"device_name\":\"imPress C6\",\"firmware_version\":\"%s\"",
+                       mac_address, device_type, FIRMWARE_VERSION);
+    len = device_caps_append(json, sizeof(json), len);          /* what this board is (#129) */
+    snprintf(json + len, sizeof(json) - (size_t)len, "}");
 
     char resp[320];
     int status = _http_post_body(url, json, resp, sizeof(resp));
