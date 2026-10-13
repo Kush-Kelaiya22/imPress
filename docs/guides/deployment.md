@@ -21,12 +21,12 @@ scripts/smoke_test.py --base http://127.0.0.1:8000 --password <admin password>
 ```
 It checks health and version, login, a course and section, gateway registration and heartbeat, a student join and the inventory, the firmware registry and the web app.
 
-**Container alternative.** The backend is also published as an image, `ghcr.io/kush-kelaiya22/impress-backend:<version>` (linux/amd64). It is built from the same hash-locked dependencies, runs unprivileged, keeps its database, uploaded firmware and generated secrets in the `/data` volume, and has a health check:
+**Container alternative.** The backend is also published as an image, `ghcr.io/kush-kelaiya22/impress-backend:<version>` (linux/amd64 and linux/arm64). It is built from the same hash-locked dependencies, runs unprivileged, keeps its database, uploaded firmware and generated secrets in the `/data` volume, and has a health check:
 ```bash
 docker run -d --name impress --restart unless-stopped -p 8000:8000 -v impress-data:/data \
   ghcr.io/kush-kelaiya22/impress-backend:2.1.0
 ```
-Tags, settings, TLS and upgrades: [releases → the backend container image](releases.md#the-backend-container-image). Back up the `impress-data` volume instead of `backend/`.
+Step-by-step: [container image guide](../deployment/container.md) (network, data, configuration, Compose, TLS, backups, upgrades). Tags: [releases → the backend container image](releases.md#the-backend-container-image). Back up the `impress-data` volume instead of `backend/`.
 
 The manual path still works: a venv in `backend/`, `pip install -r requirements.txt`, `cp .env.example .env` (then set the secrets), and `uvicorn app.main:app --workers 1 --proxy-headers` started from `backend/`.
 - **One worker only.** WebSocket rooms live in process memory ([backend scaling](../architecture/backend.md#scaling-and-limits)).

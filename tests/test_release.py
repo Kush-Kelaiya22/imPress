@@ -481,6 +481,7 @@ def test_least_privilege_and_no_cancelled_releases(wf):
     assert wf["jobs"]["release"]["permissions"] == {"contents": "write", "issues": "write"}
     assert wf["jobs"]["status"]["steps"][0]["with"]["fetch-depth"] == 0              # ancestry needs every tag
     assert wf["jobs"]["image"]["permissions"] == {"contents": "read", "packages": "write"}
+    assert wf["jobs"]["image-build"]["permissions"] == {"contents": "read", "packages": "write"}
     for name, job in wf["jobs"].items():
         assert 0 < job.get("timeout-minutes", 0) <= 60, name
 
@@ -488,8 +489,16 @@ def test_least_privilege_and_no_cancelled_releases(wf):
 def test_release_is_built_from_a_tested_image_and_firmware(wf):
     rel = wf["jobs"]["release"]
     assert set(rel["needs"]) == {"plan", "image", "firmware"}
+    build = "\n".join(s.get("run", "") for s in wf["jobs"]["image-build"]["steps"])
+    assert build.index("> VERSION") < build.index("docker build") < build.index("smoke_test.py") < build.index("docker push")
+    assert "--platform linux/${{ matrix.arch }}" in build and "retry docker push" in build
+    matrix = wf["jobs"]["image-build"]["strategy"]["matrix"]["include"]
+    assert {m["arch"] for m in matrix} == {"amd64", "arm64"}                     # #136: both, natively
+    assert {m["runner"] for m in matrix} == {"ubuntu-latest", "ubuntu-24.04-arm"}
     image = "\n".join(s.get("run", "") for s in wf["jobs"]["image"]["steps"])
-    assert image.index("> VERSION") < image.index("docker build") < image.index("smoke_test.py") < image.index("docker push")
+    assert set(wf["jobs"]["image"]["needs"]) == {"plan", "image-build"}          # tags only from tested images
+    assert "retry docker buildx imagetools create" in image and "-amd64" in image and "-arm64" in image
+    assert "index:org.opencontainers.image.description=" in image             # the package page
     assert '"$OWNER-$LINE"' in image and '"$OWNER-$VERSION"' in image
     assert sorted(wf["jobs"]["firmware"]["strategy"]["matrix"]["project"]) == sorted(run_tests.IDF_PROJECTS)
     assert wf["jobs"]["firmware"]["container"] == run_tests.IDF_IMAGE

@@ -5,6 +5,7 @@ Putting imPress into classrooms. The pages already exist as guides; this folder 
 | Topic | Page |
 |---|---|
 | Installation: server, systemd, nginx, TLS, first admin, go-live checklist, upgrading | [Deployment guide](../guides/deployment.md) |
+| Running the published container image (amd64 and arm64): network, data, Compose, TLS, backups, upgrades, recovery | [Container image](container.md) |
 | Configuration: every backend setting, every gateway, hub and student Kconfig and NVS key | [Configuration guide](../guides/configuration.md) |
 | Troubleshooting: resets, connectivity, mesh, backend data, OTA | [Troubleshooting guide](../guides/troubleshooting.md), [OTA troubleshooting](../guides/ota-updates.md#troubleshooting-ota) |
 | Choosing hardware for a room | [Classroom node requirements](../hardware/CLASSROOM_NODE_REQUIREMENTS.md) |

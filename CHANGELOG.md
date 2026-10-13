@@ -10,6 +10,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Fixed
 
+- A brief registry error while uploading the container image no longer fails the whole release; the upload is retried. ([#136](https://github.com/Kush-Kelaiya22/imPress/issues/136))
 - A gateway that cannot reach the server now says why in its serial log (server unreachable: address, 127.0.0.1 or firewall; connection refused; TLS handshake failed; device key refused) and prints the server address and TLS mode it uses at boot. A build with TLS on port 8000 shows a warning, `scripts/start.sh` warns when only the local computer can connect, and the troubleshooting guide covers the Windows Mobile Hotspot firewall. ([#132](https://github.com/Kush-Kelaiya22/imPress/issues/132))
 - Pages load faster for teachers with many quizzes: every request used to read the teacher's entire quiz and answer history, and class lists loaded every quiz just to count them. In a local measurement with 3,000 answers, a typical request went from 42 ms to 3 ms. ([#133](https://github.com/Kush-Kelaiya22/imPress/issues/133))
 - A super admin can no longer lock everyone out by deactivating their own account (or the last active super admin) through any API route; the request is refused with an explanation, and the database itself refuses a change that would leave no active super admin. ([#116](https://github.com/Kush-Kelaiya22/imPress/issues/116))
@@ -32,6 +33,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 - A refactor audit and roadmap (`docs/engineering/REFACTOR_ROADMAP.md`) covering account lifecycle, lockout prevention, the privilege-ring authorization model, AURIS-aligned scheduling and the OTA redesign, with the planned work tracked in GitHub issues. ([#115](https://github.com/Kush-Kelaiya22/imPress/issues/115))
 - Separate *Deactivate*, *Reactivate*, *Change role* and *Delete permanently* actions for user accounts, in the web app and as API endpoints (`/deactivate`, `/reactivate`, `/role`). The user list only shows the actions you are allowed to take, and a refused action says why. ([#119](https://github.com/Kush-Kelaiya22/imPress/issues/119))
 - `python -m app.manage restore-super-admin --username <name>`: a server-side command that restores administrator access to an installation where no super admin can log in. It prints a one-time password and is logged; there is no web route for it. ([#120](https://github.com/Kush-Kelaiya22/imPress/issues/120))
+- The backend container image now runs natively on 64-bit ARM (Apple silicon Macs, Raspberry Pi 4/5 with a 64-bit OS, ARM servers) as well as x86_64: every tag covers `linux/amd64` and `linux/arm64`. The package page describes the image and links to a new step-by-step [container guide](docs/deployment/container.md) (network, data, configuration, Compose, TLS, backups, upgrades, recovery). ([#136](https://github.com/Kush-Kelaiya22/imPress/issues/136))
 
 ### Changed
 
