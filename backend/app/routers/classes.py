@@ -1,17 +1,20 @@
 """Class session router: teacher sees assigned classes, activate/deactivate."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..policy import class_access, class_owner_or_admin, require, sees_all_classes
 from ..database import get_db
-from ..models import User, ClassSession, StudentEnrollment, EspDevice
-from ..schemas import ClassCreate, ClassJoin, ClassResponse, DeviceTreeResponse, DeviceTreeNode
+from ..models import User, ClassOccurrenceException, ClassSession, StudentEnrollment, EspDevice
+from ..schemas import (
+    ClassCreate, ClassJoin, ClassResponse, DeviceTreeResponse, DeviceTreeNode,
+    OccurrenceExceptionCreate, OccurrenceExceptionResponse,
+)
 
 from ..activity import log_activity
-from ..schedule import find_schedule_conflicts
+from ..schedule import find_schedule_conflicts, occupancy
 from ..services.presence import presence_snapshot
 from ..services.records import delete_class_records, ensure_section_free
 
@@ -272,6 +275,94 @@ async def delete_class(
 # ── Live device presence (teacher dashboard polling) ────────────────
 
 live_router = APIRouter(prefix="/api/devices", tags=["devices", "live"])
+
+
+# ── Timetable exceptions (#126) ───────────────────────────────────────────
+
+async def _accessible_class(db: AsyncSession, class_id: int, user: User) -> ClassSession:
+    cls = (await db.execute(select(ClassSession).where(ClassSession.id == class_id))).scalar_one_or_none()
+    if not cls:
+        raise HTTPException(404, "Class not found")
+    if not class_access(user, cls):
+        raise HTTPException(403, "You don't have access to this class")
+    return cls
+
+
+@router.get("/{class_id}/exceptions", response_model=list[OccurrenceExceptionResponse])
+async def list_exceptions(
+    class_id: int,
+    user: User = Depends(require("classes.read")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancelled, moved and extra occurrences of this class, by date."""
+    await _accessible_class(db, class_id, user)
+    rows = await db.execute(select(ClassOccurrenceException)
+                            .where(ClassOccurrenceException.class_session_id == class_id)
+                            .order_by(ClassOccurrenceException.date, ClassOccurrenceException.slot_start))
+    return rows.scalars().all()
+
+
+@router.post("/{class_id}/exceptions", response_model=OccurrenceExceptionResponse, status_code=201)
+async def add_exception(
+    class_id: int,
+    body: OccurrenceExceptionCreate,
+    user: User = Depends(require("classes.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Record a cancelled, moved or extra occurrence. A moved or extra one
+    that overlaps another booking of its room comes back with `warnings`."""
+    cls = await _accessible_class(db, class_id, user)
+    if body.kind in ("moved", "extra") and not (body.new_start and body.new_end):
+        raise HTTPException(422, "new_start and new_end are required for a moved or extra occurrence")
+    if body.kind == "moved" and not body.slot_start:
+        raise HTTPException(422, "slot_start: which regular slot is moved")
+    e = ClassOccurrenceException(
+        class_session_id=cls.id, kind=body.kind, date=body.date, slot_start=body.slot_start,
+        new_date=(body.new_date or body.date) if body.kind == "moved" else (body.date if body.kind == "extra" else None),
+        new_start=body.new_start if body.kind != "cancelled" else "",
+        new_end=body.new_end if body.kind != "cancelled" else "",
+        classroom_code=body.classroom_code.strip() if body.kind != "cancelled" else "",
+        note=body.note, source="local", created_by=user.id)
+    db.add(e)
+    await db.flush()
+    warnings = []
+    room = e.classroom_code or cls.classroom_code or ""
+    if e.kind != "cancelled" and room:
+        day = e.new_date
+        a = datetime.combine(day, datetime.strptime(e.new_start, "%H:%M").time())
+        b = datetime.combine(day, datetime.strptime(e.new_end, "%H:%M").time())
+        for busy in await occupancy(db, room, a, b if b > a else b + timedelta(days=1)) or []:
+            if busy.class_id != cls.id:
+                warnings.append({"type": "room", "class_id": busy.class_id, "start": busy.start.isoformat(),
+                                 "end": busy.end.isoformat(), "message": f"Room {room} is booked by class #{busy.class_id}"})
+    await log_activity(db, "class.exception", user.id, "class", cls.id, {"kind": e.kind, "date": str(e.date)})
+    await db.commit()
+    out = OccurrenceExceptionResponse.model_validate(e)
+    out.warnings = warnings
+    return out
+
+
+@router.delete("/{class_id}/exceptions/{exception_id}", status_code=204)
+async def delete_exception(
+    class_id: int,
+    exception_id: int,
+    user: User = Depends(require("classes.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove a local timetable change. AURIS-sourced changes are replaced by
+    the next import instead (#127)."""
+    await _accessible_class(db, class_id, user)
+    e = (await db.execute(select(ClassOccurrenceException).where(
+        ClassOccurrenceException.id == exception_id,
+        ClassOccurrenceException.class_session_id == class_id))).scalar_one_or_none()
+    if not e:
+        raise HTTPException(404, "No such timetable change")
+    if e.source != "local":
+        raise HTTPException(409, {"code": "SOURCE_MANAGED", "message": f"This change comes from {e.source}; it is "
+                                  "updated by the next import"})
+    await db.delete(e)
+    await log_activity(db, "class.exception_removed", user.id, "class", class_id, {"date": str(e.date)})
+    await db.commit()
 
 
 @live_router.get("/live")

@@ -4,7 +4,7 @@ import csv
 import hashlib
 import io
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response
 from sqlalchemy import select, func
@@ -32,7 +32,7 @@ from ..services import deployments as deployment_engine
 from ..timeutil import istnow
 
 from ..activity import log_activity
-from ..schedule import find_schedule_conflicts
+from ..schedule import find_schedule_conflicts, occupancy
 from ..services.records import delete_class_records, ensure_section_free
 from ..services.presence import class_modules
 from ..services.student_modules import module_to_dict
@@ -362,6 +362,27 @@ async def delete_user(
     await accounts.delete_user(db, target)
     await accounts.commit(db, revoked=target)
     return Response(status_code=204)
+
+
+# ── Rooms (#126) ────────────────────────────────────────────────────────
+
+@router.get("/rooms/{classroom_code}/occupancy")
+async def room_occupancy(
+    classroom_code: str,
+    start: datetime = Query(..., description="ISO date-time (IST)"),
+    end: datetime = Query(..., description="ISO date-time (IST)"),
+    user: User = Depends(require("classes.manage_all")),
+    db: AsyncSession = Depends(get_db),
+):
+    """When a room is booked: regular slots, minus cancelled and moved
+    occurrences, plus moved-in and extra ones. `known: false` means the
+    authoritative timetable is stale, so nothing may assume the room is free."""
+    if end <= start or end - start > timedelta(days=31):
+        raise HTTPException(422, "end must be after start, at most 31 days later")
+    busy = await occupancy(db, classroom_code, start.replace(tzinfo=None), end.replace(tzinfo=None))
+    return {"classroom_code": classroom_code, "known": busy is not None,
+            "busy": [{"start": b.start.isoformat(), "end": b.end.isoformat(), "class_id": b.class_id, "why": b.why}
+                     for b in busy or []]}
 
 
 # ── Class Management ────────────────────────────────────────────────

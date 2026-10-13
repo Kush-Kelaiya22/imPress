@@ -404,6 +404,11 @@ const studentsApi = {
 // ── Classes ─────────────────────────────────────────────────────
 
 const classesApi = {
+  async exceptions(classId) { return apiRequest(`/classes/${classId}/exceptions`); },          // #126
+  async addException(classId, body) {
+    return apiRequest(`/classes/${classId}/exceptions`, { method: 'POST', body: JSON.stringify(body) });
+  },
+  async removeException(classId, id) { return apiRequest(`/classes/${classId}/exceptions/${id}`, { method: 'DELETE' }); },
   async list() {
     return apiRequest('/classes/');
   },

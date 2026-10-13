@@ -151,6 +151,44 @@ class EspDevice(Base):
     relayed_by = relationship("EspDevice", remote_side=[id], foreign_keys=[gateway_id])
 
 
+# ── Timetable exceptions (#126) ───────────────────────────────────────
+
+class ClassOccurrenceException(Base):
+    """One dated change to a class's weekly timetable (meeting_schedule).
+
+    cancelled: the occurrence on `date` (the slot starting at `slot_start`,
+               or every slot that day when it is empty) does not take place;
+    moved:     that occurrence takes place on new_date new_start–new_end,
+               in `classroom_code` (empty = the class's own room);
+    extra:     an additional occurrence on `date` new_start–new_end.
+    `source` tells AURIS data (authoritative, #127) from local edits."""
+    __tablename__ = "class_occurrence_exceptions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    class_session_id = Column(Integer, ForeignKey("class_sessions.id"), nullable=False, index=True)
+    kind = Column(String(16), nullable=False)                 # cancelled | moved | extra
+    date = Column(Date, nullable=False, index=True)
+    slot_start = Column(String(5), default="")                # "HH:MM" of the regular slot; "" = whole day
+    new_date = Column(Date, nullable=True)
+    new_start = Column(String(5), default="")
+    new_end = Column(String(5), default="")
+    classroom_code = Column(String(32), default="")           # room of a moved/extra occurrence
+    source = Column(String(16), default="local")              # local | auris
+    note = Column(String(255), default="")
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    updated_at = Column(DateTime, default=istnow)
+
+
+class ScheduleSource(Base):
+    """When each authoritative timetable source last synchronised (#126/#127).
+    No row for a source = imPress's own timetable is authoritative."""
+    __tablename__ = "schedule_sources"
+
+    source = Column(String(16), primary_key=True)             # e.g. "auris"
+    last_synced_at = Column(DateTime, nullable=False)
+    note = Column(String(255), default="")
+
+
 # ── Firmware artifacts (#35) ─────────────────────────────────────────
 
 class FirmwareArtifact(Base):

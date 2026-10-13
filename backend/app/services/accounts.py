@@ -60,6 +60,7 @@ DELETE_RULES = {
     ("firmware_artifacts", "approved_by"): "null",
     ("firmware_deployments", "requested_by"): "null",
     ("activity_logs", "user_id"): "audit",
+    ("class_occurrence_exceptions", "created_by"): "null",
 }
 
 

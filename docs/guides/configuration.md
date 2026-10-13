@@ -24,6 +24,7 @@ Environment variables with prefix **`IMPRESS_`**, or a `.env` file in the workin
 | `IMPRESS_FIRMWARE_SIGNING_KEY` | empty | Path to the site's firmware **public** key (PEM, from `scripts/firmware_key.sh`). Set: uploads must be signed with it and other images are never deployed (#66). Empty: signatures are recorded, and images are deployed only when `IMPRESS_FIRMWARE_ALLOW_UNSIGNED=true` (#123). |
 | `IMPRESS_FIRMWARE_ALLOW_UNSIGNED` | `false` | Without a signing key: `true` lets the TrustedInstaller deploy unsigned images (a lab or a site that accepts the risk). `IMPRESS_DEBUG=true` implies it (#123). |
 | `IMPRESS_FIRMWARE_SINGLE_APPROVER` | `false` | `true`: a super admin may approve a firmware image they uploaded themselves (a site with one administrator). Otherwise another administrator must approve it (#123). |
+| `IMPRESS_SCHEDULE_MAX_AGE_HOURS` | `48` | Once an authoritative timetable source (AURIS) has synchronised, its data older than this makes room occupancy *unknown*, and automatic hub and gateway updates wait (#126, #128). `0` = never stale. No effect while imPress's own timetable is the only source. |
 | `IMPRESS_WS_REQUIRE_AUTH` | `true` | Disable only for isolated debugging. |
 | `IMPRESS_CORS_ORIGINS` | `["http://localhost:5173","http://localhost:3000"]` | Allowed browser origins. |
 

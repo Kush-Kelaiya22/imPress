@@ -11,7 +11,8 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import (
-    Attendance, ClassSession, EspDevice, StudentModule, Poll, PollVote, Quiz, QuizAnswer, QuizQuestion, Student,
+    Attendance, ClassOccurrenceException, ClassSession, EspDevice, StudentModule, Poll, PollVote, Quiz, QuizAnswer,
+    QuizQuestion, Student,
     StudentEnrollment, class_faculty,
 )
 
@@ -48,6 +49,7 @@ async def delete_class_records(db: AsyncSession, class_id: int) -> None:
     await db.execute(delete(PollVote).where(PollVote.poll_id.in_(polls)))
     await db.execute(delete(Poll).where(Poll.class_session_id == class_id))
     await db.execute(delete(Attendance).where(Attendance.class_session_id == class_id))
+    await db.execute(delete(ClassOccurrenceException).where(ClassOccurrenceException.class_session_id == class_id))
     await db.execute(delete(StudentEnrollment).where(StudentEnrollment.class_session_id == class_id))
     await db.execute(delete(class_faculty).where(class_faculty.c.class_session_id == class_id))
     await db.execute(update(StudentModule).where(StudentModule.class_session_id == class_id)
