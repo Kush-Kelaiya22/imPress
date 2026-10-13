@@ -3,7 +3,7 @@
     Activates the ESP-IDF PowerShell environment for imPress.
 .DESCRIPTION
     Discovers and dot-sources the ESP-IDF activation script or export script.
-    Checks known standard installation paths (including EIM configs, K:\esp, C:\esp, and IDF_PATH).
+    Checks IDF_PATH, the Espressif installer's (EIM) profiles and C:\esp; pass -IdfRoot <folder> for any other location.
     Sets IDF_PATH and adds IDF tools to the session PATH.
 .EXAMPLE
     . .\firmware\activate_idf.ps1
@@ -44,8 +44,7 @@ if (-not $activated -and $env:IDF_PATH -and (Test-Path "$env:IDF_PATH\export.ps1
 if (-not $activated) {
     $eimConfigPaths = @(
         "C:\Espressif\tools\eim_idf.json",
-        "$env:USERPROFILE\.espressif\eim_idf.json",
-        "K:\Espressif\tools\eim_idf.json"
+        "$env:USERPROFILE\.espressif\eim_idf.json"
     )
     foreach ($config in $eimConfigPaths) {
         if (Test-Path $config) {
@@ -71,10 +70,7 @@ if (-not $activated) {
 if (-not $activated) {
     $candidates = @(
         "C:\Espressif\tools\Microsoft.v6.1.PowerShell_profile.ps1",
-        "K:\Espressif\tools\Microsoft.v6.1.PowerShell_profile.ps1",
-        "K:\esp\v6.1\esp-idf\export.ps1",
         "C:\esp\v6.1\esp-idf\export.ps1",
-        "K:\esp-idf\export.ps1",
         "C:\esp-idf\export.ps1"
     )
     foreach ($cand in $candidates) {
