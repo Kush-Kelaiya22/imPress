@@ -2,6 +2,17 @@
 
 What to do when an update goes wrong, from the most automatic case to the most manual. Each step says how to tell it worked. Nothing here has been rehearsed on hardware yet ([hardware validation](../testing/HARDWARE_VALIDATION.md) H9, H10).
 
+
+```mermaid
+flowchart TD
+    S["Something went wrong with an update"] --> Q1{"Device running and reporting?"}
+    Q1 -- "yes, old version, rolled_back" --> A1["§1: nothing to do;<br/>fix the image, deploy a new version"]
+    Q1 -- "yes, deployment paused or timed out" --> A2["§2: read the target's reason,<br/>resume or cancel"]
+    Q1 -- "yes, but the whole fleet must go back" --> A3["§3: deploy the earlier version<br/>with allow_downgrade"]
+    Q1 -- "no: boot loop or never updates" --> A4["§4: reflash over USB<br/>(release -full.bin or idf.py flash)"]
+    S --> Q2{"Signing key lost?"} -- yes --> A5["§5: new key; reflash each device over USB"]
+    S --> Q3{"Backend upgrade broke something?"} -- yes --> A6["§6: copy the .bak database back,<br/>check out the previous release"]
+```
 ## 1. The device rolled itself back (no action needed)
 
 **You see:** the device shows `rolled_back` on the deployment, its health is *error* ("last OTA update rolled back"), and it still runs the old version.

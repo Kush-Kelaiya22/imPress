@@ -4,6 +4,22 @@ This guide puts imPress into real classrooms: one backend server, and one S3 + C
 
 ## 1. Server
 
+```mermaid
+flowchart TB
+    subgraph Room["Each classroom"]
+        M["Student modules (ESP32)"] -- "ESP-NOW mesh" --> S3["Hub (ESP32-S3)"]
+        S3 -- "SPI, in one enclosure" --> C6["Gateway (ESP32-C6)"]
+    end
+    C6 -- "Wi-Fi: HTTP(S) and WebSocket" --> API
+    subgraph Server["Server &lt;SERVER_IP&gt;"]
+        P["TLS reverse proxy :443"] --> API["imPress (uvicorn, 1 worker) :8000"]
+        API --> DB[("SQLite impress.db")]
+        API --> FW[("firmware_bins/")]
+    end
+    T["Teachers and admins"] -- HTTPS --> P
+```
+
+
 ### Host and process
 ```bash
 git clone … imPress && cd imPress
@@ -154,3 +170,25 @@ The command makes the named account an active super admin, signs out its old ses
 2. `git pull`, then `scripts/install.sh`.
 3. Restart the service. The versioned migrations run at startup: they back up the database first and stop the server with instructions if a step can't apply ([database migrations](../engineering/DATABASE_MIGRATIONS.md)). `GET /health` reports `version` and `schema_version`.
 4. Update firmware: the S3 and C6 from the [Firmware page](ota-updates.md); students over serial. Read the [changelog upgrade notes](../reference/changelog-v2.1.md#upgrade-notes) for one-time serial flashes.
+
+### From 2.1 to 2.2
+
+```mermaid
+flowchart TD
+    A["Back up the database or the impress-data volume"] --> B["Install 2.2 the same way as 2.1<br/>(scripts/install.sh, or the new container tag)"]
+    B --> C["Start: /health shows version 2.2.x"]
+    C --> D["Admin → Modules: every gateway with its own key<br/>is linked to its class"]
+    D --> E["Everyone signs in once<br/>(the session moved to a cookie)"]
+    E --> F["Hubs and gateways: deploy 2.2 from the Firmware page<br/>(in the rooms' maintenance windows)"]
+    F --> G["Student modules: flash 2.2 over USB<br/>(answer acknowledgement needs 2.2 on hub and module)"]
+```
+
+1. **Back up** as in step 1 above. 2.2 adds no database migration, but the backup is your way back.
+2. **Install and start** 2.2. Check `GET /health` from the server: `"version": "2.2.<n>"`.
+3. **Link every gateway** (*Admin → Modules*). A gateway with its own device key now records answers, votes and attendance **only for the class it is linked to**; an unlinked gateway's answers are skipped. A gateway built with `CLASSROOM_CODE` links itself when it registers.
+4. **Sign in again.** The web app keeps the session in an `HttpOnly` cookie instead of page storage, so each browser signs in once after the upgrade. Scripts that call the API keep using `Authorization: Bearer <token>`; cookie-authenticated changes from your own tools must send the header `X-Impress-Request: 1`.
+5. **Firmware.** Upload the 2.2 hub and gateway images on the *Firmware* page. The TrustedInstaller re-qualifies images registered under 2.1 automatically the first time they are needed (their reports were not sealed). Deploy as usual; hubs and gateways update in their rooms' free time.
+6. **Student modules** keep working on 2.1 firmware. To get answer acknowledgement (#181), flash 2.2 over USB once; a module only waits for confirmations from a hub that sends them.
+
+To go back, follow [recovery §6](../firmware/RECOVERY_PROCEDURE.md#6-undo-a-backend-upgrade); 2.1 ignores everything 2.2 added.
+

@@ -1,5 +1,18 @@
 # Development setup
 
+
+```mermaid
+flowchart LR
+    E["Edit code"] --> T["python run_tests.py<br/>backend, firmware host C, repo"]
+    T --> F{"firmware changed?"}
+    F -- yes --> I["run_tests.py --with-idf<br/>(ESP-IDF in Docker if not installed)"]
+    F -- no --> U
+    I --> U{"web app changed?"}
+    U -- yes --> P["run_tests.py --with-ui (Playwright)"]
+    U -- no --> C
+    P --> C["CHANGELOG entry, branch, pull request"]
+```
+
 ## Prerequisites
 
 | Tool | Version | Needed for |
@@ -85,7 +98,7 @@ Windows (PowerShell): `firmware/activate_idf.ps1` finds an ESP-IDF install (`IDF
 . .\firmware\activate_idf.ps1
 cd firmware\class_c6
 idf.py menuconfig
-idf.py -p COM19 flash monitor
+idf.py -p <SERIAL_PORT> flash monitor
 ```
 - Point `BACKEND_HOST` at your laptop's LAN IP, not `localhost`.
 - The C6 console is on its **UART** port (GPIO16/17); GPIO12/13 (native USB) are used as SPI ready lines (see [hardware](../reference/hardware.md)).

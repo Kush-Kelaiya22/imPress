@@ -16,7 +16,7 @@ Browsers must reach imPress over **HTTPS**: from version 2.1 with #152, the serv
 
 The simplest setup runs the server with [Caddy](https://caddyserver.com/) in front of it. Caddy creates its own certificate authority and serves HTTPS with no further setup.
 
-1. Save this as `compose.yaml`. Replace `192.168.137.1` with the address teachers will type (this computer's IP address on the classroom network, or its host name):
+1. Save this as `compose.yaml`. Replace `<SERVER_IP>` with the address teachers will type: this computer's IP address on the classroom network, or its host name ([how to find it](../reference/placeholders.md)):
 
    ```yaml
    services:
@@ -32,7 +32,7 @@ The simplest setup runs the server with [Caddy](https://caddyserver.com/) in fro
      https:
        image: caddy:2.10
        restart: unless-stopped
-       command: caddy reverse-proxy --from https://192.168.137.1 --to impress:8000 --internal-certs
+       command: caddy reverse-proxy --from https://<SERVER_IP> --to impress:8000 --internal-certs
        ports:
          - "443:443"            # teachers' and admins' browsers
        volumes:
@@ -60,16 +60,16 @@ The simplest setup runs the server with [Caddy](https://caddyserver.com/) in fro
 
    Then install `impress-root.crt` as a trusted root: Windows: double-click → *Install Certificate* → *Local Machine* → *Trusted Root Certification Authorities*; macOS: double-click → Keychain *System* → set *Always Trust*; Linux (Chrome/Firefox): import under *Settings → Certificates → Authorities*. Without this step the browser warns about the certificate, but the connection is still encrypted.
 
-4. Open `https://192.168.137.1` and log in as `admin`. Change the password at once: *⚙️ Settings → Change password*.
+4. Open `https://<SERVER_IP>` and log in as `admin`. Change the password at once: *⚙️ Settings → Change password*.
 
 5. Check that the server is healthy:
 
    ```bash
    docker compose ps                       # impress: healthy
-   curl -k https://192.168.137.1/health
+   curl -k https://<SERVER_IP>/health
    ```
 
-Expected result: the web app opens over `https://` from another computer on the network; opening `http://192.168.137.1:8000` from another computer shows *HTTPS required*; `/health` answers `{"status": "healthy", "version": …, "schema_version": …}`.
+Expected result: the web app opens over `https://` from another computer on the network; opening `http://<SERVER_IP>:8000` from another computer shows *HTTPS required*; `/health` answers `{"status": "healthy", "version": …, "schema_version": …}`.
 
 `IMPRESS_FORWARDED_ALLOW_IPS: "*"` lets the server believe the `X-Forwarded-Proto: https` header Caddy adds. Someone sending that header directly to port 8000 only fools the server about their *own* connection, which then stays unencrypted; it gains them nothing. If port 8000 is reachable only from the gateways' network, nothing changes.
 
@@ -98,10 +98,21 @@ Every tag points to both architectures. Release status (Beta or Stable) and the 
 
 ## Network requirements
 
+```mermaid
+flowchart LR
+    subgraph Host["Server computer &lt;SERVER_IP&gt;"]
+        C["caddy :443<br/>own certificate authority"] -- "http://impress:8000<br/>X-Forwarded-Proto: https" --> I["impress :8000<br/>volume impress-data → /data"]
+    end
+    B["Browsers"] -- "HTTPS 443" --> C
+    G["Gateways (C6)"] -- "HTTP 8000 + device key<br/>(TLS optional, #66)" --> I
+    H["Hubs (S3), during an update only"] -- "HTTP 8000" --> I
+```
+
+
 Gateways reach the server over the classroom network, so:
 
 - Publish the port on all interfaces (`-p 8000:8000`, the default). Inside the container the server already listens on `0.0.0.0`.
-- Open the port in the host firewall. On Windows (including a Mobile Hotspot network at `192.168.137.1`), run once in an administrator PowerShell:
+- Open the port in the host firewall. On Windows (including a Mobile Hotspot network), run once in an administrator PowerShell:
 
   ```powershell
   New-NetFirewallRule -DisplayName "imPress 8000" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow
