@@ -30,7 +30,8 @@ The release page lists the most common of these. Check them in order: server, th
 | Symptom | Cause | Fix |
 |---|---|---|
 | `docker pull` asks for credentials | the package is private | the repository owner makes it public once (package settings) |
-| *exec format error* or very slow start | the host is not x86_64 (for example a Raspberry Pi or an Apple silicon Mac without emulation) | use an x86_64 host, or install with `scripts/install.sh` |
+| *exec format error*, or *no matching manifest for linux/arm/v7* | a 32-bit OS (for example 32-bit Raspberry Pi OS); images exist for 64-bit `amd64` and `arm64` only (#136); images before #136 were `amd64` only | use a 64-bit OS, pull a release from #136 on, or install with `scripts/install.sh` |
+| `docker exec impress python -m app.manage …` says *No module named 'app'* | the command must run in `/app/backend` | add `-w /app/backend` |
 | The data is gone after `docker run` | the container started without the volume | always pass `-v impress-data:/data`; the database and the secrets are in that volume |
 | `docker logs` does not show the admin password | the volume already holds a database from an earlier start | use the password from that start, or see "The first admin password is lost" above |
 | `docker inspect` shows `unhealthy` | the server did not answer `/health` | `docker logs impress` shows the reason (often the TLS variables) |

@@ -14,6 +14,7 @@ guides/deployment
 guides/troubleshooting
 guides/graphify
 deployment/README
+deployment/container
 ```
 
 ```{toctree}

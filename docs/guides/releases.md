@@ -194,11 +194,12 @@ The firmware is built by the workflow from the tagged commit with the committed 
 
 Properties:
 
-- **Same dependencies as CI:** `backend/requirements-lock.txt`, hash-checked, on `python:3.12-slim` pinned by digest. `linux/amd64` only, because the lock is resolved for x86_64.
+- **Same dependencies as CI:** `backend/requirements-lock.txt`, hash-checked, on `python:3.12-slim` pinned by digest.
+- **Two architectures:** `linux/amd64` and `linux/arm64`, each built and smoke-tested natively, then joined into one multi-platform tag (#136). The helper tags `sha-<commit>-amd64` / `-arm64` are the parts; use the tags above. Guide: [container image](../deployment/container.md).
 - **Unprivileged:** runs as user `impress` (UID 10001).
 - **Data:** everything that persists is in the `/data` volume: `impress.db`, `firmware_bins/`, and `.env`. When `IMPRESS_JWT_SECRET` or `IMPRESS_DEVICE_API_KEY` is not set, the entrypoint generates them once into `/data/.env` (mode 600) and prints the device key on the first start.
 - **Health check:** `GET /health` every 30 s (`docker inspect -f '{{.State.Health.Status}}' impress`).
-- **Tested before it is pushed:** the workflow runs the image and passes `scripts/smoke_test.py` against it.
+- **Tested before it is pushed:** the workflow runs each architecture's image and passes `scripts/smoke_test.py` against it; pull requests build and smoke-test both too (CI job *Container image*). Pushes are retried on transient registry errors.
 
 Run it:
 

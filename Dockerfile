@@ -2,9 +2,12 @@
 #
 #   docker run -d --name impress -p 8000:8000 -v impress-data:/data ghcr.io/kush-kelaiya22/impress-backend:<version>
 #
-# linux/amd64 only: backend/requirements-lock.txt (the hash-checked set CI
-# tests) is resolved for x86_64. The base image is pinned by digest; update
-# the tag comment and the digest together.
+# Published for linux/amd64 and linux/arm64 (#136): the release builds each
+# natively and joins them into one tag. backend/requirements-lock.txt (the
+# hash-checked set CI tests) carries the hashes of every published wheel, so
+# the same lock installs on both. The base image is pinned by digest (a
+# multi-platform index); update the tag comment and the digest together.
+# Guide: docs/deployment/container.md
 # python:3.12-slim
 FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 
@@ -44,4 +47,5 @@ ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]
 
 LABEL org.opencontainers.image.title="imPress backend" \
       org.opencontainers.image.description="imPress classroom response system: REST API, WebSocket rooms, firmware store and web app" \
-      org.opencontainers.image.source="https://github.com/Kush-Kelaiya22/imPress"
+      org.opencontainers.image.source="https://github.com/Kush-Kelaiya22/imPress" \
+      org.opencontainers.image.documentation="https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/docs/deployment/container.md"
