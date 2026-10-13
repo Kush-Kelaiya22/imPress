@@ -10,6 +10,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Added
 
+- A design proposal for authenticating the radio messages between student modules and the hub, for review before it is built: [mesh frame authentication](docs/design/mesh-authentication.md). ([#187](https://github.com/Kush-Kelaiya22/imPress/issues/187))
 - Every release now says what its firmware is and is not: each board's folder has `BUILD_INFO.json` (commit, ESP-IDF version, chip, flash settings, image checksum) and `FLASHING.txt` (esptool commands with the offsets of that build), every download has a signed build-provenance attestation (`gh attestation verify <file> -R Kush-Kelaiya22/imPress`), and the release page states that a release image is not approved for over-the-air updates until the server's TrustedInstaller has qualified it and an administrator has approved it.
 - A classroom simulator for developers (`firmware/sim/classroom_sim.py`): student modules, a hub and a gateway exchange frames through the firmware's own protocol code, with repeatable radio and SPI faults (loss, duplicates, corruption, reordering). Its tests run in CI, including a simulated room feeding the real server. It found two ways answers can be lost ([#181](https://github.com/Kush-Kelaiya22/imPress/issues/181), [#182](https://github.com/Kush-Kelaiya22/imPress/issues/182)).
 - Quiz answers from a student module now carry the time the student took to answer, measured on the module from the moment the question arrived (it was always 0).
