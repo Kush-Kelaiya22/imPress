@@ -3,7 +3,7 @@
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
-from conftest import DEVICE_KEY, auth, login
+from conftest import DEVICE_KEY, PASSWORD, auth, login, make_user
 
 
 def _rejected(client, url):
@@ -47,10 +47,11 @@ def test_teacher_with_idle_expired_session_rejected(client, db):
 def test_inactive_user_rejected(client, db):
     from sqlalchemy import update
     from app.models import User
-    tok = login(client)
+    uid, _ = make_user(client, auth(login(client)), "tch1")
+    tok = login(client, "tch1", PASSWORD)
 
-    async def deactivate(s):
-        await s.execute(update(User).values(is_active=False))
+    async def deactivate(s):        # not the super admin: the last one can't be deactivated (#116)
+        await s.execute(update(User).where(User.id == uid).values(is_active=False))
     db(deactivate)
     assert _rejected(client, f"/ws/class/1?role=teacher&token={tok}") == 4401
 

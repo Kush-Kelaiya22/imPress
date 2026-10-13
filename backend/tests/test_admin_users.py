@@ -42,7 +42,7 @@ def test_teacher_cannot_use_admin_user_routes(client, su):
 
 def test_deactivate_rules(client, su):
     me = client.get("/api/auth/me", headers=su).json()["id"]
-    assert client.post(f"/api/admin/users/{me}/deactivate", headers=su).status_code == 400   # not yourself
+    assert client.post(f"/api/admin/users/{me}/deactivate", headers=su).status_code == 403   # not yourself (#116)
     _, admin = make_user(client, su, "adm", role="admin")
     assert client.post(f"/api/admin/users/{me}/deactivate", headers=admin).status_code == 403  # not the super admin
     assert client.post("/api/admin/users/999/deactivate", headers=su).status_code == 404
@@ -73,7 +73,7 @@ def test_admin_cannot_reset_super_admin_password(client, su):
 def test_delete_is_soft_and_guarded(client, su):
     uid, _ = make_user(client, su, "tch1")
     me = client.get("/api/auth/me", headers=su).json()["id"]
-    assert client.delete(f"/api/admin/users/{me}", headers=su).status_code == 400
+    assert client.delete(f"/api/admin/users/{me}", headers=su).status_code == 403
     assert client.delete(f"/api/admin/users/{uid}", headers=su).status_code == 200
     assert client.post("/api/auth/login", json={"username": "tch1", "password": PASSWORD}).status_code == 403
 

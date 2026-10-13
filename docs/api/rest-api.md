@@ -13,17 +13,17 @@ Base URL: `http(s)://<host>:<port>`. All bodies are JSON unless marked *multipar
 | Class access | One rule everywhere (classes, quizzes, polls, results): the **primary teacher**, any **co-faculty** member, or an **admin**. Anyone else gets 403. Primary-only actions: deleting the class. |
 | Timestamps | ISO-8601, naive **IST** (e.g. `2026-10-07T21:35:16.319308`) unless the field says otherwise |
 | Validation errors | `422` with FastAPI's `{"detail":[{"loc":[…],"msg":…,"type":…}]}` |
-| Other errors | `{"detail": "<message>"}` with the status below |
+| Other errors | `{"detail": "<message>"}` with the status below. Account rules return `{"detail": {"code": "<CODE>", "message": "<text>"}}` (codes below) |
 
 ### Error status codes
 
 | Status | Meaning in imPress |
 |---|---|
-| 400 | Business rule violated (duplicate code/username, wrong state such as "Quiz is already active", self-deactivation) |
+| 400 | Business rule violated (duplicate code/username, wrong state such as "Quiz is already active") |
 | 401 | Missing/invalid token, or an expired session: `detail: "SESSION_EXPIRED"` + header `X-Session-Code: idle|hard` |
-| 403 | Authenticated but not allowed (role, class ownership, disabled account at login, wrong device key) |
+| 403 | Authenticated but not allowed (role, class ownership, disabled account at login, wrong device key). `SELF_LOCKOUT`: deactivating, deleting or changing the role of your own account |
 | 404 | Entity not found |
-| 409 | Conflict: quiz without a current question; a section that already exists for the course; a lost race on an enrollment |
+| 409 | Conflict: quiz without a current question; a section that already exists for the course; a lost race on an enrollment. `LAST_SUPER_ADMIN`: the change would leave no active super admin |
 | 422 | Request body/params failed validation |
 
 ---
@@ -70,10 +70,10 @@ An explicit "user is active" ping. Refreshes the idle timer: `{status, last_acti
 |---|---|---|---|
 | `POST /api/admin/users` | admin | `{username (3-64), email, password (≥6), full_name, role}` | `role ∈ teacher|admin|super_admin`; granting `admin`/`super_admin` needs **super_admin**; duplicate username/email → 400 |
 | `GET /api/admin/users` | admin | `?role=` | list `UserResponse` |
-| `PUT /api/admin/users/{id}` | admin | `{full_name?, email?, is_active?, role?}` | super-admin targets need super_admin; changing your own role → 403; granting or demoting admin-level needs super_admin; unknown role → 422 |
-| `POST /api/admin/users/{id}/deactivate` | admin | – | yourself → 400; super admin by an admin → 403; their sessions stop working immediately |
+| `PUT /api/admin/users/{id}` | admin | `{full_name?, email?, is_active?, role?}` | super-admin targets need super_admin; changing your own role or `is_active: false` on yourself → 403 `SELF_LOCKOUT`; removing the last active super admin → 409 `LAST_SUPER_ADMIN`; granting or demoting admin-level needs super_admin; unknown role → 422 |
+| `POST /api/admin/users/{id}/deactivate` | admin | – | yourself → 403 `SELF_LOCKOUT`; the last active super admin → 409 `LAST_SUPER_ADMIN`; super admin by an admin → 403; their sessions stop working immediately |
 | `POST /api/admin/users/{id}/reset-password` | admin | `{new_password (≥6)}` | super admin's by an admin → 403 |
-| `DELETE /api/admin/users/{id}` | admin | – | soft delete (deactivates); yourself → 400 |
+| `DELETE /api/admin/users/{id}` | admin | – | soft delete (deactivates); yourself → 403 `SELF_LOCKOUT`; the last active super admin → 409 |
 | `POST /api/admin/users/import` | admin | *multipart* `file` (CSV) | columns `username,email,password,full_name,role` (all required); per-row errors returned; `admin` rows need super_admin |
 
 CSV import response (used by both user and student imports):

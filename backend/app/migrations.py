@@ -197,6 +197,26 @@ async def add_quiz_question_started_at(conn: AsyncConnection) -> None:
     await _add_columns(conn, {"quizzes": {"question_started_at": "DATETIME"}})
 
 
+# The last active super admin can't be deactivated, demoted or deleted (#116).
+# The count runs inside the write, so concurrent requests can't both pass:
+# SQLite serialises writers and the second one sees the first one's commit.
+_KEEP_SUPER_ADMIN = """
+CREATE TRIGGER IF NOT EXISTS {name} BEFORE {event} ON users
+WHEN OLD.role = 'super_admin' AND OLD.is_active = 1 {extra}
+ AND (SELECT COUNT(*) FROM users WHERE role = 'super_admin' AND is_active = 1 AND id <> OLD.id) = 0
+BEGIN SELECT RAISE(ABORT, 'LAST_SUPER_ADMIN'); END
+"""
+
+
+async def guard_last_super_admin(conn: AsyncConnection) -> None:
+    """Triggers that keep at least one active super admin (#116)."""
+    await conn.execute(text(_KEEP_SUPER_ADMIN.format(
+        name="users_keep_super_admin_update", event="UPDATE OF role, is_active",
+        extra="AND (NEW.role IS NOT 'super_admin' OR NEW.is_active IS NOT 1)")))
+    await conn.execute(text(_KEEP_SUPER_ADMIN.format(
+        name="users_keep_super_admin_delete", event="DELETE", extra="")))
+
+
 # Append-only. (version, name, step)
 MIGRATIONS: list[tuple[int, str, Step]] = [
     (1, "add_v2_columns", add_v2_columns),
@@ -207,6 +227,7 @@ MIGRATIONS: list[tuple[int, str, Step]] = [
     (6, "add_device_keys", add_device_keys),
     (7, "add_firmware_signer", add_firmware_signer),
     (8, "add_quiz_question_started_at", add_quiz_question_started_at),
+    (9, "guard_last_super_admin", guard_last_super_admin),
 ]
 
 LATEST = MIGRATIONS[-1][0]
