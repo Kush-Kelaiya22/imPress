@@ -11,7 +11,7 @@ from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..policy import can_grant, require, roster_access, sees_all_classes
+from ..policy import allowed, can_grant, require, roster_access, sees_all_classes
 from ..database import commit_or_conflict, get_db
 from ..models import (
     User, ClassSession, Course, Student, StudentEnrollment, EspDevice, ActivityLog, StudentModule,
@@ -1262,8 +1262,14 @@ async def admin_push_ota(
         raise HTTPException(409, f"{dt} firmware {version} is {artifact.status}; only approved images can be pushed")
     # One-device deployment (#38): same state machine, timeouts and result
     # tracking as a bulk rollout; prompts the device (or the S3's C6) now.
+    if body.ignore_schedule and not allowed(user, "firmware.override_window"):
+        raise HTTPException(403, {"code": "FORBIDDEN", "message": "Only a super admin can push outside "
+                                  "classroom maintenance windows"})
+    # Waits for the room's maintenance window like any deployment (#128): the
+    # response then shows ota_status "deferred".
     dep, excluded = await deployment_engine.create_deployment(
-        db, artifact, [dev], user_id=user.id, strategy={"canary": 1}, allow_downgrade=body.allow_downgrade)
+        db, artifact, [dev], user_id=user.id, strategy={"canary": 1, "ignore_schedule": body.ignore_schedule},
+        allow_downgrade=body.allow_downgrade)
     if dep is None:
         raise HTTPException(409, excluded[0]["reason"])
     await deployment_engine.advance(db, dep)

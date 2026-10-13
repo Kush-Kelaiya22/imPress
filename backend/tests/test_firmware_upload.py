@@ -57,7 +57,9 @@ def test_s3_ota_push_prompts_gateway_and_logs(client, db):
 
     with client.websocket_connect(f"/ws/class/{cid}?role=device&api_key={DEVICE_KEY}") as ws:
         ws.receive_json()                        # connected
-        r = client.post(f"/api/admin/modules/{s3['device_id']}/ota", headers=h, json={"version": "1.2.3"})
+        # the class is activated (in session): a super admin's override pushes now (#128)
+        r = client.post(f"/api/admin/modules/{s3['device_id']}/ota", headers=h,
+                        json={"version": "1.2.3", "ignore_schedule": True})
         assert r.status_code == 200, r.text
         frame = ws.receive_json()
     assert frame["event"] == "device_command" and frame["command"] == "ota_update"

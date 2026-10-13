@@ -7,7 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..activity import log_activity
 
-from ..policy import require
+from ..policy import allowed, require
+from ..services import maintenance
+from ..timeutil import istnow
 from ..database import commit_or_conflict, get_db
 from ..models import FirmwareArtifact, FirmwareDeployment, User
 from ..services import deployments as engine
@@ -22,6 +24,9 @@ class Strategy(BaseModel):
     max_failures: int = Field(default=0, ge=0)
     max_attempts: int = Field(default=2, ge=1, le=5)
     timeout_s: int = Field(default=900, ge=60, le=86400)
+    window_min: int = Field(default=20, ge=5, le=240)       # update + reconnect + health check + rollback (#128)
+    buffer_min: int = Field(default=10, ge=0, le=120)       # kept free before and after it
+    ignore_schedule: bool = False                           # super admin: the building is empty
 
 
 class DeploymentCreate(BaseModel):
@@ -43,7 +48,7 @@ def target_dict(t) -> dict:
             "device_type": d.device_type, "stage": t.stage, "state": t.state, "attempts": t.attempts,
             "from_version": t.from_version, "final_version": t.final_version, "error": t.error,
             "error_code": t.error_code, "started_at": t.started_at, "updated_at": t.updated_at,
-            "finished_at": t.finished_at, "is_connected": d.is_connected}
+            "finished_at": t.finished_at, "is_connected": d.is_connected, "deferred_until": t.deferred_until}
 
 
 def deployment_dict(dep: FirmwareDeployment, with_targets=True) -> dict:
@@ -85,6 +90,9 @@ async def create_deployment(
             FirmwareDeployment.idempotency_key == body.idempotency_key))).scalar_one_or_none()
         if prior is not None:
             return {"deployment": deployment_dict(prior), "excluded": [], "replayed": True}
+    if body.strategy.ignore_schedule and not allowed(user, "firmware.override_window"):
+        raise HTTPException(403, {"code": "FORBIDDEN", "message": "Only a super admin can deploy outside "
+                                  "classroom maintenance windows"})
     artifact = await db.get(FirmwareArtifact, body.artifact_id)
     if artifact is None:
         raise HTTPException(404, "Firmware not found")
@@ -103,9 +111,15 @@ async def create_deployment(
         skip = {e["device_id"] for e in excluded}
         ok = [d for d in devices if d.id not in skip]
         plan = engine.stages(len(ok), body.strategy.canary, body.strategy.batch_size)
-        return {"included": [{"device_id": d.id, "mac_address": d.mac_address, "stage": s,
-                              "from_version": d.firmware_version} for d, s in zip(ok, plan)],
-                "excluded": excluded}
+        now, st = istnow(), body.strategy
+        included = []
+        for d, s in zip(ok, plan):
+            until, why = (None, "") if st.ignore_schedule else await maintenance.next_window(
+                db, d, now, st.window_min, st.buffer_min)
+            included.append({"device_id": d.id, "mac_address": d.mac_address, "stage": s,
+                             "from_version": d.firmware_version,
+                             "window": {"now": until is None, "next_at": until, "reason": why}})
+        return {"included": included, "excluded": excluded}
     dep, excluded = await engine.create_deployment(
         db, artifact, devices, user_id=user.id, strategy=body.strategy.model_dump(),
         allow_downgrade=body.allow_downgrade, idempotency_key=body.idempotency_key)
@@ -114,7 +128,8 @@ async def create_deployment(
     await engine.advance(db, dep)                     # start the canary now
     await log_activity(db, "deployment.create", user.id, "deployment", dep.id, {
         "artifact_id": artifact.id, "target": artifact.target, "version": artifact.version,
-        "devices": len(dep.targets), "excluded": len(excluded), "kind": dep.kind})
+        "devices": len(dep.targets), "excluded": len(excluded), "kind": dep.kind,
+        "ignore_schedule": body.strategy.ignore_schedule})
     await commit_or_conflict(db, "A device was added to another deployment at the same time; retry")
     dep = await _get(db, dep.id)
     return {"deployment": deployment_dict(dep), "excluded": excluded, "replayed": False}

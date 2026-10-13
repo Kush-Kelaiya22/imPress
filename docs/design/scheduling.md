@@ -42,7 +42,7 @@ Callers treat unknown as busy (fail closed). Room codes are compared without cas
 |---|---|
 | Faculty of a class, administrators | Class page → **Schedule changes**: cancel a class, move it, or add an extra session. A moved or extra session that overlaps another booking of its room is saved with a warning. API: `GET/POST /api/classes/{id}/exceptions`, `DELETE /api/classes/{id}/exceptions/{exception_id}` |
 | Administrators | `GET /api/admin/rooms/{classroom_code}/occupancy?start=…&end=…` (at most 31 days) returns `{known, busy: [{start, end, class_id, why}]}` |
-| The OTA scheduler | asks `occupancy()` before every hub and gateway update (#128) |
+| The OTA scheduler | asks `occupancy()` before every hub and gateway update (#128): see [OTA updates → maintenance windows](../guides/ota-updates.md#maintenance-windows-for-hubs-and-gateways) |
 
 Changes imported from AURIS cannot be removed in imPress (`409 SOURCE_MANAGED`); the next import updates them.
 

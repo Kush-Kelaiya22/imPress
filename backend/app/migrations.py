@@ -217,6 +217,11 @@ async def guard_last_super_admin(conn: AsyncConnection) -> None:
         name="users_keep_super_admin_delete", event="DELETE", extra="")))
 
 
+async def add_deployment_deferral(conn: AsyncConnection) -> None:
+    """Deployment targets wait for a classroom maintenance window (#128)."""
+    await _add_columns(conn, {"deployment_targets": {"deferred_until": "DATETIME"}})
+
+
 # Append-only. (version, name, step)
 MIGRATIONS: list[tuple[int, str, Step]] = [
     (1, "add_v2_columns", add_v2_columns),
@@ -228,6 +233,7 @@ MIGRATIONS: list[tuple[int, str, Step]] = [
     (7, "add_firmware_signer", add_firmware_signer),
     (8, "add_quiz_question_started_at", add_quiz_question_started_at),
     (9, "guard_last_super_admin", guard_last_super_admin),
+    (10, "add_deployment_deferral", add_deployment_deferral),
 ]
 
 LATEST = MIGRATIONS[-1][0]

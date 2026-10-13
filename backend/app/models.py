@@ -263,6 +263,7 @@ class DeploymentTarget(Base):
     final_version = Column(String(32), default="")
     error_code = Column(Integer, nullable=True)               # esp_err_t from the device
     error = Column(String(255), default="")
+    deferred_until = Column(DateTime, nullable=True)          # deferred: look for a window again then (#128)
     started_at = Column(DateTime, nullable=True)              # current attempt
     updated_at = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)

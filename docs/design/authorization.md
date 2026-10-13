@@ -62,6 +62,7 @@ A lower ring number does **not** inherit everything automatically: each role hol
 | `students.delete` | – | ✓ | ✓ | permanently delete a student record |
 | `users.manage` | – | ✓ | ✓ | create, edit, deactivate, reactivate, reset password, delete staff accounts |
 | `users.read` | – | ✓ | ✓ | list staff accounts |
+| `firmware.override_window` | – | – | ✓ | deploy to hubs and gateways outside classroom maintenance windows (#128) |
 | `users.assign_role` | – | – | ✓ | grant or remove any role |
 | `users.manage_privileged` | – | – | ✓ | manage super admin accounts |
 
