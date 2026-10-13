@@ -216,6 +216,26 @@ Settings are the usual `IMPRESS_*` variables (`-e IMPRESS_DEVICE_KEYS_REQUIRED=t
 
 The prebuilt images contain the default settings (`impress-hotspot` Wi-Fi, a default server address and the public default key). Use them in one of three ways:
 
+### One file per board (new boards)
+
+Every release has one complete image per board (#155): bootloader, partition table, OTA data and the application, in one file that starts at address `0x0`.
+
+| Board | Release file | Command |
+|---|---|---|
+| Gateway (ESP32-C6) | `impress-<owner>-<version>-gateway-esp32c6-full.bin` | `esptool --chip esp32c6 -p <port> write-flash 0x0 impress-…-gateway-esp32c6-full.bin` |
+| Hub (ESP32-S3) | `impress-<owner>-<version>-hub-esp32s3-full.bin` | `esptool --chip esp32s3 -p <port> write-flash 0x0 impress-…-hub-esp32s3-full.bin` |
+| Student module (ESP32) | `impress-<owner>-<version>-student-esp32-full.bin` | `esptool --chip esp32 -p <port> write-flash 0x0 impress-…-student-esp32-full.bin` |
+
+1. Install esptool once: `pip install "esptool>=5"` (Windows: in PowerShell; macOS/Linux: in a terminal).
+2. Check the download against `SHA256SUMS.txt`: `sha256sum -c --ignore-missing SHA256SUMS.txt` (macOS: `shasum -a 256 -c --ignore-missing SHA256SUMS.txt`; Windows: `Get-FileHash <file> -Algorithm SHA256` and compare).
+3. Connect the board over USB and find its port: Windows `COM3`…, macOS `/dev/cu.usbserial-…` or `/dev/cu.usbmodem…`, Linux `/dev/ttyUSB0` or `/dev/ttyACM0`. The gateway is flashed through its **UART** port ([hardware](../reference/hardware.md)).
+4. Run the command for the board. Expected: `Hash of data verified.` then `Hard resetting via RTS pin...`.
+5. **The full image erases the saved settings** (the NVS area between the partition table and the application is written blank): the board starts with the release defaults. For a gateway or hub, write its settings as described [below](#write-the-settings-of-a-new-gateway-or-hub); a student module asks for its enrollment number on the first start.
+
+If esptool cannot connect, hold **BOOT**, press **RESET**, release **BOOT**, and run the command again.
+
+### Other ways
+
 1. **Over the air:** upload the gateway or hub image on the Firmware page and deploy it. The device keeps its own settings, which are in NVS.
 2. **A board that already has its settings** (it ran imPress before and its flash was not erased): flash the images. NVS is not overwritten.
 3. **A new board:** flash the images, then write a settings partition. The procedure follows.
