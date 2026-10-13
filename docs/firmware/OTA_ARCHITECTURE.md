@@ -49,6 +49,30 @@ flowchart LR
 
 The TrustedInstaller has no HTTP route and no say over user accounts; administrators cannot bypass it. Approval is separated from upload (another administrator approves, unless `IMPRESS_FIRMWARE_SINGLE_APPROVER`).
 
+## Qualification: what the TrustedInstaller tests before any device sees an image
+
+Every uploaded image gets a **qualification report** (#154, `services/qualification.py`). Approval needs `status: qualified`, and the TrustedInstaller checks the report again before every offer and download. Each stage states what it proves, and what it does not:
+
+| Stage | Where | What it proves | What it does not prove |
+|---|---|---|---|
+| 1. Image analysis | server, every upload | the chip's bootloader would load it: magic, chip ID, segments inside that chip's memory map, executable entry point, checksum byte, appended SHA-256, chip-revision range; plus imPress rules: project, version, slot size, site signature | that the code works |
+| 2. OTA client simulation | server, every upload | a Python model of the gateway/hub OTA client (`ota.c`, `ota_logic.c`) installs it through the deployment state flow, and **refuses** an interrupted download, a flipped byte, a truncated download and another chip's header without switching its boot partition | radio, timing, or real flash behaviour |
+| 3. Emulator boot test | CI, every change (*Emulator boot test*) | the hub (ESP32-S3) and student module (ESP32) firmware of that source revision boot in Espressif's QEMU from a real flash layout, run their start-up code and stay up without panic, abort, watchdog or reset | the radio, the S3↔C6 link, or the exact production binary: QEMU cannot emulate octal or QIO flash, so the emulator build (`sdkconfig.qemu`, `CONFIG_IMPRESS_EMULATOR`) changes the flash mode and skips the radio. **No emulator exists for the ESP32-C6 gateway** |
+| 4. Hardware canary | the first real device of each deployment | the image works on a real board in a real room: the next stage starts only after its health check | — |
+
+Run the emulator stage locally (Docker):
+
+```bash
+docker run --rm -v "$PWD":/repo -w /repo espressif/idf:v6.1 bash -lc '. $IDF_PATH/export.sh
+  d=$PWD/firmware/class_s3
+  idf.py -C $d -B /tmp/q -D SDKCONFIG=/tmp/q.cfg -D "SDKCONFIG_DEFAULTS=$d/sdkconfig;$d/sdkconfig.qemu" build
+  idf.py -C $d -B /tmp/q -D SDKCONFIG=/tmp/q.cfg merge-bin -o qemu-full.bin
+  python3 scripts/qemu_boot.py --machine esp32s3 --flash-mb 16 --image /tmp/q/qemu-full.bin \
+    --expect "imPress S3 Class Module" --expect "EMULATOR:" --expect "EMULATOR: alive 10 s"'
+```
+
+For the student module use `firmware/student`, `--machine esp32 --flash-mb 4` and `--expect "imPress Student Module"`. Never flash an emulator build to a board: it skips the radio.
+
 ## Per-device state machine
 
 ```mermaid

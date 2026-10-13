@@ -16,6 +16,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_system.h"   /* esp_get_free_heap_size (emulator build, #154) */
 #include "esp_efuse.h"
 #include "esp_ota_ops.h"
 
@@ -156,12 +157,17 @@ void app_main(void)
 
     /* Config first: mesh_master_init() reads g_cfg.mesh_channel. */
     init_nvs_config();
+#if CONFIG_IMPRESS_EMULATOR
+    /* QEMU boot test (#154): no radio or gateway to talk to. */
+    ESP_LOGW(TAG, "EMULATOR: ESP-NOW mesh and SPI link skipped (not emulated)");
+#else
     ESP_ERROR_CHECK(mesh_master_init());
 
     ESP_ERROR_CHECK(spi_master_init());
     mesh_master_on_receive(on_student_message);
 
     ESP_LOGI(TAG, "S3 ready — mesh root + SPI master active");
+#endif
 
     /* App rollback: an image booted for the first time after OTA is
      * PENDING_VERIFY. Only keep it once mesh + SPI came up (a crash before
@@ -174,6 +180,12 @@ void app_main(void)
         ESP_LOGI(TAG, "New firmware verified — rollback cancelled");
     }
 
+#if CONFIG_IMPRESS_EMULATOR
+    for (int n = 1;; n++) {     /* the boot test watches for this, and for any panic or reset */
+        ESP_LOGI(TAG, "EMULATOR: alive %d s, free heap %lu", n * 2, (unsigned long)esp_get_free_heap_size());
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+#else
     /* Start tasks */
     xTaskCreate(spi_link_task, "spi_link", 4096, NULL, 5, NULL);
     ota_report_boot_result();   /* queued on the SPI FIFO; the link task delivers it */
@@ -184,4 +196,5 @@ void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(10000));
         ESP_LOGI(TAG, "Students in mesh: %d", mesh_master_get_student_count());
     }
+#endif
 }

@@ -652,6 +652,7 @@ class FirmwareArtifactResponse(BaseModel):
     latest_approved: bool = False      # highest approved version for its target
     signer: str = ""                   # key digest of its signature, "" unsigned (#66)
     signed_by_site_key: Optional[bool] = None   # None when no site key is configured
+    qualification: Optional[dict] = None        # TrustedInstaller report (#154)
 
     model_config = {"from_attributes": True}
 

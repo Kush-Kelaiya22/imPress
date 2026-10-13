@@ -17,6 +17,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_system.h"   /* esp_get_free_heap_size (emulator build, #154) */
 #include "esp_random.h"
 #include "esp_efuse.h"
 #include "esp_mac.h"
@@ -240,6 +241,15 @@ void app_main(void)
         display_show_text("imPress", "ID CLEARED", "Set ID again");
         vTaskDelay(pdMS_TO_TICKS(1500));
     }
+
+#if CONFIG_IMPRESS_EMULATOR
+    /* QEMU boot test (#154): no radio to join; everything above ran for real. */
+    ESP_LOGW(TAG, "EMULATOR: ESP-NOW mesh skipped (not emulated)");
+    for (int n = 1;; n++) {
+        ESP_LOGI(TAG, "EMULATOR: alive %d s, free heap %lu", n * 2, (unsigned long)esp_get_free_heap_size());
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+#endif
 
     /* Listen on the mesh in every state. An unprovisioned device MAY receive
      * (e.g. a server profile push) but MUST NOT join until identity is set,

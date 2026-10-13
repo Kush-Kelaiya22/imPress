@@ -34,11 +34,12 @@ flowchart TB
    # image: firmware/class_s3/build/impress_class_s3.bin
    ```
 2. **Upload** (admin): `POST /api/admin/firmware` with `file=@impress_class_s3.bin`. The backend reads the target (`s3`), chip and version from the image itself. It refuses anything that isn't a valid, uncorrupted imPress image for a known chip. It also refuses a different image under a version that already exists: bump `version.txt` instead. The image is stored as `firmware_bins/<sha256>.bin`.
-3. **Approve** it (Admin → **Firmware** → *Approve*). Only approved images can be pushed. **Another administrator must approve an image you uploaded** (separation of duties, #123). A site with a single administrator sets `IMPRESS_FIRMWARE_SINGLE_APPROVER=true`; a super admin may then approve their own upload, and the activity log marks it `self_approval`. *Deprecate* retires an image for new pushes without affecting devices already running it or about to install it.
-4. **Make sure the S3 has a gateway**: its `gateway_id` must point at the room's C6 (admin "link device"). Otherwise the prompt can't be delivered.
-5. **Push**: Admin → Modules → *Push OTA* offers the approved images for that device's type. API: `POST /api/admin/modules/{s3_id}/ota {"version": "1.2.0"}`, which returns 404 if no such image exists and 409 if it isn't approved. The response shows `pending_version` and `ota_status: downloading`.
-6. **Watch:** the S3 log shows the hop, the HTTP status, the download size and the reboot. After reboot: `New firmware verified — rollback cancelled`, then `Booted after OTA to 1.2.0: running 1.2.0 (applied)`.
-7. **The result reaches the backend** through the C6 (batch `ota_result`):
+3. **Check the qualification** (#154): the Firmware page shows *qualified ✓* or *not qualified*; *History* lists each stage of the TrustedInstaller's report. An image that is not qualified can't be approved or offered. [What each stage proves](../firmware/OTA_ARCHITECTURE.md#qualification-what-the-trustedinstaller-tests-before-any-device-sees-an-image).
+4. **Approve** it (Admin → **Firmware** → *Approve*). Only approved images can be pushed. **Another administrator must approve an image you uploaded** (separation of duties, #123). A site with a single administrator sets `IMPRESS_FIRMWARE_SINGLE_APPROVER=true`; a super admin may then approve their own upload, and the activity log marks it `self_approval`. *Deprecate* retires an image for new pushes without affecting devices already running it or about to install it.
+5. **Make sure the S3 has a gateway**: its `gateway_id` must point at the room's C6 (admin "link device"). Otherwise the prompt can't be delivered.
+6. **Push**: Admin → Modules → *Push OTA* offers the approved images for that device's type. API: `POST /api/admin/modules/{s3_id}/ota {"version": "1.2.0"}`, which returns 404 if no such image exists and 409 if it isn't approved. The response shows `pending_version` and `ota_status: downloading`.
+7. **Watch:** the S3 log shows the hop, the HTTP status, the download size and the reboot. After reboot: `New firmware verified — rollback cancelled`, then `Booted after OTA to 1.2.0: running 1.2.0 (applied)`.
+8. **The result reaches the backend** through the C6 (batch `ota_result`):
 
    | Report | Device row afterwards |
    |---|---|
