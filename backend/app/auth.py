@@ -9,7 +9,7 @@ import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
@@ -84,6 +84,17 @@ async def create_session(
     await db.commit()
     await db.refresh(session)
     return session, raw_token
+
+
+async def revoke_user_sessions(db: AsyncSession, user_id: int, keep_id: Optional[int] = None) -> None:
+    """Revoke every session of a user (except `keep_id`), in the caller's
+    transaction (#118). Deactivation, deletion, password and role changes
+    call this so no token issued before the change still works, even after a
+    later reactivation."""
+    q = update(UserSession).where(UserSession.user_id == user_id, UserSession.revoked.is_(False))
+    if keep_id is not None:
+        q = q.where(UserSession.id != keep_id)
+    await db.execute(q.values(revoked=True))
 
 
 async def _load_session_by_hash(db: AsyncSession, token_hash: str) -> Optional[UserSession]:

@@ -14,6 +14,7 @@ from ..auth import (
     hash_password,
     create_session,
     oauth2_scheme,
+    revoke_user_sessions,
 )
 from ..activity import log_activity
 from ..config import settings
@@ -73,6 +74,7 @@ async def update_profile(
 @router.post("/change-password")
 async def change_password(
     body: PasswordChange,
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -81,6 +83,8 @@ async def change_password(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
 
     user.hashed_password = hash_password(body.new_password)
+    current = getattr(request.state, "session", None)
+    await revoke_user_sessions(db, user.id, keep_id=current.id if current else None)   # #118
     await log_activity(db, "auth.change_password", user.id, "user", user.id)
     await db.commit()
     return {"status": "ok", "message": "Password updated"}
