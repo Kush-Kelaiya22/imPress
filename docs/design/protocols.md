@@ -31,7 +31,7 @@ All multi-byte **payload struct fields are little-endian** (the packed C structs
 | payload | N | a packed struct (LE fields) |
 | crc | 2, BE | CRC-16/CCITT-FALSE: poly `0x1021`, init `0xFFFF`, no reflection, no xorout, computed over **TYPE + LEN + PAYLOAD** |
 
-The maximum frame is **246 bytes** (`MSG_MAX_SIZE`). On the mesh a frame travels behind the 6-byte mesh header. The largest frame actually sent over ESP-NOW is `QUIZ_QUESTION` (214 + 6 = 220 bytes), well inside ESP-NOW v1's 250-byte limit. A frame with a full 240-byte payload would need 252 bytes, which only fits ESP-NOW v2. Keep mesh payloads ≤ 238 bytes (see [known issues](../reference/known-issues.md)).
+The maximum frame is **246 bytes** (`MSG_MAX_SIZE`). On the mesh a frame travels behind the 6-byte mesh header. The largest frame actually sent over ESP-NOW is `QUIZ_QUESTION` (214 + 6 = 220 bytes), well inside ESP-NOW v1's 250-byte limit. A frame with a full 240-byte payload would need 252 bytes, which only fits ESP-NOW v2, so mesh payloads are limited to **238 bytes** (`MESH_MAX_PAYLOAD`): the student `mesh_send` and the hub's `mesh_master_broadcast` refuse anything longer, and a compile-time check keeps `MESH_HDR_BYTES` equal to the real mesh header (#170).
 
 **API:**
 - `msg_encode(type, payload, len, out, size)` returns the bytes written, or `-1` (payload > 240 or buffer too small).

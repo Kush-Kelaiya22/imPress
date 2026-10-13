@@ -218,10 +218,19 @@ static void test_json_get_string(void)
     CHECK(json_get_string(NULL, "k", out, sizeof out) == -1);
 }
 
+/* #170: a mesh message must fit ESP-NOW's 250 bytes with both headers. */
+static void test_mesh_budget(void)
+{
+    CHECK(MESH_MAX_PAYLOAD == 238);
+    CHECK(MESH_HDR_BYTES + MSG_OVERHEAD + MESH_MAX_PAYLOAD == ESPNOW_MAX_DATA);
+    CHECK(MESH_HDR_BYTES + MSG_MAX_SIZE > ESPNOW_MAX_DATA);     /* why the frame limit alone is not enough */
+}
+
 int main(void)
 {
     RUN(test_frame_roundtrip);
     RUN(test_frame_limits);
+    RUN(test_mesh_budget);
     RUN(test_record_golden_bytes);
     RUN(test_record_single);
     RUN(test_record_batch_fills_slot);

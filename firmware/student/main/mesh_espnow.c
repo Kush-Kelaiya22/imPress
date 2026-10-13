@@ -204,8 +204,14 @@ int mesh_init(uint32_t device_id)
     return 0;
 }
 
+_Static_assert(MESH_HEADER_SIZE == MESH_HDR_BYTES, "protocol.h MESH_HDR_BYTES must match mesh_header_t (#170)");
+
 int mesh_send(msg_type_t type, const uint8_t *payload, uint16_t length)
 {
+    if (length > MESH_MAX_PAYLOAD) {        /* would exceed ESP-NOW's 250 bytes with the headers (#170) */
+        ESP_LOGE(TAG, "mesh payload %u > %u bytes", (unsigned)length, (unsigned)MESH_MAX_PAYLOAD);
+        return -1;
+    }
     /* Encode the protocol message */
     uint8_t msg_buf[MSG_MAX_SIZE];
     int msg_len = msg_encode(type, payload, length, msg_buf, sizeof(msg_buf));

@@ -28,8 +28,15 @@ extern "C" {
 #define MSG_HEADER_SIZE     4       /* start(1) + type(1) + length(2) */
 #define MSG_CRC_SIZE        2
 #define MSG_OVERHEAD        (MSG_HEADER_SIZE + MSG_CRC_SIZE)  /* 6 bytes total overhead */
-#define MSG_MAX_PAYLOAD     240     /* max payload to fit ESP-NOW 250-byte limit */
+#define MSG_MAX_PAYLOAD     240     /* max payload of one frame (SPI link, direct ESP-NOW unicast) */
 #define MSG_MAX_SIZE        (MSG_OVERHEAD + MSG_MAX_PAYLOAD)  /* 246 bytes max on wire */
+
+/* A mesh broadcast adds a 6-byte routing header in front of the frame, and
+ * ESP-NOW v1 carries at most 250 bytes, so a mesh message's payload is at
+ * most 238 bytes (#170; a 240-byte payload would be 252 bytes on air). */
+#define ESPNOW_MAX_DATA     250
+#define MESH_HDR_BYTES      6       /* mesh_header_t in mesh_espnow.c / mesh_master.c */
+#define MESH_MAX_PAYLOAD    (ESPNOW_MAX_DATA - MESH_HDR_BYTES - MSG_OVERHEAD)   /* 238 */
 
 /* ── Message Types ─────────────────────────────────────────────────── */
 
