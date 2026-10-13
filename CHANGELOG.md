@@ -24,6 +24,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Added
 
+- Step-by-step first-run, administrator and teacher guides; Windows/macOS/Linux native installation and firmware flashing paths; a classroom glossary and FAQ, linked from the documentation navigation. ([#137](https://github.com/Kush-Kelaiya22/imPress/issues/137))
 - A Read the Docs-ready Sphinx/MyST documentation site with responsive navigation, full-text search, Mermaid diagrams, local build commands and an embedded revision-matched Graphify visualization.
 - A public `/graph` engineering documentation portal with searchable Markdown guides and the interactive Graphify architecture map.
 - A keyless, committed Graphify knowledge graph with Codex guidance, local hooks, validation, and automated GitHub synchronization for `varun/v2.1`.

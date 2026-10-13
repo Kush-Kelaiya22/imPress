@@ -285,6 +285,8 @@ More: [troubleshooting guide](docs/guides/troubleshooting.md), [known issues](do
 
 ## Documentation
 
+New to operating imPress? Start with the [first 30 minutes guide](docs/user-guide/README.md), then choose the [administrator](docs/user-guide/administrator.md) or [teacher](docs/user-guide/teacher.md) path. Platform installers: [Windows, macOS and Linux](docs/install/platforms.md); builders: [configure and flash the firmware](docs/install/flashing.md). See also the [glossary](docs/user-guide/glossary.md) and [FAQ](docs/user-guide/faq.md).
+
 | Area | Pages |
 |---|---|
 | **Architecture** | [System overview](docs/architecture/overview.md) · [Backend](docs/architecture/backend.md) · [Firmware](docs/architecture/firmware.md) · [Data flows](docs/architecture/data-flows.md) |
