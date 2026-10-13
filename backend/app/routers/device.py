@@ -343,6 +343,8 @@ async def check_attendance(body: DeviceAttendance, db: AsyncSession = Depends(ge
         raise HTTPException(404, "Class not found")
     if not cls.is_active:
         raise HTTPException(400, "Class is not active")
+    if caller.device is not None and await class_id_for_device(db, caller.device) != cls.id:
+        raise HTTPException(403, "this gateway is not linked to that class")
 
     # Resolve student by enrollment number (primary identity)
     roll = (body.enrollment_number or "").strip().upper()
@@ -464,7 +466,10 @@ def _ints(*values) -> bool:
     return all(isinstance(v, int) and not isinstance(v, bool) for v in values)
 
 
-async def _record_quiz_answer(db: AsyncSession, msg: dict) -> dict | None:
+_ANY_CLASS = None   # shared site key: not bound to one room
+
+
+async def _record_quiz_answer(db: AsyncSession, msg: dict, class_scope: int | None = _ANY_CLASS) -> dict | None:
     """Validate + de-duplicate one mesh quiz answer.
 
     Mesh relays can deliver the same press several times, so (quiz, question,
@@ -480,6 +485,8 @@ async def _record_quiz_answer(db: AsyncSession, msg: dict) -> dict | None:
     quiz = await db.get(Quiz, quiz_id)
     if student_id is None or quiz is None or quiz.status != "active":
         return None
+    if class_scope is not _ANY_CLASS and quiz.class_session_id != class_scope:
+        return None                                   # another room's quiz: not this gateway's to report
     question = next((q for q in quiz.questions if q.order_num == order), None)
     if question is None or not 0 <= option < len(question.options):
         return None
@@ -497,7 +504,7 @@ async def _record_quiz_answer(db: AsyncSession, msg: dict) -> dict | None:
             "quiz_id": quiz_id, "question_order": order}
 
 
-async def _record_poll_vote(db: AsyncSession, msg: dict) -> dict | None:
+async def _record_poll_vote(db: AsyncSession, msg: dict, class_scope: int | None = _ANY_CLASS) -> dict | None:
     """Validate + de-duplicate one mesh poll vote ((poll, student) is unique)."""
     poll_id, option = msg.get("poll_id"), msg.get("selected_option")
     if not _ints(poll_id, option):
@@ -505,6 +512,8 @@ async def _record_poll_vote(db: AsyncSession, msg: dict) -> dict | None:
     student_id = await _resolve_student_id_by_enrollment(db, msg)
     poll = await db.get(Poll, poll_id)
     if student_id is None or poll is None or poll.status != "active":
+        return None
+    if class_scope is not _ANY_CLASS and poll.class_session_id != class_scope:
         return None
     if not 0 <= option < len(poll.options):
         return None
@@ -583,6 +592,12 @@ async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db
     touched_device_ids: list[int] = []
     participation: list[dict] = []
     denied: dict[str, str | None] = {}
+    # A gateway with its own key reports for the class it is linked to, and
+    # only that one (as its WebSocket, #121): answers, votes and room links
+    # for another class are skipped. -1 = linked to no class: nothing matches.
+    scope = _ANY_CLASS
+    if caller.device is not None:
+        scope = await class_id_for_device(db, caller.device) or -1
     for msg in body.messages:
         msg_type = msg.get("type", "")
         # #66: a relayed message is accepted only for a gateway the caller may
@@ -653,6 +668,8 @@ async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db
             else:
                 cls = None
 
+            if cls and scope is not _ANY_CLASS and cls.id != scope:
+                cls = None                            # a room code that is not this gateway's class
             if cls:
                 # Identity is the enrollment number — we deliberately do NOT bind
                 # student device MACs here (no physical tracking).
@@ -710,7 +727,7 @@ async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db
 
         elif msg_type in ("quiz_answer", "poll_vote"):
             record = _record_quiz_answer if msg_type == "quiz_answer" else _record_poll_vote
-            event = await record(db, msg)
+            event = await record(db, msg, scope)
             if event is None:
                 skipped += 1
             else:

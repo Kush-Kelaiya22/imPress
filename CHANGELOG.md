@@ -10,6 +10,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Security
 
+- A gateway with its own device key now records answers, votes, attendance and room links only for the class it is linked to; for any other class they are skipped or refused.
 - A firmware image's qualification report is now sealed by the server and bound to the image's exact bytes and build. A report edited in the database, or copied from another image, is no longer trusted: the TrustedInstaller recomputes it from the image before approval, offers and downloads.
 - The web app no longer keeps the login token where page scripts can read it: the session is an `HttpOnly`, `SameSite=Strict` cookie (`Secure` over HTTPS). Changes made with it need the app's `X-Impress-Request` header (cross-site request forgery). After upgrading, everyone signs in once more. Scripts keep using `Authorization: Bearer`.
 - The live class page's connection no longer carries the session token in its URL, where proxies and servers log it; it uses the cookie, and a connection opened from another website is refused.
