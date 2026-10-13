@@ -7,13 +7,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, 
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..policy import allowed, require
 from ..database import get_db
 from ..models import User, ClassSession, Student, StudentEnrollment
 from ..schemas import (
     StudentCreate, StudentUpdate, StudentResponse, StudentRegister, BulkStudentRegister,
     CsvImportResult, CsvImportError,
 )
-from ..auth import require_teacher_or_admin
+
 from ..services.records import erase_student
 from ..activity import log_activity
 
@@ -62,7 +63,7 @@ async def _create_one(
 @router.post("/", response_model=StudentResponse, status_code=201)
 async def create_student(
     body: StudentCreate,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("students.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin or faculty creates a student in the universal registry."""
@@ -80,7 +81,7 @@ async def create_student(
 @router.post("/bulk", response_model=list[StudentResponse], status_code=201)
 async def bulk_create_students(
     body: BulkStudentRegister,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("students.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Create many students at once (optionally enroll in a class)."""
@@ -122,7 +123,7 @@ async def bulk_create_students(
 
 @router.get("/", response_model=list[StudentResponse])
 async def list_students(
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("students.read")),
     db: AsyncSession = Depends(get_db),
     search: str = Query("", description="Match roll number or name"),
 ):
@@ -140,7 +141,7 @@ async def list_students(
 @router.get("/{student_id}", response_model=StudentResponse)
 async def get_student(
     student_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("students.read")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Student).where(Student.id == student_id))
@@ -154,7 +155,7 @@ async def get_student(
 async def update_student(
     student_id: int,
     body: StudentUpdate,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("students.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Student).where(Student.id == student_id))
@@ -182,7 +183,7 @@ async def update_student(
 @router.delete("/{student_id}")
 async def deactivate_student(
     student_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("students.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Soft-delete a student (deactivate)."""
@@ -199,14 +200,14 @@ async def deactivate_student(
 @router.delete("/{student_id}/hard-delete")
 async def hard_delete_student(
     student_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("students.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Permanently delete a student record and its related rows.
     Requires admin (removing records is irreversible).
     """
-    if user.role not in ("admin", "super_admin"):
+    if not allowed(user, "students.delete"):
         raise HTTPException(403, "Only admins can permanently delete a student record")
 
     result = await db.execute(select(Student).where(Student.id == student_id))
@@ -230,7 +231,7 @@ async def hard_delete_student(
 @router.get("/{student_id}/classes")
 async def student_classes(
     student_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("students.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Which classrooms is this student enrolled in?"""
@@ -283,7 +284,7 @@ _PHONE_RE = re.compile(r"^[\d\-+() ]{7,15}$")
 async def import_students_csv(
     file: UploadFile = File(...),
     class_session_id: int = Form(None),
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("students.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -494,7 +495,7 @@ async def import_students_csv(
 async def import_students_to_class_csv(
     class_id: int,
     file: UploadFile = File(...),
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("students.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """

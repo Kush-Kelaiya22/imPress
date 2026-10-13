@@ -1,8 +1,8 @@
-"""Account lifecycle rules shared by every route that changes a user (#116).
+"""Account lifecycle: shared by every route that changes a user (#116-#119).
 
-The database triggers from migration 9 are the real guard for "at least one
-active super admin"; this module turns their abort into a 409 and refuses
-changes an administrator makes to their own account that would lock them out.
+Who may do what is decided by policy.account_refusal() (#122). The database
+triggers from migration 9 are the real guard for "at least one active super
+admin"; commit() turns their abort into a 409.
 """
 
 from fastapi import HTTPException
@@ -11,20 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import revoke_user_sessions
 from ..models import User
+from ..policy import account_refusal
 
 
 def error(status: int, code: str, message: str) -> HTTPException:
     """An HTTP error with a machine-readable code: {"detail": {"code", "message"}}."""
     return HTTPException(status, {"code": code, "message": message})
-
-
-def refuse_self_lockout(actor: User, target: User, *, deactivate=False, delete=False, role=None) -> None:
-    """No one can deactivate, delete or change the role of their own account."""
-    if actor.id != target.id:
-        return
-    if deactivate or delete or (role is not None and role != target.role):
-        action = "delete" if delete else "deactivate" if deactivate else "change the role of"
-        raise error(403, "SELF_LOCKOUT", f"You cannot {action} your own account")
 
 
 async def revoke(db: AsyncSession, target: User) -> None:
@@ -98,34 +90,23 @@ async def delete_user(db: AsyncSession, target: User) -> None:
     db.expunge(target)
 
 
-# ── Who may do what to an account (#119) ─────────────────────────────────
-# One rule used by the routes and by GET /api/admin/users (allowed_actions),
-# so the web app shows exactly the buttons the server will accept.
+# ── Who may do what to an account (#119, #122) ───────────────────────────
+# The rule itself is policy.account_refusal(); the routes enforce it and
+# GET /api/admin/users returns allowed_actions from it, so the web app shows
+# exactly the buttons the server will accept.
 
 ACTIONS = ("edit", "deactivate", "reactivate", "change_role", "reset_password", "delete")
 
 
 def check(actor: User, target: User, action: str) -> None:
-    """Raise 403 unless `actor` (an admin or super admin) may do `action` to `target`."""
-    if target.role == "super_admin" and actor.role != "super_admin":
-        raise error(403, "FORBIDDEN_TARGET", "Only a super admin can manage a super admin")
-    if action in ("deactivate", "delete", "change_role"):
-        refuse_self_lockout(actor, target, deactivate=action == "deactivate",
-                            delete=action == "delete", role="" if action == "change_role" else None)
-    if action == "change_role" and actor.role != "super_admin":
-        # every role change involves an admin-level role (teacher ↔ admin ↔ super_admin)
-        raise error(403, "FORBIDDEN_ROLE", "Only a super admin can change roles")
+    """Raise 403 unless `actor` may do `action` to `target`."""
+    refusal = account_refusal(actor, target, action)
+    if refusal is not None:
+        raise refusal
 
 
 def allowed_actions(actor: User, target: User) -> list[str]:
     """The actions `check` would allow, minus the ones that make no sense now."""
-    out = []
-    for action in ACTIONS:
-        if (action == "deactivate" and not target.is_active) or (action == "reactivate" and target.is_active):
-            continue
-        try:
-            check(actor, target, action)
-        except Exception:
-            continue
-        out.append(action)
-    return out
+    return [a for a in ACTIONS
+            if not (a == "deactivate" and not target.is_active) and not (a == "reactivate" and target.is_active)
+            and account_refusal(actor, target, a) is None]

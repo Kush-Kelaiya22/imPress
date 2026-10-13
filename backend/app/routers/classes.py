@@ -5,10 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..policy import class_access, class_owner_or_admin, require, sees_all_classes
 from ..database import get_db
 from ..models import User, ClassSession, StudentEnrollment, EspDevice
 from ..schemas import ClassCreate, ClassJoin, ClassResponse, DeviceTreeResponse, DeviceTreeNode
-from ..auth import require_teacher_or_admin
+
 from ..activity import log_activity
 from ..schedule import find_schedule_conflicts
 from ..services.presence import presence_snapshot
@@ -29,15 +30,6 @@ async def _reload_class(db: AsyncSession, class_id: int) -> ClassSession:
     """Re-select a class after mutation so selectin relationships load in the async context."""
     result = await db.execute(select(ClassSession).where(ClassSession.id == class_id))
     return result.scalar_one()
-
-
-def _has_access(cls: ClassSession, user: User) -> bool:
-    """Primary teacher, any secondary faculty, or any admin may work with the class."""
-    if user.role in ("admin", "super_admin"):
-        return True
-    if user.role == "teacher":
-        return cls.teacher_id == user.id or any(f.id == user.id for f in (cls.faculty or []))
-    return False
 
 
 def _to_response(cls: ClassSession, student_count: int = 0, warnings: list | None = None) -> ClassResponse:
@@ -88,11 +80,11 @@ def _to_response(cls: ClassSession, student_count: int = 0, warnings: list | Non
 
 @router.get("/", response_model=list[ClassResponse])
 async def list_classes(
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("classes.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Teacher sees only assigned classes. Admin sees all (use /admin/classes)."""
-    if user.role in ("admin", "super_admin"):
+    if sees_all_classes(user):
         result = await db.execute(select(ClassSession).order_by(ClassSession.id.desc()))
     else:
         # Primary teacher OR any secondary faculty (many-to-many) sees the class
@@ -117,7 +109,7 @@ async def list_classes(
 @router.post("/", response_model=ClassResponse, status_code=201)
 async def create_class(
     body: ClassCreate,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("classes.create")),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new classroom (assigned to self). Admin should use /admin/classes."""
@@ -159,14 +151,14 @@ async def create_class(
 @router.get("/{class_id}", response_model=ClassResponse)
 async def get_class(
     class_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("classes.read")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ClassSession).where(ClassSession.id == class_id))
     cls = result.scalar_one_or_none()
     if not cls:
         raise HTTPException(404, "Class not found")
-    if not _has_access(cls, user):
+    if not class_access(user, cls):
         raise HTTPException(403, "You don't have access to this class")
     sc = await _count_students(db, cls.id)
     return _to_response(cls, sc)
@@ -175,7 +167,7 @@ async def get_class(
 @router.get("/{class_id}/presence")
 async def class_presence(
     class_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("classes.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Live presence snapshot for all ESP devices in this class."""
@@ -183,7 +175,7 @@ async def class_presence(
     cls = result.scalar_one_or_none()
     if not cls:
         raise HTTPException(404, "Class not found")
-    if not _has_access(cls, user):
+    if not class_access(user, cls):
         raise HTTPException(403, "You don't have access to this class")
     return await presence_snapshot(db, class_id)
 
@@ -191,14 +183,14 @@ async def class_presence(
 @router.post("/{class_id}/activate", response_model=ClassResponse)
 async def activate_class(
     class_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("classes.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ClassSession).where(ClassSession.id == class_id))
     cls = result.scalar_one_or_none()
     if not cls:
         raise HTTPException(404, "Class not found")
-    if not _has_access(cls, user):
+    if not class_access(user, cls):
         raise HTTPException(403, "You don't have access to this class")
 
     cls.is_active = True
@@ -212,14 +204,14 @@ async def activate_class(
 @router.post("/{class_id}/deactivate", response_model=ClassResponse)
 async def deactivate_class(
     class_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("classes.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ClassSession).where(ClassSession.id == class_id))
     cls = result.scalar_one_or_none()
     if not cls:
         raise HTTPException(404, "Class not found")
-    if not _has_access(cls, user):
+    if not class_access(user, cls):
         raise HTTPException(403, "You don't have access to this class")
 
     cls.is_active = False
@@ -233,7 +225,7 @@ async def deactivate_class(
 @router.post("/join", response_model=ClassResponse)
 async def join_class(
     body: ClassJoin,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("classes.join")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ClassSession).where(ClassSession.code == body.code))
@@ -247,7 +239,7 @@ async def join_class(
     # replaced here: knowing a (shared, short) join code must not transfer
     # ownership. Re-assigning the primary teacher is an admin action
     # (/api/admin/classes/{id}/assign-teacher).
-    if user.role == "teacher" and not _has_access(cls, user):
+    if not class_access(user, cls):
         cls.faculty.append(user)
         await log_activity(db, "class.join_via_code", user.id, "class", cls.id,
                            {"as": "co-faculty"})
@@ -261,14 +253,14 @@ async def join_class(
 @router.delete("/{class_id}")
 async def delete_class(
     class_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("classes.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ClassSession).where(ClassSession.id == class_id))
     cls = result.scalar_one_or_none()
     if not cls:
         raise HTTPException(404, "Class not found")
-    if user.role not in ("admin", "super_admin") and cls.teacher_id != user.id:
+    if not class_owner_or_admin(user, cls):
         raise HTTPException(403, "Only the primary teacher or admin can delete this class")
 
     await log_activity(db, "class.delete", user.id, "class", class_id, {"name": cls.name})
@@ -285,7 +277,7 @@ live_router = APIRouter(prefix="/api/devices", tags=["devices", "live"])
 @live_router.get("/live")
 async def list_live_devices(
     class_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("classes.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Latest ESP device presence for a class.
@@ -299,7 +291,7 @@ async def list_live_devices(
     cls = result.scalar_one_or_none()
     if not cls:
         raise HTTPException(404, "Class not found")
-    if not _has_access(cls, user):
+    if not class_access(user, cls):
         raise HTTPException(403, "You don't have access to this class")
     return await presence_snapshot(db, class_id)
 
@@ -307,7 +299,7 @@ async def list_live_devices(
 @live_router.get("/tree", response_model=DeviceTreeResponse)
 async def get_device_tree(
     class_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("classes.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Device tree (relay topology) for a class.
@@ -319,7 +311,7 @@ async def get_device_tree(
     cls = result.scalar_one_or_none()
     if not cls:
         raise HTTPException(404, "Class not found")
-    if not _has_access(cls, user):
+    if not class_access(user, cls):
         raise HTTPException(403, "You don't have access to this class")
 
     if not cls.device_id:

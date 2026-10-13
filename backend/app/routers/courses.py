@@ -4,10 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..policy import allowed, require
 from ..database import get_db
 from ..models import Course, ClassSession
 from ..schemas import CourseCreate, CourseUpdate, CourseResponse
-from ..auth import require_admin, require_teacher_or_admin
+
 from ..activity import log_activity
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
@@ -16,7 +17,7 @@ router = APIRouter(prefix="/api/courses", tags=["courses"])
 @router.post("/", response_model=CourseResponse, status_code=201)
 async def create_course(
     body: CourseCreate,
-    user=Depends(require_admin),
+    user=Depends(require("courses.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin creates a course in the universal catalog."""
@@ -46,12 +47,12 @@ async def create_course(
 
 @router.get("/", response_model=list[CourseResponse])
 async def list_courses(
-    user=Depends(require_teacher_or_admin),
+    user=Depends(require("courses.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """List all courses (admins see inactive too; faculty see active)."""
     q = select(Course).order_by(Course.code)
-    if user.role not in ("admin", "super_admin"):
+    if not allowed(user, "courses.manage"):
         q = q.where(Course.is_active == True)  # noqa: E712
     result = await db.execute(q)
     return result.scalars().all()
@@ -60,7 +61,7 @@ async def list_courses(
 @router.get("/{course_id}", response_model=CourseResponse)
 async def get_course(
     course_id: int,
-    user=Depends(require_teacher_or_admin),
+    user=Depends(require("courses.read")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Course).where(Course.id == course_id))
@@ -74,7 +75,7 @@ async def get_course(
 async def update_course(
     course_id: int,
     body: CourseUpdate,
-    user=Depends(require_admin),
+    user=Depends(require("courses.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Course).where(Course.id == course_id))
@@ -106,7 +107,7 @@ async def update_course(
 @router.delete("/{course_id}")
 async def delete_course(
     course_id: int,
-    user=Depends(require_admin),
+    user=Depends(require("courses.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Soft-delete: deactivate the course. Refuse if sections still reference it."""

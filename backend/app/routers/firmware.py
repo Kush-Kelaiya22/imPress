@@ -12,7 +12,8 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..activity import log_activity
-from ..auth import require_admin
+
+from ..policy import require
 from ..database import commit_or_conflict, get_db
 from ..models import ActivityLog, EspDevice, FirmwareArtifact, User
 from ..schemas import FirmwareArtifactResponse
@@ -89,7 +90,7 @@ async def upload_firmware_image(
     file: UploadFile = File(...),
     channel: str = Form("stable"),
     release_notes: str = Form(""),
-    user: User = Depends(require_admin),
+    user: User = Depends(require("firmware.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Upload a firmware image. Target, chip and version are read from the
@@ -103,7 +104,7 @@ async def upload_firmware_form(
     device_type: str = Form(...),
     version: str = Form(...),
     file: UploadFile = File(...),
-    user: User = Depends(require_admin),
+    user: User = Depends(require("firmware.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Pre-v2.1 form upload, kept for scripts: device_type and version must
@@ -116,7 +117,7 @@ async def upload_firmware_form(
 @router.get("", response_model=list[FirmwareArtifactResponse])
 async def list_firmware(
     target: str = Query("", description="c6 | s3 | student"),
-    user: User = Depends(require_admin),
+    user: User = Depends(require("firmware.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Every registered image, newest version first per target, with how many
@@ -132,7 +133,7 @@ async def list_firmware(
 @router.get("/{artifact_id}")
 async def firmware_detail(
     artifact_id: int,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("firmware.read")),
     db: AsyncSession = Depends(get_db),
 ):
     """One image: metadata, the devices running / pending it, and its history
@@ -163,7 +164,7 @@ async def firmware_detail(
 async def update_firmware(
     artifact_id: int,
     body: FirmwareUpdate,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("firmware.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Edit channel / release notes. The binary itself is immutable."""
@@ -179,7 +180,7 @@ async def update_firmware(
 @router.post("/{artifact_id}/approve", response_model=FirmwareArtifactResponse)
 async def approve_firmware(
     artifact_id: int,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("firmware.approve")),
     db: AsyncSession = Depends(get_db),
 ):
     """Allow this image to be pushed to devices."""
@@ -195,7 +196,7 @@ async def approve_firmware(
 @router.post("/{artifact_id}/deprecate", response_model=FirmwareArtifactResponse)
 async def deprecate_firmware(
     artifact_id: int,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("firmware.approve")),
     db: AsyncSession = Depends(get_db),
 ):
     """Stop offering this image for new pushes. Devices already running it,
@@ -212,7 +213,7 @@ async def deprecate_firmware(
 @router.delete("/{artifact_id}")
 async def delete_firmware(
     artifact_id: int,
-    user: User = Depends(require_admin),
+    user: User = Depends(require("firmware.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete an image that nothing needs. Refused (409) while it is approved,

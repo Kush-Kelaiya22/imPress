@@ -83,7 +83,7 @@ backend/app/
 - `routers/polls.py`     — polls with modes
 - `routers/device.py`    — ESP32 register / heartbeat / attendance / batch
 - `activity.py`          — `log_activity()` helper used across routers
-- `auth.py`              — JWT + `require_admin` / `require_super_admin` / `require_teacher_or_admin`
+- `auth.py`              — sessions; permissions are in `policy.py` (`require("<permission>")`, #122)
 
 ## Running
 

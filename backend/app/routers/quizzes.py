@@ -8,18 +8,17 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..policy import class_access, require
 from ..database import commit_or_conflict, get_db
 from ..models import User, ClassSession, Quiz, QuizQuestion, QuizAnswer, EspDevice
 from ..schemas import QuizCreate, QuizResponse, QuizAnswerSubmit, QuestionImportReport, question_warnings
 from ..services.csv_import import read_upload, text_key
 from ..services.question_import import TEMPLATE, parse_questions
 from ..services import quiz_timer
-from ..auth import get_current_user, require_teacher_or_admin
 from ..ws.manager import manager
 from ..activity import log_activity
 from ..timeutil import istnow
 from ..device_auth import DeviceCaller, authorize, device_caller
-from .classes import _has_access
 
 router = APIRouter(prefix="/api/quizzes", tags=["quizzes"])
 
@@ -30,7 +29,7 @@ async def _verify_class_access(class_id: int, user: User, db: AsyncSession) -> C
     if not cls:
         raise HTTPException(404, "Class not found")
     # Same rule as the class routes: primary teacher, co-faculty or admin.
-    if not _has_access(cls, user):
+    if not class_access(user, cls):
         raise HTTPException(403, "You don't have access to this class")
     return cls
 
@@ -65,7 +64,7 @@ async def question_csv_template():
 @router.post("/questions/parse", response_model=QuestionImportReport)
 async def parse_question_csv(
     file: UploadFile = File(...),
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("assessments.manage")),
 ):
     """Validate a question CSV and return a per-row preview. Stores nothing:
     the create-quiz form loads the valid rows for the teacher to review."""
@@ -77,7 +76,7 @@ async def import_question_csv(
     quiz_id: int,
     file: UploadFile = File(...),
     dry_run: bool = Query(True, description="validate only; pass false to store"),
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("assessments.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Append questions from a CSV to a draft quiz.
@@ -126,7 +125,7 @@ async def import_question_csv(
 @router.post("/", response_model=QuizResponse, status_code=201)
 async def create_quiz(
     body: QuizCreate,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("assessments.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a quiz. Can be planned (started later) or impromptu (started immediately)."""
@@ -188,7 +187,7 @@ async def create_quiz(
 @router.get("/class/{class_id}", response_model=list[QuizResponse])
 async def list_quizzes(
     class_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("participation.read")),
     db: AsyncSession = Depends(get_db),
 ):
     await _verify_class_access(class_id, user, db)
@@ -201,7 +200,7 @@ async def list_quizzes(
 @router.get("/{quiz_id}", response_model=QuizResponse)
 async def get_quiz(
     quiz_id: int,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require("participation.read")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Quiz).where(Quiz.id == quiz_id))
@@ -217,7 +216,7 @@ async def get_quiz(
 @router.post("/{quiz_id}/start", response_model=QuizResponse)
 async def start_quiz(
     quiz_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("assessments.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Make a planned quiz live — sends question 0 to all devices."""
@@ -254,7 +253,7 @@ async def start_quiz(
 @router.post("/{quiz_id}/stop", response_model=QuizResponse)
 async def stop_quiz(
     quiz_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("assessments.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Quiz).where(Quiz.id == quiz_id))
@@ -286,7 +285,7 @@ async def stop_quiz(
 @router.post("/{quiz_id}/next", response_model=QuizResponse)
 async def next_question(
     quiz_id: int,
-    user: User = Depends(require_teacher_or_admin),
+    user: User = Depends(require("assessments.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Advance to the next question, or complete the quiz after the last one.
@@ -389,7 +388,7 @@ async def submit_answer(
 @router.get("/{quiz_id}/results")
 async def quiz_results(
     quiz_id: int,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require("participation.read")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Quiz).where(Quiz.id == quiz_id))
