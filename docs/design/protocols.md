@@ -126,9 +126,45 @@ One **standard full-duplex** SPI transfer (mode 0, MOSI/MISO, S3 = master) of ex
 **Queues and timing.**
 
 - **Outgoing FIFOs:** each side queues outgoing payloads in an 8-slot FIFO (`spi_slot_fifo_t`). Back-to-back frames are delivered in order instead of overwriting each other.
-- **S3:** clocks one slot every `SPI_POLL_INTERVAL_MS` (50 ms), and immediately when it queues something. It removes a payload from its FIFO only after the transfer succeeded.
+- **S3:** clocks one slot every `SPI_POLL_INTERVAL_MS` (50 ms), and immediately when it queues something. It removes a payload from its FIFO only once it is delivered (below).
 - **C6:** keeps exactly one transaction armed. Every 2 ms, whether Wi-Fi is up or not, it reaps the completed slot, loads the next FIFO entry into the (now free) DMA buffer and re-arms.
-- **Payload size:** a C6 frame therefore reaches the S3 within one poll interval. Payloads up to `SPI_SLOT_PAYLOAD_MAX` (4092 bytes).
+- **Payload size:** a C6 frame therefore reaches the S3 within one poll interval. Payloads up to `SPI_SLOT_PAYLOAD_MAX` − 8 (4084 bytes): the last 8 bytes are kept for the link trailer.
+
+### Acknowledged slots (#182)
+
+A slot that fails its CRC used to be lost with everything in it (up to about 110 answers), and so did a slot the S3 clocked while the C6 had not re-armed yet: both sides dropped a payload as soon as it was clocked. Each side now appends an 8-byte **trailer** to its payload (`firmware/protocol/spi_link.c`, host-tested in `test_spi_link.c`):
+
+```
+┌──────────────────┬───────┬─────┬───────────┬─────┐
+│ FF FF 5A A5      │ epoch │ seq │ ack_epoch │ ack │
+└──────────────────┴───────┴─────┴───────────┴─────┘
+```
+
+| Field | Meaning |
+|---|---|
+| `epoch` | random at every boot, never 0: a peer that rebooted starts a new numbering |
+| `seq` | number of the payload this slot carries (1–255), 0 = trailer only |
+| `ack_epoch`, `ack` | the last `seq` received intact, and the peer epoch it belongs to |
+
+```mermaid
+sequenceDiagram
+    participant S as S3 (master)
+    participant C as C6 (slave, slot armed in advance)
+    S->>C: slot N: records + trailer seq 7
+    Note over C: CRC fails: nothing delivered, no ack
+    C-->>S: (C6's armed slot, ack 6)
+    S->>C: slot N+1: the same records, seq 7 (not acknowledged yet)
+    Note over C: delivered once, rx_last = 7
+    C-->>S: armed before N+1: still ack 6
+    S->>C: slot N+2: seq 7 again
+    Note over C: repeat of 7: acknowledged, not delivered again
+    C-->>S: ack 7
+    Note over S: payload 7 leaves the FIFO
+```
+
+- A side keeps its FIFO head, sending it again in every exchange, until the peer acknowledges its `seq`; the receiver delivers each `seq` once. Because the C6 prepares its slot one exchange ahead, a payload normally crosses the link twice before it is retired (stop-and-wait: throughput halves, far above classroom rates).
+- **Compatibility:** the S3 always sends trailers; the C6 sends them only after it has received one, so an old S3 never gets one. Old firmware ignores the trailer: it starts with `FF FF`, which an old C6's record parser reads as an over-long record and an old S3's frame decoder rejects. Until a side has heard its peer's trailer it keeps the old rule (drop once clocked), so a slot corrupted in the first exchanges after boot, while both queues are normally still empty, can still be lost.
+- **Simulation:** `firmware/sim/classroom_sim.py` runs `spi_link.c` on both ends: with a third of the slots in each direction corrupted, 300 answers arrive exactly once (`--old-spi` shows the losses without it).
 
 ---
 
