@@ -72,6 +72,18 @@ The **Deployments** list shows progress and refreshes itself while a rollout run
 
 ![Deployments list](../assets/ui/deployments-list.png)
 
+### Maintenance windows for hubs and gateways
+
+A hub (S3) or gateway (C6) update takes its room offline for a few minutes, so it starts only when the room has no class (#128):
+
+- **when:** before the first class, after the last, or in a gap long enough for the update window (default 20 min) plus a buffer of 10 min before and after;
+- **what counts as a class:** the room's weekly timetable with its [schedule changes](../design/scheduling.md) (cancelled, moved, extra sessions), an **activated** class, and a live quiz or poll;
+- **checked again before every device:** a class added after the deployment was created still blocks it;
+- **fail closed:** if the timetable is out of date (an AURIS import older than `IMPRESS_SCHEDULE_MAX_AGE_HOURS`), the device waits;
+- a device not linked to any class (a spare on a bench) has no class to disturb and updates at once.
+
+A device that must wait shows **deferred** with the reason and the next check time; it starts by itself when its window comes. The preview lists the devices that will wait. A super admin can start at once with *Start now even if a room has a class* (`ignore_schedule`), only when the building is empty; the activity log records it.
+
 ## Safety properties
 
 | Property | Mechanism |

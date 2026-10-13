@@ -2444,6 +2444,9 @@ async function showDeployDialog(artifact, onDone) {
         <div class="form-group"><label for="dep-fail">Failures allowed per stage</label><input type="number" id="dep-fail" min="0" value="0" /></div>
       </div>
       <label class="text-sm check-row"><input type="checkbox" id="dep-downgrade" /> Allow downgrading devices on a newer version (rollback)</label>
+      <label class="text-sm check-row"><input type="checkbox" id="dep-ignore-schedule" /> Start now even if a room has a class (super admin only: the building must be empty)</label>
+      <p class="text-sm text-muted">Hubs and gateways update only when their room has no class, with a 10-minute buffer
+        before and after (#128). Devices outside that window wait and start by themselves.</p>
       <div id="dep-plan" class="mt-1" aria-live="polite"></div>
       <div class="flex gap-1 mt-1">
         <button class="btn btn-outline" id="dep-preview">Preview</button>
@@ -2469,7 +2472,8 @@ async function showDeployDialog(artifact, onDone) {
     const b = {
       artifact_id: artifact.id, allow_downgrade: $('#dep-downgrade').checked,
       strategy: { canary: Number($('#dep-canary').value), batch_size: Number($('#dep-batch').value),
-                  max_concurrent: Number($('#dep-conc').value), max_failures: Number($('#dep-fail').value) },
+                  max_concurrent: Number($('#dep-conc').value), max_failures: Number($('#dep-fail').value),
+                  ignore_schedule: $('#dep-ignore-schedule').checked },
     };
     if (m === 'pick') b.device_ids = [...modal.querySelectorAll('#dep-pick input:checked')].map(i => Number(i.value));
     if (m === 'all') b.all_compatible = true;
@@ -2484,6 +2488,9 @@ async function showDeployDialog(artifact, onDone) {
       $('#dep-plan').innerHTML = `
         <p class="text-sm"><strong>${plan.included.length}</strong> device(s) in ${stages} stage(s)
           ${plan.included.length ? `(canary: ${plan.included.filter(x => x.stage === 0).length})` : ''}.</p>
+        ${plan.included.some(x => x.window && !x.window.now) ? `<p class="text-sm">Waiting for a maintenance window:</p>
+          <ul class="text-sm">${plan.included.filter(x => x.window && !x.window.now).map(x =>
+            `<li>${escHtml(x.mac_address)}: ${escHtml(x.window.reason)}</li>`).join('')}</ul>` : ''}
         ${plan.excluded.length ? `<p class="text-sm">Excluded:</p><ul class="text-sm">${plan.excluded.map(e =>
           `<li>${escHtml(e.mac_address)}: ${escHtml(e.reason)}</li>`).join('')}</ul>` : ''}`;
       $('#dep-start').disabled = plan.included.length === 0;
@@ -2516,7 +2523,9 @@ async function showDeploymentDetails(id) {
           <td>${t.stage === 0 ? 'canary' : t.stage}</td>
           <td><span class="badge badge-sm">${escHtml(t.state)}</span>${t.attempts > 1 ? ` <span class="text-sm text-muted">attempt ${t.attempts}</span>` : ''}</td>
           <td>${escHtml(t.device_name || t.mac_address)} <span class="text-muted text-sm">${escHtml(t.from_version)} → ${escHtml(t.final_version || d.version)}</span>
-            ${t.error ? `<div class="text-danger text-sm">${escHtml(t.error)}${t.error_code ? ` (0x${t.error_code.toString(16)})` : ''}</div>` : ''}</td>
+            ${t.state === 'deferred'
+              ? `<div class="text-muted text-sm">Waiting for the room: ${escHtml(t.error)}${t.deferred_until ? ` · next check ${escHtml(String(t.deferred_until).replace('T', ' ').slice(0, 16))}` : ''}</div>`
+              : t.error ? `<div class="text-danger text-sm">${escHtml(t.error)}${t.error_code ? ` (0x${t.error_code.toString(16)})` : ''}</div>` : ''}</td>
         </tr>`).join('')}</tbody>
       </table></div>
       <button class="btn btn-outline mt-1" id="dep-details-close">Close</button>

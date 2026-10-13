@@ -299,7 +299,8 @@ def test_activation_prompts_the_device_through_its_gateway(client, db, h):
     db(link)
     with client.websocket_connect(f"/ws/class/{cid}?role=device&api_key={DEVICE_KEY}") as ws:
         ws.receive_json()
-        _deploy(client, h, device_ids=[s3])
+        # the class is activated (in session): only a super admin's override sends it now (#128)
+        _deploy(client, h, device_ids=[s3], strategy={"ignore_schedule": True})
         frame = ws.receive_json()
     assert frame["command"] == "ota_update"
     assert frame["payload"] == {"device_type": "s3", "version": "2.2.0", "mac_address": _mac(1)}

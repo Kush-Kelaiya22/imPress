@@ -4,7 +4,8 @@ Per device (DeploymentTarget.state):
 
     waiting ─► queued ─► precheck ─► downloading ─► verifying ─► installing ─► rebooting ─► health_check
        │          │                                                                              │
-       │          └──► cancelled (only before an unsafe step)                         success ◄──┤
+       │          └──► cancelled (only before an unsafe step)
+       ├─► deferred ─► waiting   (hub/gateway: no maintenance window yet, #128)                         success ◄──┤
        │                                                                          rolled_back ◄──┤
        └─ (later stage)        any active state ──► failed / timed_out / unreachable / incompatible
 
@@ -31,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import ActivityLog, ClassSession, DeploymentTarget, EspDevice, FirmwareArtifact, FirmwareDeployment
 from ..timeutil import istnow
-from . import trusted_installer
+from . import maintenance, trusted_installer
 from .mesh_bridge import send_command_to_devices
 
 log = logging.getLogger(__name__)
@@ -41,11 +42,13 @@ ACTIVE = tuple(FLOW[1:])                       # offered the update, not finishe
 FINAL = ("success", "rolled_back", "failed", "cancelled", "timed_out", "incompatible", "unreachable")
 FAILURES = ("rolled_back", "failed", "timed_out", "unreachable")
 RETRYABLE = ("failed", "timed_out", "unreachable")
-CANCELLABLE = ("waiting", "queued", "precheck")  # nothing written to flash yet
+CANCELLABLE = ("waiting", "deferred", "queued", "precheck")  # nothing written to flash yet
 DEVICE_STATES = set(FLOW[2:]) | {"success", "rolled_back", "failed"}   # what a device may report
 
 DEFAULT_STRATEGY = {"canary": 1, "batch_size": 5, "max_concurrent": 5, "max_failures": 0,
                     "max_attempts": 2, "timeout_s": 900,
+                    "window_min": 20, "buffer_min": 10,       # maintenance window for hubs/gateways (#128)
+                    "ignore_schedule": False,                # super admin only: an empty building
                     "ack_through_stage": -1}   # stages whose failures an admin accepted (resume)
 
 SWEEP_INTERVAL_S = 5
@@ -270,6 +273,8 @@ async def advance(db: AsyncSession, dep: FirmwareDeployment) -> None:
     for t in targets:                                      # bounded retries
         if t.state in RETRYABLE and t.attempts < st["max_attempts"]:
             t.state = "waiting"
+        elif t.state == "deferred" and (t.deferred_until is None or t.deferred_until <= now):
+            t.state, t.error = "waiting", ""                 # its window may have come: check again
 
     stage_nums = sorted({t.stage for t in targets})
     current = next((s for s in stage_nums if any(t.stage == s and t.state not in FINAL for t in targets)), None)
@@ -293,6 +298,12 @@ async def advance(db: AsyncSession, dep: FirmwareDeployment) -> None:
     for t in (t for t in targets if t.stage == current and t.state == "waiting"):
         if active >= st["max_concurrent"]:
             break
+        if not st["ignore_schedule"]:                 # re-checked before every offer (#128)
+            until, why = await maintenance.next_window(db, t.device, now, st["window_min"], st["buffer_min"])
+            if until is not None:
+                t.state, t.deferred_until, t.error, t.updated_at = "deferred", until, why, now
+                t.device.ota_status = "deferred"
+                continue
         await _offer(db, t, artifact, dep.requested_by)
         active += 1
 

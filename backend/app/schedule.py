@@ -183,16 +183,19 @@ async def schedule_is_current(db: AsyncSession, now: datetime) -> bool:
 
 
 async def occupancy(db: AsyncSession, classroom_code: str, start: datetime, end: datetime,
-                    now: datetime | None = None) -> list[Busy] | None:
-    """Booked intervals of a room overlapping [start, end), or None if unknown."""
+                    now: datetime | None = None, class_id: int | None = None) -> list[Busy] | None:
+    """Booked intervals of a room overlapping [start, end), or None if unknown.
+    With no room code, `class_id` limits it to that one class's own timetable."""
     from .models import ClassOccurrenceException
     from .timeutil import istnow
     code = (classroom_code or "").strip().lower()
-    if not code or not await schedule_is_current(db, now or istnow()):
+    if (not code and class_id is None) or not await schedule_is_current(db, now or istnow()):
         return None
     classes = (await db.execute(select(ClassSession))).scalars().all()
-    by_id = {c.id: c for c in classes}
     rooms = {c.id: (c.classroom_code or "").strip().lower() for c in classes}
+    if not code:                                   # one class without a room: match it alone
+        code = f"class:{class_id}"
+        rooms = {cid: (code if cid == class_id else "") for cid in rooms}
     first, last = start.date() - timedelta(days=1), end.date()    # an overnight slot can start the day before
     exceptions = (await db.execute(select(ClassOccurrenceException).where(
         (ClassOccurrenceException.date.between(first, last))
@@ -220,8 +223,7 @@ async def occupancy(db: AsyncSession, classroom_code: str, start: datetime, end:
     for e in exceptions:
         if e.kind not in ("moved", "extra"):
             continue
-        cls = by_id.get(e.class_session_id)
-        room = (e.classroom_code or (cls.classroom_code if cls else "") or "").strip().lower()
+        room = (e.classroom_code or "").strip().lower() or rooms.get(e.class_session_id, "")
         span = _span(e.new_date or e.date, e.new_start, e.new_end)
         if room == code and span:
             busy.append(Busy(*span, e.class_session_id, e.kind))

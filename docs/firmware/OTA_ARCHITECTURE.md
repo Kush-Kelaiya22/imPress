@@ -87,6 +87,9 @@ Rules (all enforced by `deployments.report()` and tested in `test_deployments.py
 - **Cancellation is safe.** Only `waiting`, `queued` and `precheck` are cancelled, because nothing has been written to flash yet. Devices further along finish and report.
 - **Server-observed progress.** `firmware/check` moves `queued → precheck` and returns the image's SHA-256 and size. Serving the download moves it to `downloading`.
 
+
+**Deferred (#128).** A hub or gateway target whose room has a class (timetable, schedule changes, an activated class or a live quiz or poll) or an unknown timetable goes `waiting → deferred` with `deferred_until` and the reason in `error`. At that time it returns to `waiting` and the window is checked again before it is offered. `deferred` is not an active state (it uses no concurrency slot) and can be cancelled. Window: `window_min` (20) + `buffer_min` (10) before and after, from the deployment's strategy; `ignore_schedule` (super admin) skips it. Code: `services/maintenance.py`.
+
 ## Staged rollout
 
 ```mermaid

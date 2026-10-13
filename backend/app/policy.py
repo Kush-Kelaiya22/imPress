@@ -58,6 +58,7 @@ ADMINISTRATION = frozenset({
 SUPER = frozenset({
     "users.assign_role",     # grant or remove any role
     "users.manage_privileged",  # manage admin and super admin accounts' credentials
+    "firmware.override_window",  # deploy to hubs/gateways outside classroom downtime (#128)
 })
 
 GRANTS: dict[str, frozenset[str]] = {

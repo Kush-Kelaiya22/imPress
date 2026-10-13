@@ -657,6 +657,7 @@ class FirmwareArtifactResponse(BaseModel):
 class ModuleOtaRequest(BaseModel):
     version: str = Field(min_length=1, max_length=32)
     allow_downgrade: bool = False   # confirm a rollback to an older version (#37)
+    ignore_schedule: bool = False   # super admin: push outside the room's maintenance window (#128)
 
 
 class ClassDevicesResponse(BaseModel):
