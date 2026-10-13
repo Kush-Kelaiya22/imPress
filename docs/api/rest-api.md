@@ -73,7 +73,7 @@ An explicit "user is active" ping. Refreshes the idle timer: `{status, last_acti
 | `PUT /api/admin/users/{id}` | admin | `{full_name?, email?, is_active?, role?}` | super-admin targets need super_admin; changing your own role or `is_active: false` on yourself → 403 `SELF_LOCKOUT`; removing the last active super admin → 409 `LAST_SUPER_ADMIN`; granting or demoting admin-level needs super_admin; unknown role → 422 |
 | `POST /api/admin/users/{id}/deactivate` | admin | – | yourself → 403 `SELF_LOCKOUT`; the last active super admin → 409 `LAST_SUPER_ADMIN`; super admin by an admin → 403; their sessions stop working immediately |
 | `POST /api/admin/users/{id}/reset-password` | admin | `{new_password (≥6)}` | super admin's by an admin → 403 |
-| `DELETE /api/admin/users/{id}` | admin | – | soft delete (deactivates); yourself → 403 `SELF_LOCKOUT`; the last active super admin → 409 |
+| `DELETE /api/admin/users/{id}` | admin | – | **permanent** delete → `204`; primary teacher of a class → 409 `USER_OWNS_CLASSES`; yourself → 403 `SELF_LOCKOUT`; the last active super admin → 409. Retention rules: [security model → data handling](../design/security-model.md#data-handling). To keep the account, use `/deactivate` |
 | `POST /api/admin/users/import` | admin | *multipart* `file` (CSV) | columns `username,email,password,full_name,role` (all required); per-row errors returned; `admin` rows need super_admin |
 
 CSV import response (used by both user and student imports):
