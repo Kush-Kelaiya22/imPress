@@ -9,7 +9,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `509f4be6`
+- Built from commit: `6cc20ccc`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -601,8 +601,8 @@ _Questions this graph is uniquely positioned to answer:_
   _High betweenness centrality (0.080) - this node is a cross-community bridge._
 - **Why does `select()` connect `Community 14` to `Community 0`, `Community 1`, `Community 2`, `Community 5`, `Community 9`, `Community 12`, `Community 13`, `Community 15`, `Community 16`, `Community 17`, `Community 22`, `Community 25`, `Community 28`, `Community 29`, `Community 30`, `Community 31`, `Community 34`, `Community 37`, `Community 42`, `Community 44`, `Community 46`, `Community 47`, `Community 49`, `Community 50`, `Community 51`, `Community 53`, `Community 57`, `Community 58`, `Community 62`, `Community 63`, `Community 64`, `Community 68`, `Community 76`?**
   _High betweenness centrality (0.054) - this node is a cross-community bridge._
-- **Why does `login()` connect `Community 0` to `Community 2`, `Community 17`, `Community 22`, `Community 25`, `Community 31`, `Community 33`, `Community 34`, `Community 37`, `Community 38`, `Community 40`, `Community 44`, `Community 47`, `Community 51`, `Community 57`, `Community 58`, `Community 64`, `Community 66`, `Community 68`, `Community 74`, `Community 76`, `Community 77`, `Community 83`, `Community 90`, `Community 93`?**
-  _High betweenness centrality (0.032) - this node is a cross-community bridge._
+- **Why does `User` connect `Community 5` to `Community 0`, `Community 1`, `Community 2`, `Community 35`, `Community 66`, `Community 38`, `Community 40`, `Community 9`, `Community 12`, `Community 13`, `Community 14`, `Community 15`, `Community 47`, `Community 50`, `Community 22`, `Community 28`, `Community 29`, `Community 30`?**
+  _High betweenness centrality (0.034) - this node is a cross-community bridge._
 - **Are the 157 inferred relationships involving `select()` (e.g. with `_load_session_by_hash()` and `validate_session()`) actually correct?**
   _`select()` has 157 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 125 inferred relationships involving `User` (e.g. with `create_session()` and `get_current_user()`) actually correct?**
