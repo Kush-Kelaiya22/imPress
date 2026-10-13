@@ -110,6 +110,8 @@ If resets persist on `v2`, log `esp_reset_reason()` at boot and run a soak with 
 | a gateway linked to the wrong class / presence shows the wrong root | fixed by #17 for new registrations; repair existing rows by re-registering the C6 with its `classroom_code` or admin re-link |
 | sessions expire unexpectedly | 60 min idle / 6 h hard by default; polling doesn't count as activity (by design) |
 | `database is locked` | multiple workers or external writers; run **one** uvicorn worker |
+| nobody can manage users (all super admins disabled or deleted) | run `python -m app.manage restore-super-admin --username <name>` on the server: [deployment → recovering administrator access](deployment.md#recovering-administrator-access) |
+| "This is the last active super admin" (409) | promote or reactivate another super admin first; the last one can't be deactivated, demoted or deleted (#116) |
 | timestamps look 5:30 off | the DB stores naive IST; legacy UTC rows → `backend/migrate_utc_to_ist.py` |
 
 ## Collecting evidence for a bug report
