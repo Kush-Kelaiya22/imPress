@@ -34,7 +34,7 @@ flowchart TB
    # image: firmware/class_s3/build/impress_class_s3.bin
    ```
 2. **Upload** (admin): `POST /api/admin/firmware` with `file=@impress_class_s3.bin`. The backend reads the target (`s3`), chip and version from the image itself. It refuses anything that isn't a valid, uncorrupted imPress image for a known chip. It also refuses a different image under a version that already exists: bump `version.txt` instead. The image is stored as `firmware_bins/<sha256>.bin`.
-3. **Approve** it (Admin → **Firmware** → *Approve*). Only approved images can be pushed. *Deprecate* retires an image for new pushes without affecting devices already running it or about to install it.
+3. **Approve** it (Admin → **Firmware** → *Approve*). Only approved images can be pushed. **Another administrator must approve an image you uploaded** (separation of duties, #123). A site with a single administrator sets `IMPRESS_FIRMWARE_SINGLE_APPROVER=true`; a super admin may then approve their own upload, and the activity log marks it `self_approval`. *Deprecate* retires an image for new pushes without affecting devices already running it or about to install it.
 4. **Make sure the S3 has a gateway**: its `gateway_id` must point at the room's C6 (admin "link device"). Otherwise the prompt can't be delivered.
 5. **Push**: Admin → Modules → *Push OTA* offers the approved images for that device's type. API: `POST /api/admin/modules/{s3_id}/ota {"version": "1.2.0"}`, which returns 404 if no such image exists and 409 if it isn't approved. The response shows `pending_version` and `ota_status: downloading`.
 6. **Watch:** the S3 log shows the hop, the HTTP status, the download size and the reboot. After reboot: `New firmware verified — rollback cancelled`, then `Booted after OTA to 1.2.0: running 1.2.0 (applied)`.
@@ -78,6 +78,8 @@ The **Deployments** list shows progress and refreshes itself while a rollout run
 |---|---|
 | A crashing image can't brick the hub | `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` + mark-valid only after mesh + SPI init |
 | Only images an admin pushed can be fetched | `/firmware/download` requires `version == pending_version` of that device |
+| Nothing reaches a device without the TrustedInstaller's own checks (#123) | before every offer and every download: approved, built for this device type **and** chip, signed with the site key (or the site accepts unsigned images), and the stored file still matches its SHA-256. A refusal fails that target with `refused by TrustedInstaller: <reason>` |
+| The uploader is not the only approver | approval by another administrator, unless `IMPRESS_FIRMWARE_SINGLE_APPROVER=true` (super admin only) |
 | No path traversal in the store | strict semver + a fixed device-type set |
 | A no-op prompt doesn't disturb the class | no update → detach and continue, no reboot |
 | Partial download | `esp_ota_end` validates the image; on error → abort and detach |
@@ -86,7 +88,7 @@ The **Deployments** list shows progress and refreshes itself while a rollout run
 
 ## Signing images
 
-Recommended for production (#66). Unsigned, a device installs any image that passes the integrity checks. That means anyone who can get a file accepted (an admin account, the shared key on an older backend, or a machine in the middle of the HTTP download) could ship code to hubs and gateways. Signed, each device checks every update against **your** public key in `esp_ota_end()`, and the backend refuses images that aren't signed with it before any device sees them.
+Recommended for production (#66). **Without a site key, the backend deploys nothing** until the site decides: either set up signing (below), or accept unsigned images explicitly with `IMPRESS_FIRMWARE_ALLOW_UNSIGNED=true` (#123; `IMPRESS_DEBUG=true` implies it). Excluded devices show the reason in the deployment preview. Unsigned, a device installs any image that passes the integrity checks. That means anyone who can get a file accepted (an admin account, the shared key on an older backend, or a machine in the middle of the HTTP download) could ship code to hubs and gateways. Signed, each device checks every update against **your** public key in `esp_ota_end()`, and the backend refuses images that aren't signed with it before any device sees them.
 
 The scheme is ESP-IDF's "signed app images without hardware Secure Boot" (RSA-3072, Secure Boot V2 format):
 - **Bootloader and eFuses:** the bootloader is not changed and no eFuse is burned.

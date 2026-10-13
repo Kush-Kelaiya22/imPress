@@ -85,7 +85,7 @@ def test_incompatible_and_ineligible_devices_are_excluded_with_reasons(client, d
     r = _deploy(client, h, device_ids=[ok, c6, student, same, newer, disabled]).json()
     assert [t["device_id"] for t in r["deployment"]["targets"]] == [ok]
     reasons = {e["device_id"]: e["reason"] for e in r["excluded"]}
-    assert "can't run a s3 image" in reasons[c6] and "can't run a s3 image" in reasons[student]
+    assert "can't run a s3" in reasons[c6] and "can't run a s3" in reasons[student]
     assert reasons[same] == "already running 2.2.0"
     assert "would downgrade 3.0.0 → 2.2.0" in reasons[newer]
     assert reasons[disabled] == "device is disabled"

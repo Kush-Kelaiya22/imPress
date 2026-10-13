@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import ActivityLog, ClassSession, DeploymentTarget, EspDevice, FirmwareArtifact, FirmwareDeployment
 from ..timeutil import istnow
-from .firmware_signing import site_key_digest
+from . import trusted_installer
 from .mesh_bridge import send_command_to_devices
 
 log = logging.getLogger(__name__)
@@ -89,15 +89,13 @@ async def select_devices(db: AsyncSession, artifact: FirmwareArtifact, *, device
 
 async def exclusion_reason(db: AsyncSession, artifact: FirmwareArtifact, device: EspDevice,
                            allow_downgrade: bool) -> str | None:
-    if (device.device_type or "").lower() != artifact.target:
-        return f"incompatible: a {device.device_type} device can't run a {artifact.target} image"
-    if device.device_type == "student":
+    if device.device_type == "student" and artifact.target == "student":
         return "no over-the-air path to student modules yet (update over serial)"
     if not device.is_active:
         return "device is disabled"
-    site = site_key_digest()
-    if site and artifact.signer != site:
-        return "image is not signed with the site firmware key (#66)"
+    refused = trusted_installer.refusal(artifact, device)
+    if refused:
+        return refused
     if device.firmware_version == artifact.version:
         return f"already running {artifact.version}"
     current, target = semver(device.firmware_version), semver(artifact.version)
@@ -231,8 +229,18 @@ async def _route_class(db: AsyncSession, device: EspDevice) -> int | None:
 
 
 async def _offer(db: AsyncSession, t: DeploymentTarget, artifact: FirmwareArtifact, user_id) -> None:
-    """Make the update available to the device and prompt it."""
+    """Make the update available to the device and prompt it, if the
+    TrustedInstaller still agrees: the image or the site key may have changed
+    since the deployment was created (#123)."""
     now = istnow()
+    refused = trusted_installer.refusal(artifact, t.device)
+    if refused:
+        t.attempts += 1
+        _finish(t, "failed", f"refused by TrustedInstaller: {refused}")
+        _sync_device(t)
+        db.add(ActivityLog(action="deployment.ti_refused", user_id=user_id, entity_type="device",
+                           entity_id=t.device_id, details={"deployment_id": t.deployment_id, "reason": refused}))
+        return
     t.state, t.attempts, t.started_at, t.updated_at = "queued", t.attempts + 1, now, now
     t.finished_at, t.error, t.error_code = None, "", None
     d = t.device

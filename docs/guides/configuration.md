@@ -21,7 +21,9 @@ Environment variables with prefix **`IMPRESS_`**, or a `.env` file in the workin
 | `IMPRESS_INITIAL_ADMIN_PASSWORD` | empty | First-run admin password; empty = random, logged once. |
 | `IMPRESS_FIRMWARE_DIR` | `./firmware_bins` | OTA image store. |
 | `IMPRESS_SSL_CERTFILE`, `IMPRESS_SSL_KEYFILE` | empty | read by `scripts/start.sh`, not the app: both set → uvicorn serves HTTPS/WSS itself (#66). Alternatively terminate TLS at a reverse proxy. |
-| `IMPRESS_FIRMWARE_SIGNING_KEY` | empty | Path to the site's firmware **public** key (PEM, from `scripts/firmware_key.sh`). Set: uploads must be signed with it and other images are never deployed (#66). Empty: signatures are recorded but not required. |
+| `IMPRESS_FIRMWARE_SIGNING_KEY` | empty | Path to the site's firmware **public** key (PEM, from `scripts/firmware_key.sh`). Set: uploads must be signed with it and other images are never deployed (#66). Empty: signatures are recorded, and images are deployed only when `IMPRESS_FIRMWARE_ALLOW_UNSIGNED=true` (#123). |
+| `IMPRESS_FIRMWARE_ALLOW_UNSIGNED` | `false` | Without a signing key: `true` lets the TrustedInstaller deploy unsigned images (a lab or a site that accepts the risk). `IMPRESS_DEBUG=true` implies it (#123). |
+| `IMPRESS_FIRMWARE_SINGLE_APPROVER` | `false` | `true`: a super admin may approve a firmware image they uploaded themselves (a site with one administrator). Otherwise another administrator must approve it (#123). |
 | `IMPRESS_WS_REQUIRE_AUTH` | `true` | Disable only for isolated debugging. |
 | `IMPRESS_CORS_ORIGINS` | `["http://localhost:5173","http://localhost:3000"]` | Allowed browser origins. |
 

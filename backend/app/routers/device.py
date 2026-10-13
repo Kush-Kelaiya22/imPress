@@ -14,7 +14,7 @@ from ..schemas import DeviceRegister, DeviceHeartbeat, DeviceStatusPing, DeviceA
 from ..device_auth import DeviceCaller, authorize, denial, device_caller, new_device_key
 from ..services.presence import class_id_for_device, mark_online, _push_after_commit
 from ..services.firmware_store import artifact_file, resolve as resolve_firmware
-from ..services import deployments as deployment_engine, quiz_timer, student_modules
+from ..services import deployments as deployment_engine, quiz_timer, student_modules, trusted_installer
 from ..timeutil import istnow, istnow_aware
 from ..ws.manager import manager
 
@@ -311,6 +311,9 @@ async def firmware_download(mac_address: str, version: str,
     artifact = await resolve_firmware(db, (device.device_type or "").lower(), version, include_deprecated=True)
     if artifact is None:
         raise HTTPException(404, f"No registered {device.device_type} firmware {version}")
+    refused = trusted_installer.refusal(artifact, device, continuing=True)    # #123
+    if refused:
+        raise HTTPException(403, f"Refused by TrustedInstaller: {refused}")
     path = artifact_file(artifact)
     await deployment_engine.observe_download(db, device)     # at least 'downloading' now
     await db.commit()
