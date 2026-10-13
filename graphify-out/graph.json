@@ -1,5 +1,5 @@
 {
-  "built_at_commit": "a2fe4a66d826704e33134c3d43444281ef47f547",
+  "built_at_commit": "cbf09c29a44aef2a547ab53d590b453c42b67744",
   "directed": false,
   "graph": {},
   "hyperedges": [],
@@ -79247,7 +79247,7 @@
       "relation": "contains",
       "source": "tests_test_release",
       "source_file": "tests/test_release.py",
-      "source_location": "L488",
+      "source_location": "L489",
       "target": "tests_test_release_test_release_is_built_from_a_tested_image_and_firmware",
       "weight": 1.0
     },
@@ -79258,7 +79258,7 @@
       "relation": "contains",
       "source": "tests_test_release",
       "source_file": "tests/test_release.py",
-      "source_location": "L506",
+      "source_location": "L515",
       "target": "tests_test_release_test_ci_requires_a_changelog_entry_on_pull_requests",
       "weight": 1.0
     },
@@ -79269,7 +79269,7 @@
       "relation": "contains",
       "source": "tests_test_release",
       "source_file": "tests/test_release.py",
-      "source_location": "L515",
+      "source_location": "L524",
       "target": "tests_test_release_test_actions_are_pinned_to_commit_shas",
       "weight": 1.0
     },
@@ -79280,7 +79280,7 @@
       "relation": "contains",
       "source": "tests_test_release",
       "source_file": "tests/test_release.py",
-      "source_location": "L525",
+      "source_location": "L534",
       "target": "tests_test_release_test_dockerfile_is_pinned_unprivileged_and_health_checked",
       "weight": 1.0
     },
@@ -79291,7 +79291,7 @@
       "relation": "contains",
       "source": "tests_test_release",
       "source_file": "tests/test_release.py",
-      "source_location": "L534",
+      "source_location": "L543",
       "target": "tests_test_release_test_build_context_is_an_allow_list",
       "weight": 1.0
     },
@@ -102616,6 +102616,13 @@
       "confidence": "EXTRACTED",
       "relation": "contains",
       "source": "impress_component_documentation",
+      "target": "impress_documentation_docs_deployment_container_md"
+    },
+    {
+      "_origin": "repository_catalog",
+      "confidence": "EXTRACTED",
+      "relation": "contains",
+      "source": "impress_component_documentation",
       "target": "impress_documentation_docs_design_decisions_md"
     },
     {
@@ -115508,7 +115515,7 @@
       "label": "test_actions_are_pinned_to_commit_shas()",
       "norm_label": "test_actions_are_pinned_to_commit_shas()",
       "source_file": "tests/test_release.py",
-      "source_location": "L515"
+      "source_location": "L524"
     },
     {
       "_callable": true,
@@ -115532,7 +115539,7 @@
       "label": "test_build_context_is_an_allow_list()",
       "norm_label": "test_build_context_is_an_allow_list()",
       "source_file": "tests/test_release.py",
-      "source_location": "L534"
+      "source_location": "L543"
     },
     {
       "_callable": true,
@@ -115568,7 +115575,7 @@
       "label": "test_ci_requires_a_changelog_entry_on_pull_requests()",
       "norm_label": "test_ci_requires_a_changelog_entry_on_pull_requests()",
       "source_file": "tests/test_release.py",
-      "source_location": "L506"
+      "source_location": "L515"
     },
     {
       "_callable": true,
@@ -115580,7 +115587,7 @@
       "label": "test_dockerfile_is_pinned_unprivileged_and_health_checked()",
       "norm_label": "test_dockerfile_is_pinned_unprivileged_and_health_checked()",
       "source_file": "tests/test_release.py",
-      "source_location": "L525"
+      "source_location": "L534"
     },
     {
       "_callable": true,
@@ -115676,7 +115683,7 @@
       "label": "test_release_is_built_from_a_tested_image_and_firmware()",
       "norm_label": "test_release_is_built_from_a_tested_image_and_firmware()",
       "source_file": "tests/test_release.py",
-      "source_location": "L488"
+      "source_location": "L489"
     },
     {
       "_callable": true,
@@ -140127,6 +140134,18 @@
       "community_name": "Community 6",
       "external": true,
       "file_type": "concept",
+      "id": "assert",
+      "label": "assert",
+      "norm_label": "assert",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "_origin": "semantic",
+      "community": 6,
+      "community_name": "Community 6",
+      "external": true,
+      "file_type": "concept",
       "id": "crypto",
       "label": "crypto",
       "norm_label": "crypto",
@@ -140238,6 +140257,18 @@
       "id": "esp_system",
       "label": "esp_system",
       "norm_label": "esp_system",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "_origin": "semantic",
+      "community": 6,
+      "community_name": "Community 6",
+      "external": true,
+      "file_type": "concept",
+      "id": "esp_tls_errors",
+      "label": "esp_tls_errors",
+      "norm_label": "esp_tls_errors",
       "source_file": "",
       "type": "external"
     },
@@ -140386,28 +140417,6 @@
       "type": "external"
     },
     {
-      "community": 6,
-      "community_name": "Community 6",
-      "external": true,
-      "file_type": "concept",
-      "id": "assert",
-      "label": "assert",
-      "norm_label": "assert",
-      "source_file": "",
-      "type": "external"
-    },
-    {
-      "community": 6,
-      "community_name": "Community 6",
-      "external": true,
-      "file_type": "concept",
-      "id": "esp_tls_errors",
-      "label": "esp_tls_errors",
-      "norm_label": "esp_tls_errors",
-      "source_file": "",
-      "type": "external"
-    },
-    {
       "_origin": "repository_catalog",
       "id": "impress_component_backend",
       "label": "Python/FastAPI backend",
@@ -140448,6 +140457,13 @@
       "label": "Configuration",
       "source_file": "repository catalog",
       "type": "component"
+    },
+    {
+      "_origin": "repository_catalog",
+      "id": "impress_documentation_docs_deployment_container_md",
+      "label": "docs/deployment/container.md",
+      "source_file": "docs/deployment/container.md",
+      "type": "documentation"
     },
     {
       "_origin": "repository_catalog",

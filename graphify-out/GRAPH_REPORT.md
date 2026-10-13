@@ -9,7 +9,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `a2fe4a66`
+- Built from commit: `cbf09c29`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -609,11 +609,11 @@ Nodes (3): fixture, Three rooms, each with a v2.1.0 gateway; a c6 2.2.0 image ap
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `istnow()` connect `Community 7` to `Community 0`, `Community 1`, `Community 5`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 16`, `Community 26`, `Community 27`, `Community 28`, `Community 30`, `Community 34`, `Community 36`, `Community 43`, `Community 51`, `Community 54`, `Community 55`, `Community 69`, `Community 75`, `Community 81`, `Community 95`?**
-  _High betweenness centrality (0.056) - this node is a cross-community bridge._
+  _High betweenness centrality (0.051) - this node is a cross-community bridge._
 - **Why does `select()` connect `Community 13` to `Community 0`, `Community 1`, `Community 4`, `Community 7`, `Community 11`, `Community 14`, `Community 15`, `Community 16`, `Community 22`, `Community 23`, `Community 26`, `Community 27`, `Community 28`, `Community 30`, `Community 31`, `Community 34`, `Community 36`, `Community 37`, `Community 41`, `Community 42`, `Community 43`, `Community 45`, `Community 48`, `Community 54`, `Community 55`, `Community 58`, `Community 62`, `Community 69`, `Community 70`, `Community 74`, `Community 81`, `Community 86`, `Community 89`, `Community 95`, `Community 98`, `Community 100`, `Community 104`?**
-  _High betweenness centrality (0.044) - this node is a cross-community bridge._
+  _High betweenness centrality (0.043) - this node is a cross-community bridge._
 - **Why does `auth()` connect `Community 0` to `Community 7`, `Community 15`, `Community 16`, `Community 19`, `Community 26`, `Community 33`, `Community 34`, `Community 37`, `Community 41`, `Community 42`, `Community 43`, `Community 45`, `Community 48`, `Community 52`, `Community 55`, `Community 57`, `Community 58`, `Community 63`, `Community 66`, `Community 67`, `Community 70`, `Community 74`, `Community 75`, `Community 76`, `Community 81`, `Community 82`, `Community 83`, `Community 84`, `Community 89`, `Community 90`, `Community 92`, `Community 96`, `Community 97`, `Community 98`, `Community 99`, `Community 100`, `Community 107`?**
-  _High betweenness centrality (0.042) - this node is a cross-community bridge._
+  _High betweenness centrality (0.041) - this node is a cross-community bridge._
 - **Are the 157 inferred relationships involving `select()` (e.g. with `_load_session_by_hash()` and `validate_session()`) actually correct?**
   _`select()` has 157 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 122 inferred relationships involving `User` (e.g. with `create_session()` and `get_current_user()`) actually correct?**
