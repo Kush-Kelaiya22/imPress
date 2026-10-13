@@ -8,6 +8,14 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ## [Unreleased]
 
+### Added
+
+- Every release now says what its firmware is and is not: each board's folder has `BUILD_INFO.json` (commit, ESP-IDF version, chip, flash settings, image checksum) and `FLASHING.txt` (esptool commands with the offsets of that build), every download has a signed build-provenance attestation (`gh attestation verify <file> -R Kush-Kelaiya22/imPress`), and the release page states that a release image is not approved for over-the-air updates until the server's TrustedInstaller has qualified it and an administrator has approved it.
+- A classroom simulator for developers (`firmware/sim/classroom_sim.py`): student modules, a hub and a gateway exchange frames through the firmware's own protocol code, with repeatable radio and SPI faults (loss, duplicates, corruption, reordering). Its tests run in CI, including a simulated room feeding the real server. It found two ways answers can be lost ([#181](https://github.com/Kush-Kelaiya22/imPress/issues/181), [#182](https://github.com/Kush-Kelaiya22/imPress/issues/182)).
+- Quiz answers from a student module now carry the time the student took to answer, measured on the module from the moment the question arrived (it was always 0).
+- A gateway can be built with its classroom code (`CLASSROOM_CODE` in menuconfig) so the server links it to the class held in that room when it first registers. Empty by default: gateways are linked in the admin page as before.
+- `firmware/activate_idf.ps1` finds and activates an ESP-IDF installation in PowerShell on Windows. ([#114](https://github.com/Kush-Kelaiya22/imPress/issues/114))
+
 ### Security
 
 - A gateway with its own device key now records answers, votes, attendance and room links only for the class it is linked to; for any other class they are skipped or refused.
@@ -16,6 +24,8 @@ All notable changes to imPress, for the people who install and use it. Each pull
 - The live class page's connection no longer carries the session token in its URL, where proxies and servers log it; it uses the cookie, and a connection opened from another website is refused.
 - Logging out now ends the session on the server; it used to be forgotten only by the browser, and the token stayed valid until it expired.
 - A gateway no longer trusts a radio frame's enrollment number to be terminated: a malformed or spoofed frame could make it read past the field.
+
+## [varun/v2.1.64] - 2026-10-13
 
 ### Fixed
 
@@ -33,11 +43,6 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Added
 
-- Every release now says what its firmware is and is not: each board's folder has `BUILD_INFO.json` (commit, ESP-IDF version, chip, flash settings, image checksum) and `FLASHING.txt` (esptool commands with the offsets of that build), every download has a signed build-provenance attestation (`gh attestation verify <file> -R Kush-Kelaiya22/imPress`), and the release page states that a release image is not approved for over-the-air updates until the server's TrustedInstaller has qualified it and an administrator has approved it.
-- A classroom simulator for developers (`firmware/sim/classroom_sim.py`): student modules, a hub and a gateway exchange frames through the firmware's own protocol code, with repeatable radio and SPI faults (loss, duplicates, corruption, reordering). Its tests run in CI, including a simulated room feeding the real server. It found two ways answers can be lost ([#181](https://github.com/Kush-Kelaiya22/imPress/issues/181), [#182](https://github.com/Kush-Kelaiya22/imPress/issues/182)).
-- Quiz answers from a student module now carry the time the student took to answer, measured on the module from the moment the question arrived (it was always 0).
-- A gateway can be built with its classroom code (`CLASSROOM_CODE` in menuconfig) so the server links it to the class held in that room when it first registers. Empty by default: gateways are linked in the admin page as before.
-- `firmware/activate_idf.ps1` finds and activates an ESP-IDF installation in PowerShell on Windows. ([#114](https://github.com/Kush-Kelaiya22/imPress/issues/114))
 - A Read the Docs-ready Sphinx/MyST documentation site with responsive navigation, full-text search, Mermaid diagrams, local build commands and an embedded revision-matched Graphify visualization.
 - A public `/graph` engineering documentation portal with searchable Markdown guides and the interactive Graphify architecture map.
 - A keyless, committed Graphify knowledge graph with Codex guidance, local hooks, validation, and automated GitHub synchronization for `varun/v2.1`.
