@@ -48,6 +48,8 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Changed
 
+- Recorded the UI boundary: the backend-served SPA is the sole product UI; `frontend/` remains an optional, non-shipped React/Vite reference dashboard, is excluded from feature-parity requirements, and is build-checked only as a smoke test. ([#134](https://github.com/Kush-Kelaiya22/imPress/issues/134))
+
 - Releases are named after their integration line and owner, for example `varun/v2.1.4`. Download files are `impress-varun-2.1.4.zip`, and container image tags are `varun-2.1.4`, `varun-2.1`, `varun-latest` and `varun-beta`. The earlier releases were renamed to `varun/v2.1.0`, `varun/v2.1.2` and `varun/v2.1.3`. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 - The release page has a fixed structure that puts installation, setup, first use and setup troubleshooting first. Its change summary lists what was added, changed, removed and fixed, taken from `CHANGELOG.md`. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
 - The release test table is more compact, and its columns are now **No.**, **Issue**, **Assigned to** and **Status**. A Stable release shows a **Note** box. ([#104](https://github.com/Kush-Kelaiya22/imPress/issues/104))
