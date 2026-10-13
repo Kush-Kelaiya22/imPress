@@ -993,14 +993,9 @@ async def student_participation(
     )
     class_ids = [r[0] for r in enroll_rows.all()]
 
-    if not sees_all_classes(user):
-        verified = await db.execute(
-            select(ClassSession).where(
-                ClassSession.id.in_(class_ids),
-                ClassSession.teacher_id == user.id,
-            )
-        )
-        class_ids = [c.id for c in verified.scalars().all()]
+    if not sees_all_classes(user):      # the classes this teacher may see (primary or co-faculty, #146)
+        verified = await db.execute(select(ClassSession).where(ClassSession.id.in_(class_ids)))
+        class_ids = [c.id for c in verified.scalars().all() if roster_access(user, c)]
 
     if not class_ids:
         return {

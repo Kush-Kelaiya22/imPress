@@ -58,6 +58,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 - Who may do what is now decided in one place, with a named permission for every action and a published permission matrix ([authorization model](docs/design/authorization.md)). Access is unchanged; refused requests now carry a code (for example `FORBIDDEN`) next to the message. ([#122](https://github.com/Kush-Kelaiya22/imPress/issues/122))
 - A site without a firmware signing key no longer deploys unsigned firmware by default: set up signing, or set `IMPRESS_FIRMWARE_ALLOW_UNSIGNED=true` to keep deploying unsigned images. A site with a single administrator sets `IMPRESS_FIRMWARE_SINGLE_APPROVER=true` to approve its own uploads. ([#123](https://github.com/Kush-Kelaiya22/imPress/issues/123))
 - A server opened with `http://` from another computer now shows *HTTPS required* instead of the login page. Use HTTPS (see the container guide), or set `IMPRESS_REQUIRE_HTTPS=false` on an isolated lab network. ([#152](https://github.com/Kush-Kelaiya22/imPress/issues/152))
+- Co-faculty of a class can now enrol and remove its students, see its roster and its students' participation, like the primary teacher. ([#146](https://github.com/Kush-Kelaiya22/imPress/issues/146))
 
 ### Removed
 
