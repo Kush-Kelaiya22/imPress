@@ -222,6 +222,11 @@ async def add_deployment_deferral(conn: AsyncConnection) -> None:
     await _add_columns(conn, {"deployment_targets": {"deferred_until": "DATETIME"}})
 
 
+async def add_firmware_qualification(conn: AsyncConnection) -> None:
+    """The TrustedInstaller's qualification report per image (#154)."""
+    await _add_columns(conn, {"firmware_artifacts": {"qualification": "JSON"}})
+
+
 # Append-only. (version, name, step)
 MIGRATIONS: list[tuple[int, str, Step]] = [
     (1, "add_v2_columns", add_v2_columns),
@@ -234,6 +239,7 @@ MIGRATIONS: list[tuple[int, str, Step]] = [
     (8, "add_quiz_question_started_at", add_quiz_question_started_at),
     (9, "guard_last_super_admin", guard_last_super_admin),
     (10, "add_deployment_deferral", add_deployment_deferral),
+    (11, "add_firmware_qualification", add_firmware_qualification),
 ]
 
 LATEST = MIGRATIONS[-1][0]

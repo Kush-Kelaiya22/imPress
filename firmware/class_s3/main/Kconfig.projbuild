@@ -1,5 +1,16 @@
 menu "imPress S3 Class Module Configuration"
 
+    config IMPRESS_EMULATOR
+        bool "Emulator build (QEMU boot test only; never flash to a board)"
+        default n
+        help
+            Builds the firmware for the TrustedInstaller boot test in Espressif's
+            QEMU (#154). QEMU emulates the chip, flash and timers but not the
+            radio or the SPI link to the gateway, so this build skips ESP-NOW mesh and SPI start-up and logs
+            "EMULATOR: ... skipped", then runs everything else. A board running
+            this build cannot reach any student or gateway.
+
+
     menu "WiFi (OTA only)"
         config WIFI_SSID
             string "WiFi SSID"

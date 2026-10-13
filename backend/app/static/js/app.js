@@ -2246,6 +2246,22 @@ function signatureBadge(a) {
   return `<span class="badge badge-sm badge-outline" title="Signed with key ${key}…">signed</span>`;
 }
 
+// TrustedInstaller qualification (#154): the server decides; the page shows the report.
+function qualificationBadge(a) {
+  const q = a.qualification;
+  if (!q) return '<span class="badge badge-sm badge-outline" title="Checked when it is first approved or deployed">not checked yet</span>';
+  return q.status === 'qualified'
+    ? '<span class="badge badge-sm badge-success" title="Image analysis and the OTA client simulation passed">qualified ✓</span>'
+    : '<span class="badge badge-sm badge-danger" title="Not offered to any device: open History for the report">not qualified</span>';
+}
+
+function qualificationReport(q) {
+  if (!q) return '<p class="text-muted text-sm">Not checked yet.</p>';
+  const mark = (p) => p === true ? '✓' : p === false ? '✗' : '–';
+  return `<ul class="text-sm">${q.stages.map(s => `<li><strong>${mark(s.passed)} ${escHtml(s.stage)}</strong>:
+    ${escHtml(s.proves)}${s.problems.length ? `<ul>${s.problems.map(p => `<li class="text-danger">${escHtml(p)}</li>`).join('')}</ul>` : ''}</li>`).join('')}</ul>`;
+}
+
 // ── Firmware manager (#35/#36) ─────────────────────────────────
 
 async function renderAdminFirmware(app) {
@@ -2295,7 +2311,7 @@ async function renderAdminFirmware(app) {
                 <td><span class="badge ${badge[a.status]}">${escHtml(a.status)}</span>
                   ${a.channel !== 'stable' ? `<span class="badge badge-sm badge-outline">${escHtml(a.channel)}</span>` : ''}
                   ${a.legacy ? '<span class="badge badge-sm badge-outline" title="Adopted from the pre-v2.1 store">legacy</span>' : ''}
-                  <br>${signatureBadge(a)}</td>
+                  <br>${signatureBadge(a)} ${qualificationBadge(a)}</td>
                 <td class="text-sm">${a.devices_running} running${a.devices_pending ? `<br>${a.devices_pending} pending` : ''}</td>
                 <td class="text-sm">${escHtml(a.build_date)}<br><span class="text-muted">IDF ${escHtml(a.idf_version)}</span></td>
                 <td class="text-sm">${escHtml(a.release_notes || '—')}</td>
@@ -2548,6 +2564,8 @@ async function showFirmwareHistory(id) {
       <h2 style="margin-top:0">${escHtml(d.artifact.target)} v${escHtml(d.artifact.version)}</h2>
       <p class="text-sm text-muted" style="overflow-wrap:anywhere">sha256 ${escHtml(d.artifact.sha256)}<br>
         ${escHtml(d.artifact.project)} · ${escHtml(d.artifact.chip)} · IDF ${escHtml(d.artifact.idf_version)} · built ${escHtml(d.artifact.build_date)}</p>
+      <h3>TrustedInstaller qualification</h3>
+      ${qualificationReport(d.artifact.qualification)}
       <h3>Devices</h3>
       ${d.devices.length ? `<ul class="text-sm">${d.devices.map(x => `<li>${escHtml(x.device_name || x.mac_address)}: running v${escHtml(x.firmware_version)}${x.pending_version ? `, pending v${escHtml(x.pending_version)} (${escHtml(x.ota_status)})` : ''}</li>`).join('')}</ul>` : '<p class="text-muted text-sm">None.</p>'}
       <h3>History</h3>

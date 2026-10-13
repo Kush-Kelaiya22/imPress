@@ -15,6 +15,7 @@ from ..activity import log_activity
 
 from ..config import settings
 from ..policy import allowed, require
+from ..services import trusted_installer
 from ..database import commit_or_conflict, get_db
 from ..models import ActivityLog, EspDevice, FirmwareArtifact, User
 from ..schemas import FirmwareArtifactResponse
@@ -190,6 +191,12 @@ async def approve_firmware(
     a = await _get(db, artifact_id)
     if a.status == "approved":
         return FirmwareArtifactResponse.model_validate(a)
+    r = trusted_installer.report(a)
+    if not r or r.get("status") != "qualified":                    # #154
+        raise HTTPException(409, {"code": "NOT_QUALIFIED", "message": "The TrustedInstaller has not qualified this "
+                                  "image; see its qualification report", "qualification": r})
+    if not a.qualification:
+        a.qualification = r
     self_approval = a.uploaded_by is not None and a.uploaded_by == user.id
     if self_approval and not (settings.FIRMWARE_SINGLE_APPROVER and allowed(user, "users.assign_role")):
         raise HTTPException(403, {"code": "SEPARATION_OF_DUTIES",

@@ -1,0 +1,10 @@
+# Emulator profile for the QEMU boot test (#154): never flash this to a board.
+# QEMU has no octal flash, no QIO flash mode and no radio.
+CONFIG_IMPRESS_EMULATOR=y
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_OCT_FLASH=n
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_SPIRAM=n
+# QEMU stalls in light-sleep idle (interrupt watchdog in esp_pm_impl_waiti).
+CONFIG_PM_ENABLE=n
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=n
