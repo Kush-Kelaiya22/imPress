@@ -4,12 +4,12 @@
 - cluster-only mode — file stats not available
 
 ## Summary
-- 3159 nodes · 8695 edges · 219 communities (96 shown, 123 thin omitted)
-- Extraction: 85% EXTRACTED · 15% INFERRED · 0% AMBIGUOUS · INFERRED: 1334 edges (avg confidence: 0.89)
+- 3168 nodes · 8735 edges · 226 communities (104 shown, 122 thin omitted)
+- Extraction: 85% EXTRACTED · 15% INFERRED · 0% AMBIGUOUS · INFERRED: 1339 edges (avg confidence: 0.89)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `4e8a1d4d`
+- Built from commit: `eadb4863`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -133,23 +133,30 @@
 - Community 116
 - Community 117
 - Community 118
+- Community 119
+- Community 120
 - Community 121
-- Community 127
+- Community 122
+- Community 123
+- Community 124
+- Community 125
 - Community 128
-- Community 215
-- Community 216
-- Community 217
-- Community 218
+- Community 134
+- Community 135
+- Community 222
+- Community 223
+- Community 224
+- Community 225
 
 ## God Nodes (most connected - your core abstractions)
-1. `select()` - 160 edges
-2. `User` - 141 edges
-3. `login()` - 130 edges
-4. `auth()` - 128 edges
+1. `select()` - 161 edges
+2. `User` - 143 edges
+3. `login()` - 134 edges
+4. `auth()` - 132 edges
 5. `istnow()` - 100 edges
 6. `EspDevice` - 96 edges
 7. `ClassSession` - 88 edges
-8. `make_user()` - 77 edges
+8. `make_user()` - 80 edges
 9. `_post()` - 76 edges
 10. `log_activity()` - 70 edges
 
@@ -157,425 +164,457 @@
 - `test_every_setting_is_documented()` --uses--> `Settings`  [INFERRED]
   tests/test_docs_consistency.py → backend/app/config.py
 - `q()` --calls--> `select()`  [INFERRED]
+  backend/tests/test_device_api.py → run_tests.py
+- `q()` --calls--> `select()`  [INFERRED]
+  backend/tests/test_class_import.py → run_tests.py
+- `check()` --calls--> `select()`  [INFERRED]
+  backend/tests/test_class_import.py → run_tests.py
+- `q()` --calls--> `select()`  [INFERRED]
   backend/tests/test_auth_sessions.py → run_tests.py
-- `q()` --calls--> `select()`  [INFERRED]
-  backend/tests/test_class_create.py → run_tests.py
-- `q()` --calls--> `select()`  [INFERRED]
-  backend/tests/test_firmware_upload.py → run_tests.py
-- `get()` --calls--> `select()`  [INFERRED]
-  backend/tests/test_health.py → run_tests.py
 
 ## Import Cycles
 - None detected.
 
-## Communities (219 total, 123 thin omitted)
+## Communities (226 total, 122 thin omitted)
 
 ### Community 0 - "Community 0"
-Cohesion: 0.05
-Nodes (83): auth(), login(), fixture, su(), parametrize, Auth + server-side session lifecycle (app/auth.py, routers/auth.py, main.py…, _session_row(), q() (+75 more)
+Cohesion: 0.03
+Nodes (128): admin_class_devices(), admin_create_class(), admin_get_module(), admin_link_device(), admin_list_classes(), admin_list_modules(), admin_push_ota(), admin_reset_device_key() (+120 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.05
-Nodes (70): bulk_register_students(), _enroll_student(), enroll_students_bulk(), get_activity_logs(), list_class_students(), Admin router: user management, class (classroom) management & enrollment,…, View activity history., Bulk-register universal students, optionally enrolling in a class. (+62 more)
+Cohesion: 0.04
+Nodes (113): asyncio, Activity logging service — records all significant actions., create_session(), generate_session_token(), get_current_user(), get_current_user_light(), hash_password(), _load_session_by_hash() (+105 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.08
-Nodes (65): nvs_handle_t, cfg_clear_device_key(), cfg_set_device_key(), init_nvs_config(), nvs_save_class_id(), _read_str(), _store_dev_key(), ota_c6_boot_check() (+57 more)
+Cohesion: 0.04
+Nodes (107): create_access_token(), Legacy JWT creation (kept for device registration / backward compat)., api_key_ok(), Constant-time device API key comparison., authorize(), _by_mac(), caller_for_key(), denial() (+99 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.05
-Nodes (49): dependencies, axios, react, react-dom, react-router-dom, devDependencies, vite, @vitejs/plugin-react (+41 more)
+Nodes (80): DeploymentTarget, FirmwareDeployment, A rollout of one firmware image to a set of devices, in stages (canary, then…, One device in a deployment, with its update state., _act(), cancel_deployment(), create_deployment(), deployment_dict() (+72 more)
 
 ### Community 4 - "Community 4"
 Cohesion: 0.07
-Nodes (67): Quiz, Example file with every column. Public: it contains no data., create_quiz(), get_quiz(), import_question_csv(), list_quizzes(), next_question(), AsyncSession (+59 more)
+Nodes (74): cJSON_Hooks, msg_type_t, msg_to_json(), add_item_to_array(), add_item_to_object(), cJSON, cast_away_const(), cJSON_AddArrayToObject() (+66 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.05
-Nodes (63): platform, Popen, posix_only, CaseResult, discover(), fmt_secs(), _idf_command(), _idf_image_present() (+55 more)
+Cohesion: 0.06
+Nodes (74): auth(), login(), fixture, su(), parametrize, Auth + server-side session lifecycle (app/auth.py, routers/auth.py, main.py…, _session_row(), q() (+66 more)
 
 ### Community 6 - "Community 6"
 Cohesion: 0.08
-Nodes (66): _diagnosticsBody(), escHtml(), formatAgo(), formatBytes(), formatUptime(), getParams(), getRoute(), HEALTH_BADGE (+58 more)
+Nodes (67): config, nvs_handle_t, cfg_clear_device_key(), cfg_has_device_key(), cfg_set_device_key(), init_nvs_config(), nvs_save_class_id(), _read_str() (+59 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.09
-Nodes (64): errno, esp_event_handler_t, esp_tls_crypto, esp_transport, esp_transport_ssl, esp_transport_tcp, esp_websocket_client_config_t, esp_websocket_client_handle_t (+56 more)
+Cohesion: 0.06
+Nodes (28): cjson, esp_app_desc, esp_bit_defs, esp_efuse, esp_mac, esp_ota_ops, esp_random, esp_timer (+20 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.08
-Nodes (64): apply_status(), asset_base(), badge(), _badge_text(), changelog_at(), channels(), check_changelog(), clean_prs() (+56 more)
+Cohesion: 0.05
+Nodes (49): dependencies, axios, react, react-dom, react-router-dom, devDependencies, vite, @vitejs/plugin-react (+41 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.08
-Nodes (62): authorize(), _by_mac(), caller_for_key(), denial(), device_caller(), DeviceCaller, key_hash(), new_device_key() (+54 more)
+Cohesion: 0.05
+Nodes (66): AsyncConnection, AsyncEngine, _documentation_index(), graph_data(), graph_portal(), graph_search(), graph_visualization(), health() (+58 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.05
-Nodes (50): Gateway, A simulated C6 gateway for end-to-end tests (#43). It talks to the backend…, Mesh messages arriving from the S3 (msg_to_json adds device_mac)., POST the buffer; returns the HTTP status. Keeps it on a 5xx., ws_command.c → ota_prompt_target: only a prompt for this gateway., One OTA attempt. `corrupt` flips a byte in transit, `stop_after` goes silent…, go(), link() (+42 more)
+Cohesion: 0.07
+Nodes (65): One OTA attempt. `corrupt` flips a byte in transit, `stop_after` goes silent…, go(), _advance(), _artifact_id(), _dep(), _deploy(), h(), _mac() (+57 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.08
-Nodes (57): cJSON_Hooks, add_item_to_array(), add_item_to_object(), cJSON, case_insensitive_strcmp(), cast_away_const(), cJSON_AddBoolToObject(), cJSON_AddFalseToObject() (+49 more)
+Nodes (66): _diagnosticsBody(), escHtml(), formatAgo(), formatBytes(), formatUptime(), getParams(), getRoute(), HEALTH_BADGE (+58 more)
 
 ### Community 12 - "Community 12"
-Cohesion: 0.08
-Nodes (59): DeploymentTarget, FirmwareDeployment, A rollout of one firmware image to a set of devices, in stages (canary, then…, One device in a deployment, with its update state., _act(), cancel_deployment(), create_deployment(), deployment_dict() (+51 more)
+Cohesion: 0.09
+Nodes (64): errno, esp_event_handler_t, esp_tls_crypto, esp_transport, esp_transport_ssl, esp_transport_tcp, esp_websocket_client_config_t, esp_websocket_client_handle_t (+56 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.07
-Nodes (54): AsyncConnection, AsyncEngine, _add_columns(), add_device_keys(), add_diagnostics_columns(), add_firmware_signer(), add_quiz_question_started_at(), add_unique_constraints() (+46 more)
+Cohesion: 0.06
+Nodes (53): make_class(), make_user(), Create a user through the admin API; returns (user_id, auth headers)., Create a class via /api/admin/classes; optionally activate it., _import(), parametrize, Admin user management (routers/admin.py /api/admin/users*)., test_admin_cannot_reset_super_admin_password() (+45 more)
 
 ### Community 14 - "Community 14"
-Cohesion: 0.09
-Nodes (55): Any, ClassSession, admin_delete_class(), delete, Admin permanently deletes a classroom along with its dependent records., Remove a student from a classroom., unenroll_student(), activate_class() (+47 more)
+Cohesion: 0.06
+Nodes (51): adc_oneshot, crypto, esp_crt_bundle, esp_err, esp_event, esp_heap_caps, esp_http_client, esp_idf_version (+43 more)
 
 ### Community 15 - "Community 15"
-Cohesion: 0.06
-Nodes (48): admin_import_students_csv(), import_classes_csv(), UploadFile, Create courses and their sections from a CSV. All-or-nothing: any invalid row…, Import students from CSV and enroll them into a specific class. Columns:…, parse_question_csv(), UploadFile, Validate a question CSV and return a per-row preview. Stores nothing: the… (+40 more)
+Cohesion: 0.08
+Nodes (53): Any, log_activity(), AsyncSession, Write one activity log entry., ClassSession, admin_delete_class(), delete, Admin permanently deletes a classroom along with its dependent records. (+45 more)
 
 ### Community 16 - "Community 16"
-Cohesion: 0.07
-Nodes (21): cjson, esp_efuse, esp_err, esp_event, esp_idf_version, esp_ota_ops, esp_transport_ws, read_file() (+13 more)
+Cohesion: 0.08
+Nodes (46): advance(), answer_closed(), deadline(), finish(), AsyncSession, datetime, quiz_timer_loop(), Quiz timing (#73): advance `per_question` quizzes and end `total` quizzes when… (+38 more)
 
 ### Community 17 - "Community 17"
-Cohesion: 0.08
-Nodes (39): asyncio, Activity logging service — records all significant actions., JWT + server-side session authentication helpers., Require super_admin role., Require teacher, admin, or super_admin role., require_super_admin(), require_teacher_or_admin(), api_key_ok() (+31 more)
+Cohesion: 0.13
+Nodes (49): cJSON_AddItemToObject(), cJSON_CreateObject(), cJSON_Duplicate(), cJSON_free(), cJSON_GetStringValue(), cJSON_IsArray(), cJSON_IsObject(), cJSON_IsString() (+41 more)
 
 ### Community 18 - "Community 18"
-Cohesion: 0.06
-Nodes (45): make_class(), make_student(), Create a class via /api/admin/classes; optionally activate it., join(), Classes (routers/classes.py, admin class routes) and courses…, test_activate_deactivate_toggle(), test_back_to_back_slots_do_not_warn(), test_class_codes_are_unique() (+37 more)
+Cohesion: 0.10
+Nodes (44): Require super_admin role., Require teacher, admin, or super_admin role., require_super_admin(), require_teacher_or_admin(), Quiz, User, create_quiz(), get_quiz() (+36 more)
 
 ### Community 19 - "Community 19"
-Cohesion: 0.07
-Nodes (46): create_session(), generate_session_token(), get_current_user(), get_current_user_light(), _load_session_by_hash(), AsyncSession, Request, Load a session by its token_hash, checking revoked/expired status. (+38 more)
+Cohesion: 0.10
+Nodes (40): FirmwareArtifact, One uploaded firmware image. Facts come from the image itself…, approve_firmware(), delete_firmware(), deprecate_firmware(), firmware_detail(), FirmwareUpdate, _get() (+32 more)
 
 ### Community 20 - "Community 20"
-Cohesion: 0.08
-Nodes (42): adc_oneshot, crypto, esp_heap_caps, esp_http_client, esp_ota_handle_t, esp_partition_t, esp_system, esp_timer (+34 more)
+Cohesion: 0.07
+Nodes (29): _parse_time(), Convert "HH:MM" → minutes since midnight. Returns None if malformed., Two time slots overlap when neither fully precedes the other. Overnight / wrap-…, _slots_conflict(), normalize_version(), as_ist(), ist_iso(), Convert any aware/naive datetime to naive IST; naive input is treated as UTC. (+21 more)
 
 ### Community 21 - "Community 21"
-Cohesion: 0.09
-Nodes (46): log_activity(), AsyncSession, Write one activity log entry., Student, StudentEnrollment, import_users_csv(), Create a universal Student and optionally enroll them in a class., Mass-import user accounts from CSV. Required columns (all compulsory):… (+38 more)
+Cohesion: 0.10
+Nodes (39): esp_now, esp_wifi, display_clear(), display_deinit(), display_flush(), display_init(), display_show_countdown(), display_show_provision_state() (+31 more)
 
 ### Community 22 - "Community 22"
-Cohesion: 0.14
-Nodes (45): cJSON_AddItemToObject(), cJSON_free(), cJSON_IsArray(), cJSON_IsNull(), cJSON_IsObject(), cJSON_malloc(), apply_patch(), cJSON (+37 more)
-
-### Community 23 - "Community 23"
-Cohesion: 0.07
-Nodes (45): admin_class_devices(), admin_create_class(), admin_get_module(), admin_link_device(), admin_list_classes(), admin_list_modules(), admin_push_ota(), admin_reset_device_key() (+37 more)
-
-### Community 24 - "Community 24"
-Cohesion: 0.09
-Nodes (35): os, playwright_sync_api, tempfile, time, login(), Browser UI checks: a real backend on a temp database, driven by Playwright.…, _open(), #32: importing and exporting courses and sections on the Classrooms page. (+27 more)
-
-### Community 25 - "Community 25"
-Cohesion: 0.07
-Nodes (25): esp_app_desc, esp_bit_defs, esp_crt_bundle, esp_log, esp_netif, esp_websocket_client, event_groups, spi_slave_transaction_t (+17 more)
-
-### Community 26 - "Community 26"
-Cohesion: 0.10
-Nodes (40): hash_password(), User, change_user_role(), create_user(), deactivate_user(), delete_user(), list_users(), patch (+32 more)
-
-### Community 27 - "Community 27"
-Cohesion: 0.07
-Nodes (28): _parse_time(), Convert "HH:MM" → minutes since midnight. Returns None if malformed., Two time slots overlap when neither fully precedes the other. Overnight / wrap-…, _slots_conflict(), normalize_version(), as_ist(), Convert any aware/naive datetime to naive IST; naive input is treated as UTC., ConnectionManager (+20 more)
-
-### Community 28 - "Community 28"
-Cohesion: 0.09
-Nodes (37): make_user(), Create a user through the admin API; returns (user_id, auth headers)., _import(), parametrize, Admin user management (routers/admin.py /api/admin/users*)., test_admin_cannot_reset_super_admin_password(), test_admin_password_reset(), test_create_user_field_limits() (+29 more)
-
-### Community 29 - "Community 29"
 Cohesion: 0.11
 Nodes (37): Course, create_course(), delete_course(), get_course(), list_courses(), AsyncSession, delete, get (+29 more)
 
-### Community 30 - "Community 30"
+### Community 23 - "Community 23"
+Cohesion: 0.11
+Nodes (38): Student, admin_import_students_csv(), list_class_students(), UploadFile, Import students from CSV and enroll them into a specific class. Columns:…, List all students enrolled in a class (roster)., bulk_create_students(), _create_one() (+30 more)
+
+### Community 24 - "Community 24"
+Cohesion: 0.08
+Nodes (24): answer(), Gateway, join(), A simulated C6 gateway for end-to-end tests (#43). It talks to the backend…, Mesh messages arriving from the S3 (msg_to_json adds device_mac)., POST the buffer; returns the HTTP status. Keeps it on a 5xx., ws_command.c → ota_prompt_target: only a prompt for this gateway., fixture (+16 more)
+
+### Community 25 - "Community 25"
 Cohesion: 0.10
-Nodes (34): _cstr(), image_end(), ImageError, ImageInfo, parse_image(), ValueError, Read and validate an ESP-IDF application image (#35). Pure: bytes in, facts…, Length of the app image itself (segments, checksum, appended SHA-256), without… (+26 more)
+Nodes (34): spi_slave_transaction_t, queue_slot(), ready_update(), spi_post_trans_cb(), spi_slave_init(), spi_slave_read(), spi_slave_send(), esp_err_t (+26 more)
+
+### Community 26 - "Community 26"
+Cohesion: 0.08
+Nodes (28): check_secure(), insecure_settings(), Names of settings still at their public, repo-published defaults., Refuse to run with published secrets, or with unauthenticated WebSockets…, Settings, client(), _drain_background_tasks(), fixture (+20 more)
+
+### Community 27 - "Community 27"
+Cohesion: 0.11
+Nodes (29): _der(), key_digest(), load_public_key(), _mgf1(), pss_verify(), ValueError, Signed firmware images (#66): ESP-IDF Secure Boot V2 RSA-3072 signatures,…, (tag, start of content, end of content) of the DER element at pos. (+21 more)
+
+### Community 28 - "Community 28"
+Cohesion: 0.12
+Nodes (33): BaseType_t, xSemaphoreGive(), xSemaphoreTake(), msg_t, handle_c6_frame(), heartbeat_task(), on_student_message(), spi_link_task() (+25 more)
+
+### Community 29 - "Community 29"
+Cohesion: 0.10
+Nodes (32): change_user_role(), deactivate_user(), delete_user(), list_users(), patch, Edit a user's profile (name, email). Activation and roles have their own…, Block an account's access and sign it out; reversible with /reactivate., Allow a deactivated account to log in again (old sessions stay revoked). (+24 more)
+
+### Community 30 - "Community 30"
+Cohesion: 0.14
+Nodes (28): msg_t, spi_slot_fifo_t, crc16_ccitt(), json_get_string(), msg_decode(), msg_verify_crc(), spi_record_read(), spi_record_write() (+20 more)
 
 ### Community 31 - "Community 31"
-Cohesion: 0.13
-Nodes (32): esp_mac, display_clear(), display_deinit(), display_flush(), display_init(), display_show_countdown(), display_show_provision_state(), display_show_question() (+24 more)
+Cohesion: 0.10
+Nodes (27): import_classes_csv(), Create courses and their sections from a CSV. All-or-nothing: any invalid row…, ClassImportReport, ClassImportRow, All-or-nothing: any invalid row means nothing is imported., apply_class_import(), _changes(), export_rows() (+19 more)
 
 ### Community 32 - "Community 32"
-Cohesion: 0.11
-Nodes (35): Require admin or super_admin role., require_admin(), approve_firmware(), delete_firmware(), deprecate_firmware(), firmware_detail(), FirmwareUpdate, _get() (+27 more)
+Cohesion: 0.16
+Nodes (27): _csv(), _files(), import_(), parse(), parametrize, questions(), q(), #31: import quiz questions from CSV (parse/preview, all-or-nothing import). (+19 more)
 
 ### Community 33 - "Community 33"
-Cohesion: 0.08
-Nodes (33): init_db(), Create missing tables and apply pending migrations (stops on failure)., _documentation_index(), graph_data(), graph_portal(), graph_search(), graph_visualization(), health() (+25 more)
-
-### Community 34 - "Community 34"
-Cohesion: 0.09
-Nodes (31): create_access_token(), Legacy JWT creation (kept for device registration / backward compat)., A student module seen on a gateway's mesh (#40): presence, not location. One…, StudentModule, class_modules(), _device_to_dict(), presence_snapshot(), push_presence() (+23 more)
+Cohesion: 0.18
+Nodes (28): buffer_skip_whitespace(), cJSON_bool, case_insensitive_strcmp(), cJSON_Compare(), cJSON_ParseWithLength(), cJSON_ParseWithLengthOpts(), cJSON_PrintBuffered(), cJSON_PrintPreallocated() (+20 more)
 
 ### Community 35 - "Community 35"
-Cohesion: 0.14
-Nodes (31): BaseType_t, SemaphoreHandle_t, xSemaphoreGive(), xSemaphoreGiveFromISR(), xSemaphoreTake(), msg_t, handle_c6_frame(), heartbeat_task() (+23 more)
-
-### Community 36 - "Community 36"
-Cohesion: 0.11
-Nodes (31): config, queue_slot(), ready_update(), spi_slave_init(), spi_slave_send(), esp_err_t, spi_slave_transaction_t, TickType_t (+23 more)
-
-### Community 37 - "Community 37"
-Cohesion: 0.14
-Nodes (29): spi_slave_read(), spi_master_poll(), msg_t, spi_slot_fifo_t, crc16_ccitt(), json_get_string(), msg_decode(), msg_verify_crc() (+21 more)
-
-### Community 38 - "Community 38"
-Cohesion: 0.22
-Nodes (30): _advance(), _artifact_id(), _dep(), _deploy(), _mac(), #38 + #34: OTA deployments: selection, staged rollout, the per-device state…, All state is in the database: a fresh session (as after a restart) advances…, _register() (+22 more)
-
-### Community 39 - "Community 39"
-Cohesion: 0.13
-Nodes (31): batch_add(), batch_flush(), batch_flush_needed(), batch_init(), cJSON, msg_type_t, item_is_heartbeat(), msg_to_json() (+23 more)
-
-### Community 40 - "Community 40"
-Cohesion: 0.10
-Nodes (22): check_secure(), insecure_settings(), Names of settings still at their public, repo-published defaults., Refuse to run with published secrets, or with unauthenticated WebSockets…, Settings, client(), _drain_background_tasks(), fixture (+14 more)
-
-### Community 41 - "Community 41"
-Cohesion: 0.18
-Nodes (27): commit_or_conflict(), AsyncSession, Commit; a uniqueness/foreign-key violation becomes an HTTP error. Application…, Poll, PollVote, create_poll(), end_poll(), get_poll() (+19 more)
-
-### Community 43 - "Community 43"
 Cohesion: 0.10
 Nodes (18): adminApi, apiRequest(), authApi, classesApi, ClassSocket, clearToken(), coursesApi, deploymentsApi (+10 more)
 
-### Community 44 - "Community 44"
+### Community 36 - "Community 36"
 Cohesion: 0.18
-Nodes (25): _csv(), _files(), import_(), parse(), parametrize, questions(), q(), #31: import quiz questions from CSV (parse/preview, all-or-nothing import). (+17 more)
+Nodes (25): commit_or_conflict(), AsyncSession, Commit; a uniqueness/foreign-key violation becomes an HTTP error. Application…, Poll, create_poll(), end_poll(), get_poll(), list_polls() (+17 more)
 
-### Community 45 - "Community 45"
+### Community 37 - "Community 37"
+Cohesion: 0.10
+Nodes (17): Shared pytest fixtures for the imPress backend. Every test gets a fresh SQLite…, Smoke tests: the app boots on an empty DB and its basic contracts hold., test_seeded_super_admin_can_log_in(), _next_device_frame(), _project(), Contract test: frames the C6 gateway receives on its device WebSocket (#3). The…, The single frame an action broadcasts; it must carry a firmware event. Reads…, test_device_socket_receives_firmware_contract() (+9 more)
+
+### Community 38 - "Community 38"
 Cohesion: 0.10
 Nodes (17): env(), fixture, #21: co-faculty can run quizzes/polls for their class; outsiders still can't., _teacher(), device(), dl(), fixture, #13: firmware can only be downloaded for an OTA an admin actually pushed. (+9 more)
 
-### Community 46 - "Community 46"
-Cohesion: 0.12
-Nodes (24): esp_now, esp_random, esp_wifi, mesh_dedup_check(), mesh_msg_id(), legacy_hash(), legacy_seen(), main() (+16 more)
-
-### Community 47 - "Community 47"
-Cohesion: 0.20
-Nodes (26): buffer_skip_whitespace(), cJSON_bool, cJSON_Compare(), cJSON_ParseWithLength(), cJSON_ParseWithLengthOpts(), cJSON_ParseWithOpts(), cJSON_PrintPreallocated(), compare_double() (+18 more)
-
-### Community 48 - "Community 48"
+### Community 39 - "Community 39"
 Cohesion: 0.13
 Nodes (24): _poll(), parametrize, _quiz(), Quiz and poll state machines + results (routers/quizzes.py, routers/polls.py).…, #76: a restarted poll would keep its old votes., #76: its answers are still stored, so devices would be refused on Q1., test_closed_poll_cannot_be_restarted_and_draft_cannot_be_ended(), test_completed_quiz_cannot_be_restarted() (+16 more)
 
-### Community 49 - "Community 49"
-Cohesion: 0.12
-Nodes (16): _norm(), _on(), The CI workflow is well-formed and actually runs every suite the repo has.…, _steps_text(), test_backend_coverage_is_reported(), test_browser_ui_checks_run_in_ci(), test_ci_installs_the_hash_locked_dependency_set(), test_dependencies_are_audited() (+8 more)
+### Community 40 - "Community 40"
+Cohesion: 0.11
+Nodes (22): posix_only, discover(), Run `cmd` and return (exit code, combined output, abort reason). Output is read…, run_streaming(), signal, test_every_default_runner_suite_runs_in_ci(), test_frontend_is_installed_from_its_lockfile(), test_runner_discovers_every_host_suite() (+14 more)
 
-### Community 50 - "Community 50"
-Cohesion: 0.17
-Nodes (23): Register (and by default approve, so it can be pushed) a structurally valid…, upload_firmware(), h(), fixture, fixture, Three rooms, each with a v2.1.0 gateway; a c6 2.2.0 image approved., rooms(), _artifact() (+15 more)
+### Community 41 - "Community 41"
+Cohesion: 0.13
+Nodes (15): _norm(), _on(), The CI workflow is well-formed and actually runs every suite the repo has.…, _steps_text(), test_backend_coverage_is_reported(), test_browser_ui_checks_run_in_ci(), test_ci_installs_the_hash_locked_dependency_set(), test_dependencies_are_audited() (+7 more)
 
-### Community 51 - "Community 51"
+### Community 42 - "Community 42"
 Cohesion: 0.17
 Nodes (20): functions(), mentions(), {name: body_text} for every top-level function definition in a C file., #4: the C6 batch accumulator (cJSON, not thread-safe) has exactly one owner.…, test_heartbeat_hands_off_via_flag(), test_only_spi2http_path_touches_the_batch(), test_stack_watermark_reports_spi2http_not_app_main(), _users_of_batch() (+12 more)
 
-### Community 52 - "Community 52"
+### Community 43 - "Community 43"
+Cohesion: 0.13
+Nodes (20): make_student(), test_attendance_paths(), count(), fixture, Smoke steps 1-5: a class whose gateway registered with its room code., setup(), _csv(), fixture (+12 more)
+
+### Community 44 - "Community 44"
 Cohesion: 0.16
 Nodes (19): make_image(), _count(), q(), parametrize, #35: uploaded firmware is validated as a real imPress image and registered…, Against genuine ESP-IDF output when a local build exists (the synthetic images…, A scripts/build_signed.sh build (#66), when one exists locally., test_a_c6_image_is_never_pushed_to_an_s3() (+11 more)
 
-### Community 53 - "Community 53"
-Cohesion: 0.24
-Nodes (20): _beat(), _device(), q(), h(), _key(), fixture, #66: per-device keys. Devices register with the shared key and are issued their…, _register() (+12 more)
+### Community 45 - "Community 45"
+Cohesion: 0.14
+Nodes (21): _count(), q(), _fk_violations(), q(), _insert_twice(), go(), fixture, #41: the database enforces its own integrity (foreign keys, uniqueness), and… (+13 more)
 
-### Community 54 - "Community 54"
+### Community 46 - "Community 46"
+Cohesion: 0.15
+Nodes (17): dataclasses, platform, CaseResult, fmt_secs(), _idf_image_present(), main(), markdown_report(), Paint (+9 more)
+
+### Community 47 - "Community 47"
 Cohesion: 0.27
 Nodes (20): _age(), q(), _batch(), beat(), join(), leave(), _modules(), #40: the student module inventory. Modules seen on a gateway's mesh are listed… (+12 more)
 
-### Community 55 - "Community 55"
-Cohesion: 0.13
-Nodes (16): argparse, pathlib, init_env(), Path, Create or complete backend/.env from backend/.env.example (#42). The public…, Returns the names of the secrets it generated., call(), env_value() (+8 more)
+### Community 48 - "Community 48"
+Cohesion: 0.20
+Nodes (20): apply_status(), badge(), _badge_text(), current_latest(), gh(), gh_json(), initial_page(), is_ancestor() (+12 more)
 
-### Community 56 - "Community 56"
-Cohesion: 0.19
-Nodes (19): FirmwareArtifact, One uploaded firmware image. Facts come from the image itself…, adopt_legacy_files(), artifact_file(), artifact_path(), AsyncSession, Path, UploadFile (+11 more)
-
-### Community 57 - "Community 57"
+### Community 49 - "Community 49"
 Cohesion: 0.14
 Nodes (17): ctype, cJSON, ota_offer_t, is_hex64(), is_semver(), ota_digest_matches(), ota_parse_check(), ota_prompt_target() (+9 more)
 
-### Community 58 - "Community 58"
-Cohesion: 0.15
-Nodes (16): _publish_graph_visualization(), Sphinx configuration for the public imPress documentation site., Expose the generated graph beneath the hosted ``/graph/`` page., setup(), append_coverage(), component_for(), enrich(), main() (+8 more)
-
-### Community 59 - "Community 59"
+### Community 50 - "Community 50"
 Cohesion: 0.19
 Nodes (17): cfg_has_device_key(), esp_err_t, esp_event_base_t, _download_and_apply(), _firmware_check(), _get_mac(), _http_post(), _http_post_body() (+9 more)
 
-### Community 60 - "Community 60"
+### Community 51 - "Community 51"
 Cohesion: 0.17
 Nodes (15): calls(), _graph(), #5: nothing running on the websocket client's own task may stop/destroy it.…, _reachable(), test_reassignment_is_applied_from_app_main(), test_ws_task_never_stops_or_destroys_its_client(), #66: the C6 and S3 use their own device key once issued, keep the shared key…, test_c6_re_registers_after_a_reset() (+7 more)
 
-### Community 61 - "Community 61"
-Cohesion: 0.17
-Nodes (15): QuizAnswer, mark_offline(), Mark stale devices offline. Returns number of transitions logged., Mark a device offline and log the transition., _sweep_once(), answer(), test_foreign_keys_are_enforced(), orphan() (+7 more)
+### Community 52 - "Community 52"
+Cohesion: 0.15
+Nodes (16): json, append_coverage(), component_for(), enrich(), main(), node_id(), Path, Build imPress's deterministic Graphify graph and enrich non-code coverage.… (+8 more)
 
-### Community 62 - "Community 62"
+### Community 53 - "Community 53"
+Cohesion: 0.28
+Nodes (18): _beat(), _device(), q(), _key(), #66: per-device keys. Devices register with the shared key and are issued their…, _register(), test_a_device_key_works_only_for_its_own_mac(), test_an_unused_key_is_replaced_so_a_lost_response_cannot_lock_the_device_out() (+10 more)
+
+### Community 54 - "Community 54"
+Cohesion: 0.17
+Nodes (16): _cstr(), image_end(), ImageError, ImageInfo, parse_image(), ValueError, Read and validate an ESP-IDF application image (#35). Pure: bytes in, facts…, Length of the app image itself (segments, checksum, appended SHA-256), without… (+8 more)
+
+### Community 55 - "Community 55"
 Cohesion: 0.15
 Nodes (16): _me(), fixture, parametrize, At least one active super admin always remains (#116). The original failure: a…, The original lockout path: PUT with is_active=false on yourself (#116, #119)., Two super admins disabling each other at the same moment: one must fail., su(), test_concurrent_mutual_deactivation_leaves_one_super_admin() (+8 more)
 
-### Community 63 - "Community 63"
-Cohesion: 0.20
-Nodes (16): _count(), q(), _fk_violations(), q(), _insert_twice(), go(), #41: the database enforces its own integrity (foreign keys, uniqueness), and…, test_admin_class_delete_detaches_modules_linked_to_its_enrollments() (+8 more)
+### Community 56 - "Community 56"
+Cohesion: 0.25
+Nodes (14): student_set_t, find(), student_set_t, student_set_count(), student_set_init(), student_set_join(), student_set_leave(), student_set_root_uptime() (+6 more)
 
-### Community 64 - "Community 64"
+### Community 57 - "Community 57"
+Cohesion: 0.18
+Nodes (14): playwright_sync_api, login(), #51: only the latest navigation renders., test_normal_navigation_and_in_page_rerender_still_work(), test_quick_navigation_is_not_overwritten_by_a_slower_page(), #73: the class page offers Next for every timing mode, and a quiz the server's…, test_timed_quiz_has_next_and_ends_on_the_timer(), #40: student modules that joined a gateway appear in the inventory, the class… (+6 more)
+
+### Community 58 - "Community 58"
+Cohesion: 0.21
+Nodes (18): changelog_at(), find_template(), git(), _key(), notes_path(), owner_versions(), parse_branch(), plan() (+10 more)
+
+### Community 59 - "Community 59"
+Cohesion: 0.25
+Nodes (16): answer(), batch(), count(), q(), fixture, parametrize, #6: /api/device/batch validates and de-duplicates mesh answers/votes., setup() (+8 more)
+
+### Community 60 - "Community 60"
 Cohesion: 0.15
 Nodes (9): ast, #39: the C6 heartbeat carries the diagnostics the backend's health rules read,…, A function's text with its string literals (functions() blanks them)., _raw(), _schema_fields(), test_heartbeat_sends_every_diagnostic_the_schema_accepts(), test_reset_reason_names_cover_the_crash_rules(), test_s3_link_tracks_only_the_s3s_own_heartbeat() (+1 more)
 
-### Community 65 - "Community 65"
-Cohesion: 0.22
-Nodes (13): _digest(), h(), fixture, #66 (2/3): signed firmware. The verifier is checked against images signed by…, site_key(), test_a_foreign_key_is_refused_but_a_second_signature_by_the_site_key_counts(), test_an_unreadable_site_key_is_reported(), test_real_signatures_verify_and_the_key_digest_matches_espsecure() (+5 more)
-
-### Community 66 - "Community 66"
-Cohesion: 0.17
-Nodes (13): _exec(), fixture, DELETE /api/admin/users/{id} removes the account and settles references (#117)., A new column pointing at users.id must decide what deletion does to it., _rows(), go(), su(), test_delete_removes_account_and_keeps_history() (+5 more)
-
-### Community 67 - "Community 67"
-Cohesion: 0.29
-Nodes (13): student_set_t, find(), student_set_t, student_set_count(), student_set_init(), student_set_join(), student_set_leave(), student_set_root_uptime() (+5 more)
-
-### Community 68 - "Community 68"
-Cohesion: 0.16
-Nodes (10): json, main(), Fail clearly if committed Graphify output is incomplete, stale, or unsafe., source_commit(), subprocess, _on(), Contract tests for the keyless Graphify generation and GitHub automation., test_workflow_has_required_trigger_permissions_cache_and_recursion_guards() (+2 more)
-
-### Community 69 - "Community 69"
+### Community 61 - "Community 61"
 Cohesion: 0.17
 Nodes (11): _anchors(), parametrize, Docs stay in sync with the code: links resolve, every route and setting is…, _route_paths(), _slug(), _strip_code(), test_code_fences_are_balanced_and_mermaid_typed(), test_every_api_route_is_documented() (+3 more)
 
-### Community 70 - "Community 70"
-Cohesion: 0.22
-Nodes (12): main(), Returns the new password. Raises LookupError for an unknown username., restore_super_admin(), _lock_out(), Offline recovery of a locked-out installation (#120)., A database from before #116: no triggers, every super admin inactive., _restore(), _sql() (+4 more)
+### Community 62 - "Community 62"
+Cohesion: 0.35
+Nodes (14): Register (and by default approve, so it can be pushed) a structurally valid…, upload_firmware(), _artifact(), _hub(), _push(), #36: firmware version manager: approval, deprecation, retention, usage., _set(), test_admin_only() (+6 more)
 
-### Community 71 - "Community 71"
+### Community 63 - "Community 63"
 Cohesion: 0.30
 Nodes (14): _device(), q(), _push(), parametrize, #33: OTA outcomes are recorded only from what the device really runs, and a…, _report(), test_applied_with_another_version_is_not_success(), test_applied_with_the_pushed_version_completes_the_update() (+6 more)
 
-### Community 72 - "Community 72"
-Cohesion: 0.30
-Nodes (14): handle_class_assignment(), on_ws_command(), cJSON, clamp_options(), num_item(), num_or(), str_or_null(), ws_command_to_frame() (+6 more)
-
-### Community 73 - "Community 73"
+### Community 64 - "Community 64"
 Cohesion: 0.15
 Nodes (8): strip_comments_and_strings(), #66 (3/3): the hub and gateway can reach the backend over HTTPS/WSS, and every…, test_every_backend_client_gets_the_tls_settings(), test_version_comes_from_the_image(), #13: S3 OTA — rollback protection and no reboot when nothing is installed., test_detach_unregisters_reconnect_handler_before_disconnecting(), test_new_image_marked_valid_only_after_mesh_and_spi_init(), test_only_a_successful_install_reboots()
 
-### Community 74 - "Community 74"
-Cohesion: 0.13
-Nodes (11): Api, browser(), _free_port(), page(), fixture, A page that fails the test on any uncaught JS error; screenshot at the end., Tiny JSON client for setting up data the test then checks in the UI., multipart/form-data POST of one file field named 'file'. (+3 more)
-
-### Community 75 - "Community 75"
-Cohesion: 0.34
-Nodes (13): answer(), batch(), count(), q(), parametrize, #6: /api/device/batch validates and de-duplicates mesh answers/votes., test_distinct_students_and_questions_all_count(), test_inactive_quiz_and_closed_poll_skipped() (+5 more)
-
-### Community 76 - "Community 76"
+### Community 65 - "Community 65"
 Cohesion: 0.19
 Nodes (8): accounts(), _create(), fixture, parametrize, #10, #119: only a super admin can grant/remove admin-level roles; roles are a…, test_admin_cannot_create_super_admin(), test_admin_still_manages_teachers(), test_unknown_roles_rejected()
 
-### Community 77 - "Community 77"
+### Community 66 - "Community 66"
+Cohesion: 0.24
+Nodes (13): cJSON_Parse(), cJSON_ParseWithOpts(), cJSON_Print(), cJSON_PrintUnformatted(), main(), LLVMFuzzerTestOneInput(), msg_t, frame_of() (+5 more)
+
+### Community 67 - "Community 67"
+Cohesion: 0.27
+Nodes (13): mesh_dedup_check(), mesh_msg_id(), legacy_hash(), legacy_seen(), main(), simulate(), test_dedup_window_and_wrap(), test_id_ignores_hops_but_not_content() (+5 more)
+
+### Community 68 - "Community 68"
 Cohesion: 0.16
 Nodes (10): #29: guards for the S3 <-> C6 link as ported from v3…, _src(), test_both_ends_use_standard_full_duplex_spi(), test_c6_student_count_comes_from_join_and_leave_only(), test_c6_validates_received_slots(), test_master_drops_a_payload_only_after_a_successful_transfer(), test_s3_heartbeat_record_is_not_copied_onto_itself(), test_s3_link_task_always_clocks_a_slot() (+2 more)
 
-### Community 78 - "Community 78"
+### Community 69 - "Community 69"
+Cohesion: 0.22
+Nodes (13): _idf_command(), _missing(), missing_packages(), _pytest_suite(), Packages from `requirements` (plus pytest) not installed in this interpreter., run_suite(), Suite, test_failing_command_is_reported() (+5 more)
+
+### Community 70 - "Community 70"
 Cohesion: 0.22
 Nodes (10): git(), fixture, Shared helpers for repository-level tests (CI, hygiene, docs, test runner)., tracked_files(), workflow(), Nothing generated at runtime or compiled is tracked; scripts are portable., test_no_tracked_file_is_gitignored(), test_run_tests_is_executable_entry_point() (+2 more)
 
-### Community 79 - "Community 79"
+### Community 71 - "Community 71"
 Cohesion: 0.19
 Nodes (12): FakeGitHub, #104: the first page already has the badges, the Beta/Stable box and the test…, The cascade: one milestone, three lines from two owners., _release(), test_a_new_release_is_published_with_its_status_section(), test_an_exact_patch_milestone_also_gates(), test_closing_a_2_1_issue_updates_every_release_built_on_2_1(), test_image_tags_per_owner_and_line() (+4 more)
 
-### Community 80 - "Community 80"
-Cohesion: 0.26
-Nodes (10): health(), datetime, Device health states (#39), computed from the latest heartbeat. Rules, in order…, (state, reasons) for one device., _dev(), parametrize, #39: device health states from the latest heartbeat diagnostics., test_invalid_diagnostics_are_rejected() (+2 more)
+### Community 72 - "Community 72"
+Cohesion: 0.24
+Nodes (10): main(), _lock_out(), Offline recovery of a locked-out installation (#120)., A database from before #116: no triggers, every super admin inactive., _restore(), _sql(), test_cli_exit_codes(), test_promotes_an_existing_account() (+2 more)
 
-### Community 81 - "Community 81"
+### Community 73 - "Community 73"
+Cohesion: 0.21
+Nodes (12): fixture, parametrize, Separate account operations and server-provided allowed_actions (#119)., Whatever allowed_actions leaves out, the route refuses (UI is not the guard)., _row(), su(), test_allowed_actions_for_a_super_admin(), test_allowed_actions_for_an_admin() (+4 more)
+
+### Community 74 - "Community 74"
+Cohesion: 0.35
+Nodes (12): handle_class_assignment(), on_ws_command(), cJSON, clamp_options(), num_item(), num_or(), str_or_null(), ws_command_to_frame() (+4 more)
+
+### Community 75 - "Community 75"
+Cohesion: 0.15
+Nodes (13): asset_base(), check_changelog(), clean_prs(), main(), new_entries(), Entries under '## [Unreleased]', by category; each entry is one '- ' bullet., Structure problems in CHANGELOG.md (empty list = valid)., Unreleased entries in `current` that are not in `previous`. (+5 more)
+
+### Community 76 - "Community 76"
+Cohesion: 0.21
+Nodes (13): channels(), gates(), image_aliases(), legacy_images(), line_of(), newest(), parse_tag(), Does `milestone` gate release `tag`? - exact <owner>/vX.Y.Z: that release only;… (+5 more)
+
+### Community 77 - "Community 77"
 Cohesion: 0.20
 Nodes (5): Tiny C source helpers for structural firmware tests (no compiler needed). Good…, #11: the C6 must not put the device API key in the WS URL or the log., test_api_key_sent_as_header_not_in_uri_or_log(), #66: the signed-app profile and the scripts that build with it., re
 
-### Community 82 - "Community 82"
-Cohesion: 0.29
-Nodes (9): importlib_util, stat, _backend(), #42: the documented install path: scripts, secrets, version, CI job., test_existing_values_are_kept_and_missing_ones_added(), test_fresh_env_gets_random_secrets_never_the_defaults(), test_generated_env_is_accepted_by_the_backend_settings(), test_two_installs_get_different_secrets() (+1 more)
+### Community 78 - "Community 78"
+Cohesion: 0.21
+Nodes (11): socket, tempfile, time, browser(), _free_port(), page(), fixture, Browser UI checks: a real backend on a temp database, driven by Playwright.… (+3 more)
 
-### Community 83 - "Community 83"
-Cohesion: 0.20
-Nodes (10): class_websocket(), _device_refusal(), websocket, WebSocket endpoint for real-time class communication. Connect with:…, Why a device may not join this class room, or None (#66, #121). A per-device…, Validate a login session token for WebSocket auth. Returns the User or None.…, _ws_user_from_token(), db() (+2 more)
+### Community 79 - "Community 79"
+Cohesion: 0.22
+Nodes (9): argparse, call(), env_value(), main(), HTTP smoke test of a running imPress backend (#42): the system audit's…, ssl, urllib_error, urllib_request (+1 more)
 
-### Community 84 - "Community 84"
+### Community 80 - "Community 80"
+Cohesion: 0.22
+Nodes (11): adopt_legacy_files(), artifact_file(), artifact_path(), AsyncSession, Path, Register valid <type>-<version>.bin files from the old store (once)., store_dir(), _write() (+3 more)
+
+### Community 81 - "Community 81"
 Cohesion: 0.24
 Nodes (8): cls(), fixture, parametrize, _quiz(), #49: the API only accepts what a student module can show and answer. Student…, test_long_text_is_accepted_with_truncation_warnings(), test_poll_options_limited_to_the_four_buttons(), test_quiz_options_limited_to_the_four_buttons()
 
-### Community 85 - "Community 85"
-Cohesion: 0.20
-Nodes (9): push_device_status(), push_poll_to_mesh(), push_quiz_to_mesh(), push_student_data(), Bridge service: connects ESP device data to WebSocket clients. This service…, Push student device data (heartbeats, answers, votes) to teacher dashboard., Push individual device status update., Push quiz question through WebSocket → C6 → SPI → S3 → mesh → students. (+1 more)
+### Community 82 - "Community 82"
+Cohesion: 0.33
+Nodes (11): batch_add(), batch_flush(), batch_flush_needed(), batch_init(), cJSON, item_is_heartbeat(), process_spi_payload(), spi_to_http_task() (+3 more)
 
-### Community 86 - "Community 86"
+### Community 83 - "Community 83"
+Cohesion: 0.27
+Nodes (8): Older versions stored the raw bearer token in user_sessions.session_token. Any…, _scrub_raw_session_tokens(), _all_session_values(), skipif, #12: raw bearer tokens are never persisted; legacy raw rows are revoked., test_legacy_raw_token_rows_revoked_and_scrubbed(), test_no_databases_tracked_in_git(), test_raw_token_not_stored_anywhere()
+
+### Community 84 - "Community 84"
+Cohesion: 0.31
+Nodes (9): health(), datetime, (state, reasons) for one device., _dev(), parametrize, #39: device health states from the latest heartbeat diagnostics., test_invalid_diagnostics_are_rejected(), test_precedence_offline_over_updating_over_error_over_degraded() (+1 more)
+
+### Community 85 - "Community 85"
 Cohesion: 0.42
 Nodes (9): _class(), _gateway_of(), q(), #17: registration must not steal a class's gateway link., _register(), test_explicit_classroom_code_still_assigns(), test_gateway_keeps_its_class_on_reregister(), test_non_gateway_registration_keeps_class_gateway() (+1 more)
 
-### Community 87 - "Community 87"
+### Community 86 - "Community 86"
 Cohesion: 0.29
 Nodes (8): _create(), ctx(), fixture, parametrize, #22: correct_option must index one of the question's options., test_boundaries_accepted(), test_negative_still_rejected(), test_out_of_range_rejected()
 
-### Community 88 - "Community 88"
+### Community 87 - "Community 87"
 Cohesion: 0.27
 Nodes (8): Security review (#16 of the v2.1 brief): every route refuses a caller without…, 401/403, or 422 for the missing device-key header (a required `X-API-Key` is…, _refused(), _routes(), test_device_routes_reject_a_wrong_key(), test_every_route_needs_credentials(), fastapi_routing, importlib
 
+### Community 88 - "Community 88"
+Cohesion: 0.20
+Nodes (10): parse_coverage(), parse_junit(), Path, Test cases from a pytest JUnit XML file., Distribution names from a requirements file, following -r includes., Total line coverage (%) from a Cobertura XML report (pytest-cov)., _requirements(), test_dev_requirements_cover_every_runtime_requirement() (+2 more)
+
 ### Community 89 - "Community 89"
-Cohesion: 0.33
-Nodes (9): cJSON_Parse(), cJSON_Print(), cJSON_PrintBuffered(), cJSON_PrintUnformatted(), main(), LLVMFuzzerTestOneInput(), msg_t, frame_of() (+1 more)
+Cohesion: 0.22
+Nodes (8): init_env(), Path, Create or complete backend/.env from backend/.env.example (#42). The public…, Returns the names of the secrets it generated., sys, _mac(), #38/#34: a staged OTA rollout from the Firmware page., test_preview_start_progress_pause_and_resume()
 
 ### Community 90 - "Community 90"
+Cohesion: 0.24
+Nodes (5): _on(), Contract tests for the keyless Graphify generation and GitHub automation., test_workflow_has_required_trigger_permissions_cache_and_recursion_guards(), _workflow(), yaml
+
+### Community 91 - "Community 91"
 Cohesion: 0.28
 Nodes (6): _order(), #34: the C6 OTA client keeps its safety ordering (behaviour of the pure parts…, test_download_checks_status_size_and_completeness_and_hashes_while_streaming(), test_image_is_verified_before_it_can_boot(), test_new_image_is_confirmed_only_when_healthy_or_reverted(), test_prompts_are_routed_by_target()
 
-### Community 91 - "Community 91"
+### Community 92 - "Community 92"
 Cohesion: 0.28
 Nodes (9): aamna/v2.4 branched from a 2.1 tree releases aamna/v2.4.0 right away (VERSION…, _repo(), g(), test_ancestry_is_read_from_git(), test_first_release_of_a_line_is_patch_zero(), test_patch_counts_pushes_since_the_owners_line_tag(), test_plan_refuses_feature_branches(), test_template_falls_back_to_the_default_branch() (+1 more)
 
 ### Community 93 - "Community 93"
+Cohesion: 0.39
+Nodes (6): _history(), Loading a user or a class list must not pull in the teaching history (#133).…, statements(), test_class_list_counts_without_loading_quizzes(), test_loading_a_user_is_one_statement(), load()
+
+### Community 94 - "Community 94"
 Cohesion: 0.29
 Nodes (4): env(), fixture, #20: quiz/poll details and results follow the class access rule., _teacher()
 
-### Community 94 - "Community 94"
+### Community 95 - "Community 95"
+Cohesion: 0.25
+Nodes (4): Api, Tiny JSON client for setting up data the test then checks in the UI., multipart/form-data POST of one file field named 'file'., A device call (X-API-Key), e.g. registration or an OTA status report.
+
+### Community 96 - "Community 96"
 Cohesion: 0.43
 Nodes (5): _cfg(), _partitions_end(), #30: hardware requirements stay true to the build configuration., test_flash_table_matches_partitions_and_headers(), test_psram_is_optional_on_the_hub()
 
-### Community 95 - "Community 95"
+### Community 97 - "Community 97"
 Cohesion: 0.48
 Nodes (6): _open_create_quiz(), #31: importing questions from CSV on the create-quiz page., test_invalid_rows_block_the_import_and_are_explained(), test_template_link_downloads_the_example(), test_unusable_file_shows_the_reason(), test_valid_file_loads_into_the_form_and_creates_the_quiz()
 
-### Community 96 - "Community 96"
-Cohesion: 0.47
-Nodes (5): _next_device_frame(), _project(), Contract test: frames the C6 gateway receives on its device WebSocket (#3). The…, The single frame an action broadcasts; it must carry a firmware event. Reads…, test_device_socket_receives_firmware_contract()
-
 ### Community 98 - "Community 98"
+Cohesion: 0.38
+Nodes (6): _open(), #35/#36: the Firmware page and pushing an approved image from Modules., test_invalid_upload_is_explained(), test_push_dialog_without_approved_images_points_to_the_firmware_page(), test_signature_status_is_shown(), test_upload_approve_and_push_from_modules()
+
+### Community 99 - "Community 99"
+Cohesion: 0.40
+Nodes (5): _publish_graph_visualization(), Sphinx configuration for the public imPress documentation site., Expose the generated graph beneath the hosted ``/graph/`` page., setup(), shutil
+
+### Community 101 - "Community 101"
+Cohesion: 0.60
+Nodes (4): _open(), #32: importing and exporting courses and sections on the Classrooms page., test_invalid_rows_block_the_import(), test_valid_file_creates_courses_and_sections()
+
+### Community 102 - "Community 102"
+Cohesion: 0.60
+Nodes (4): _beat(), #39: health states and the read-only diagnostics panel on the Modules page., _row(), test_health_badges_and_diagnostics_refresh()
+
+### Community 103 - "Community 103"
 Cohesion: 0.50
 Nodes (4): parametrize, #104: found live: a new line on the same commit as an older release must not…, test_gating_needs_the_line_to_exist_before_the_release(), test_milestone_gating_follows_the_git_ancestry()
 
+### Community 104 - "Community 104"
+Cohesion: 0.67
+Nodes (3): SQLite ignores foreign keys unless asked, per connection., _sqlite_pragmas(), listens_for
+
+### Community 106 - "Community 106"
+Cohesion: 0.67
+Nodes (3): Popen, Terminate the child and everything it started (npm, ninja, docker run)., _stop()
+
 ## Knowledge Gaps
-- **49 isolated node(s):** `StaleRender`, `afl-prepare-linux.sh script`, `afl.sh script`, `ossfuzz.sh script`, `start_server.sh script` (+44 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 959 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **123 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **49 isolated node(s):** `StaleRender`, `ASAN_OPTIONS`, `run.sh script`, `afl-prepare-linux.sh script`, `HEALTH_BADGE` (+44 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 961 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **122 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `istnow()` connect `Community 9` to `Community 32`, `Community 1`, `Community 33`, `Community 34`, `Community 4`, `Community 0`, `Community 38`, `Community 41`, `Community 10`, `Community 12`, `Community 13`, `Community 17`, `Community 19`, `Community 54`, `Community 23`, `Community 27`, `Community 61`?**
+- **Why does `istnow()` connect `Community 2` to `Community 0`, `Community 1`, `Community 3`, `Community 36`, `Community 5`, `Community 9`, `Community 10`, `Community 47`, `Community 16`, `Community 18`, `Community 19`, `Community 20`, `Community 83`, `Community 23`, `Community 24`?**
   _High betweenness centrality (0.061) - this node is a cross-community bridge._
-- **Why does `User` connect `Community 26` to `Community 32`, `Community 33`, `Community 1`, `Community 0`, `Community 4`, `Community 70`, `Community 41`, `Community 12`, `Community 14`, `Community 15`, `Community 17`, `Community 19`, `Community 21`, `Community 23`, `Community 29`, `Community 62`?**
-  _High betweenness centrality (0.046) - this node is a cross-community bridge._
-- **Why does `login()` connect `Community 0` to `Community 4`, `Community 10`, `Community 18`, `Community 19`, `Community 28`, `Community 29`, `Community 38`, `Community 40`, `Community 44`, `Community 45`, `Community 48`, `Community 50`, `Community 52`, `Community 53`, `Community 54`, `Community 56`, `Community 61`, `Community 62`, `Community 63`, `Community 65`, `Community 66`, `Community 70`, `Community 71`, `Community 75`, `Community 76`, `Community 80`, `Community 84`, `Community 86`, `Community 87`, `Community 92`, `Community 93`, `Community 96`?**
-  _High betweenness centrality (0.032) - this node is a cross-community bridge._
-- **Are the 156 inferred relationships involving `select()` (e.g. with `_load_session_by_hash()` and `validate_session()`) actually correct?**
-  _`select()` has 156 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 121 inferred relationships involving `User` (e.g. with `create_session()` and `get_current_user()`) actually correct?**
-  _`User` has 121 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `StaleRender`, `afl-prepare-linux.sh script`, `afl.sh script` to the rest of the system?**
+- **Why does `User` connect `Community 18` to `Community 0`, `Community 1`, `Community 3`, `Community 36`, `Community 5`, `Community 15`, `Community 19`, `Community 93`, `Community 83`, `Community 22`, `Community 23`, `Community 55`, `Community 29`, `Community 31`?**
+  _High betweenness centrality (0.043) - this node is a cross-community bridge._
+- **Why does `login()` connect `Community 5` to `Community 1`, `Community 3`, `Community 10`, `Community 13`, `Community 16`, `Community 22`, `Community 24`, `Community 27`, `Community 32`, `Community 37`, `Community 38`, `Community 39`, `Community 43`, `Community 44`, `Community 45`, `Community 47`, `Community 53`, `Community 55`, `Community 59`, `Community 62`, `Community 63`, `Community 65`, `Community 72`, `Community 73`, `Community 80`, `Community 81`, `Community 83`, `Community 84`, `Community 85`, `Community 86`, `Community 93`, `Community 94`?**
+  _High betweenness centrality (0.037) - this node is a cross-community bridge._
+- **Are the 157 inferred relationships involving `select()` (e.g. with `_load_session_by_hash()` and `validate_session()`) actually correct?**
+  _`select()` has 157 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 122 inferred relationships involving `User` (e.g. with `create_session()` and `get_current_user()`) actually correct?**
+  _`User` has 122 INFERRED edges - model-reasoned connections that need verification._
+- **What connects `StaleRender`, `ASAN_OPTIONS`, `run.sh script` to the rest of the system?**
   _49 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
-  _Cohesion score 0.05158324821246169 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.031784005468216 - nodes in this community are weakly interconnected._
 
 ## Repository Coverage
 - Python/FastAPI backend, frontend, and ESP32 firmware are AST-extracted by Graphify.
