@@ -86,6 +86,7 @@ See [scheduling and room occupancy](../design/scheduling.md).
 | `POST /api/admin/users/{id}/deactivate` | admin | – | reversible; signs the user out everywhere (sessions revoked, WebSockets closed). Yourself → 403 `SELF_LOCKOUT`; the last active super admin → 409 `LAST_SUPER_ADMIN`; super admin by an admin → 403 `FORBIDDEN_TARGET`. Returns the user |
 | `POST /api/admin/users/{id}/reactivate` | admin | – | allows logging in again; earlier sessions stay revoked. Returns the user |
 | `POST /api/admin/users/{id}/role` | **super_admin** | `{role}` | `role ∈ teacher|admin|super_admin`; signs the user out; yourself → 403 `SELF_LOCKOUT`; an admin caller → 403 `FORBIDDEN_ROLE`; last active super admin → 409; unknown role → 422 |
+| `POST /api/admin/users/{id}/end-sessions` | admin | – | signs the user out everywhere (e.g. to free an account held by another device, v2.2) |
 | `POST /api/admin/users/{id}/reset-password` | admin | `{new_password (≥6)}` | signs the user out; a super admin's by an admin → 403 |
 | `DELETE /api/admin/users/{id}` | admin | – | **permanent** delete → `204`; primary teacher of a class → 409 `USER_OWNS_CLASSES`; yourself → 403 `SELF_LOCKOUT`; the last active super admin → 409. Retention rules: [security model → data handling](../design/security-model.md#data-handling). To keep the account, use `/deactivate` |
 | `POST /api/admin/users/import` | admin | *multipart* `file` (CSV) | columns `username,email,password,full_name,role` (all required); per-row errors returned; `admin` rows need super_admin |

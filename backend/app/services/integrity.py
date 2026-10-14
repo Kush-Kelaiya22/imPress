@@ -159,7 +159,7 @@ async def reseal_everything(reason: str) -> int:
 async def startup() -> None:
     """After migrations: baseline on first use, else verify (and repair)."""
     from .. import dbgateway
-    from ..database import Base, engine
+    from ..database import engine
     if db_path() is None:
         return
     async with engine.begin() as conn:

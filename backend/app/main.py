@@ -28,6 +28,7 @@ from .models import User, UserSession
 from .auth import hash_password, _sha256_hex, session_token_from
 from .dbgateway import DatabaseWriteRefused
 from .routers.system import router as system_router
+from .routers.testmode import router as testmode_router
 
 
 logger = logging.getLogger(__name__)
@@ -233,6 +234,7 @@ app.include_router(firmware.router)
 app.include_router(deployments.router)
 app.include_router(ws_router)
 app.include_router(system_router)
+app.include_router(testmode_router)
 
 
 # ── Static Files & Templates ────────────────────────────────────────
