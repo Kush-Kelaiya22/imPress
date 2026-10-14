@@ -368,6 +368,50 @@ jobs:
         if: always()
         run: cat server.log tls.log 2>/dev/null || true
 
+  launchers:
+    # The one-file launchers (v2.2) on each system: install from nothing, free
+    # an occupied port, serve /health.
+    name: Launcher (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      IMPRESS_PORT: "8123"
+      IMPRESS_INITIAL_ADMIN_PASSWORD: launcher-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Occupy the port
+        shell: bash
+        run: nohup python -m http.server "$IMPRESS_PORT" > /dev/null 2>&1 &
+      - name: launcher.sh
+        if: runner.os != 'Windows'
+        run: |
+          nohup ./launcher.sh > launcher.log 2>&1 &
+          for _ in $(seq 120); do curl -sf "http://127.0.0.1:$IMPRESS_PORT/health" && exit 0; sleep 1; done
+          cat launcher.log; exit 1
+      - name: launcher.bat
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Start-Process cmd.exe -ArgumentList '/c', 'launcher.bat > launcher.log 2>&1' -WindowStyle Hidden
+          foreach ($i in 1..120) {
+            try { Invoke-RestMethod "http://127.0.0.1:$env:IMPRESS_PORT/health"; exit 0 } catch { Start-Sleep 1 }
+          }
+          Get-Content launcher.log; exit 1
+      - name: HTTP smoke test
+        shell: bash
+        run: python scripts/smoke_test.py --base "http://127.0.0.1:$IMPRESS_PORT" --password "$IMPRESS_INITIAL_ADMIN_PASSWORD"
+      - name: Launcher log
+        if: always()
+        shell: bash
+        run: cat launcher.log 2>/dev/null || true
+
   container:
     # The release image for both architectures (#136), built and smoke-tested
     # natively on every change; nothing is pushed here.
@@ -429,7 +473,7 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [repo, changelog, security, backend, firmware-static, firmware-host, firmware-build, firmware-signed, frontend, docs, ui, install-smoke, container, firmware-emulator]
+    needs: [repo, changelog, security, backend, firmware-static, firmware-host, firmware-build, firmware-signed, frontend, docs, ui, install-smoke, launchers, container, firmware-emulator]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
