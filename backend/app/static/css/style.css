@@ -406,6 +406,7 @@ input[type="file"] { padding: 7px; }
 .feed-icon.green { background: var(--success-soft); color: var(--success); }
 .feed-icon.red { background: var(--danger-soft); color: var(--danger); }
 .feed-icon.amber { background: var(--warning-soft); color: var(--warning); }
+.feed-icon.blue { background: var(--primary-soft); color: var(--primary); }
 .feed-icon.grey { background: var(--surface-3); color: var(--muted); }
 .feed-body { flex: 1; min-width: 0; }
 .feed-body b { display: block; font-weight: 600; color: var(--text); font-size: 13.5px; }

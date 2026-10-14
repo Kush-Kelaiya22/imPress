@@ -73,6 +73,15 @@ class Settings(BaseSettings):
     # Devices too must use HTTPS/WSS (firmware built with BACKEND_TLS, #66).
     DEVICE_HTTPS_ONLY: bool = False
 
+    # ── Global policy control (v2.2, docs/design/gpc.md) ──
+    # The security and integrity switches belong to root, not to a super admin:
+    # a built-in default per profile, optionally a root-signed file, optionally
+    # inline overrides on the start command.
+    PROFILE: str = "standard"        # "standard" or "hardened" (refuses to start below the hardened floor)
+    GPC: str = ""                    # inline overrides, e.g. "dual_control.delay_minutes=30,test_mode.allowed=false"
+    GPC_FILE: str = ""               # root-signed policy file; "" = ./global_policy_control.json
+    ROOT_PUBLIC_KEY: str = ""        # root's Ed25519 public key (base64); "" = ./root_public.key
+
     # ── WebSocket ──
     # Require auth on /ws/class: devices present ?api_key=<device key>,
     # teachers present ?token=<JWT>. Turn off for LAN debugging.

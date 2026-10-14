@@ -27,6 +27,7 @@ The portal is deliberately served by imPress rather than embedded from GitHub: i
 | ↳ [Wire protocols](design/protocols.md) | encode or decode any byte on any link |
 | ↳ [Mesh design](design/mesh.md) | understand ESP-NOW relaying, root discovery, de-duplication, timing |
 | ↳ [Security model](design/security-model.md) | reason about threats, auth, keys, sessions, OTA integrity |
+| ↳ [Global policy control](design/gpc.md) | the root-signed feature flags, the standard and hardened profiles, inline overrides, the signed code manifest |
 | ↳ [Data integrity](design/data-integrity.md) | the database gateway, row seals, temporary backups, Degraded and self-repair, clearing data |
 | ↳ [Design decisions](design/decisions.md) | read the decision records behind non-obvious choices |
 | **[API](api/rest-api.md)** | integrate with the backend |
@@ -38,6 +39,8 @@ The portal is deliberately served by imPress rather than embedded from GitHub: i
 | ↳ [Configuration](guides/configuration.md) | look up any backend setting or device Kconfig/NVS key |
 | ↳ [Deployment](guides/deployment.md) | put imPress in a real classroom |
 | ↳ [CSV imports](guides/csv-imports.md) | bulk-create quiz questions, courses and sections from a spreadsheet; export sections |
+| ↳ [Production hardening](guides/production-hardening.md) | the checklist for a production server: root key, signed policy, audit trail, signed firmware, backups |
+| ↳ [Privacy and compliance toolkit](compliance/README.md) | data inventory, notice template, retention, rights requests, incident response, control mapping, risk register |
 | ↳ [Debug mode and test data](guides/test-mode.md) | try imPress on realistic generated or pasted data without touching the real database |
 | ↳ [OTA updates](guides/ota-updates.md) | ship firmware to deployed hubs and gateways |
 | ↳ [Releases](guides/releases.md) | release names, how releases are made, Beta and Stable, the container image, flashing prebuilt images |

@@ -25,6 +25,7 @@ from fastapi import Depends, Header, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from . import gpc
 from .config import api_key_ok, settings
 from .database import get_db
 from .models import EspDevice
@@ -94,7 +95,7 @@ async def denial(db: AsyncSession, caller: DeviceCaller, mac: str | None, *, reg
         return "this device is disabled"
     if target is not None and target.key_confirmed_at is not None:
         return "this device has its own key: use it, or reset it on the Modules page"
-    if settings.DEVICE_KEYS_REQUIRED and not registering:
+    if gpc.device_keys_required(settings) and not registering:
         return "the shared key is accepted for registration only (IMPRESS_DEVICE_KEYS_REQUIRED)"
     return None
 

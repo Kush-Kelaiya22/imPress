@@ -449,3 +449,50 @@ const Live = {
 };
 ['pointerdown', 'keydown', 'wheel'].forEach(t => window.addEventListener(t, () => { Live.lastUser = Date.now(); }, { passive: true }));
 document.addEventListener('visibilitychange', () => { if (!document.hidden && Live.pending) Live.schedule(200); });
+
+
+// ── Delegated events (v2.2) ──────────────────────────────────────────────
+// Markup carries data-action="name" (also data-change, data-input, data-submit,
+// data-keydown) and Actions[name](element, event) runs it. No inline handlers:
+// the page's Content-Security-Policy can then forbid them.
+const Actions = {};
+(function wireDelegatedEvents() {
+  const route = (type, attr) => document.addEventListener(type, (e) => {
+    const el = e.target && e.target.closest ? e.target.closest(`[${attr}]`) : null;
+    const fn = el && Actions[el.getAttribute(attr)];
+    if (fn) fn(el, e);
+  });
+  [['click', 'data-action'], ['change', 'data-change'], ['input', 'data-input'], ['submit', 'data-submit'],
+   ['keydown', 'data-keydown']].forEach(([t, a]) => route(t, a));
+})();
+
+// A small modal that asks for text (a password, a typed confirmation) and
+// resolves with the values, or null when cancelled. Built with the DOM, no inline script.
+function askDialog({ title, body = '', fields = [], confirm = 'Confirm', danger = false, validate = null }) {
+  return new Promise((resolve) => {
+    const m = document.createElement('div');
+    m.className = 'modal';
+    m.innerHTML = `<div class="modal-backdrop"></div>
+      <form class="modal-content card" novalidate role="dialog" aria-modal="true" aria-label="${escHtml(title)}">
+        <h2>${escHtml(title)}</h2>
+        ${body ? `<p class="text-muted">${body}</p>` : ''}
+        ${fields.map((f, i) => `<div class="form-group"><label for="dlg-${i}">${escHtml(f.label)}</label>
+          <input id="dlg-${i}" name="${escHtml(f.name)}" type="${escHtml(f.type || 'text')}" autocomplete="${escHtml(f.autocomplete || 'off')}"
+            placeholder="${escHtml(f.placeholder || '')}"></div>`).join('')}
+        <div class="modal-actions"><button type="button" class="btn btn-outline" data-dlg="cancel">Cancel</button>
+          <button type="submit" class="btn ${danger ? 'btn-danger' : 'btn-primary'}" ${validate ? 'disabled' : ''}>${escHtml(confirm)}</button></div>
+      </form>`;
+    document.body.appendChild(m);
+    const form = m.querySelector('form');
+    const done = (value) => { m.remove(); document.removeEventListener('keydown', onKey); resolve(value); };
+    const values = () => Object.fromEntries(fields.map(f => [f.name, form.elements[f.name].value]));
+    const refresh = () => { if (validate) form.querySelector('button[type=submit]').disabled = !validate(values()); };
+    const onKey = (e) => { if (e.key === 'Escape') done(null); };
+    document.addEventListener('keydown', onKey);
+    m.querySelector('.modal-backdrop').addEventListener('click', () => done(null));
+    m.querySelector('[data-dlg=cancel]').addEventListener('click', () => done(null));
+    form.addEventListener('input', refresh);
+    form.addEventListener('submit', (e) => { e.preventDefault(); if (!validate || validate(values())) done(values()); });
+    const first = form.querySelector('input'); if (first) first.focus(); else form.querySelector('[type=submit]').focus();
+  });
+}

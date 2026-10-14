@@ -110,6 +110,35 @@ def auth(token):
     return {"Authorization": f"Bearer {token}"}
 
 
+def approved(client, headers, action, password="admin123", approver=None, approver_password=None):
+    """Dual control (v2.2): request `action`, have it approved (by `approver` headers, or by the
+    requester when they are the only super admin), return the approval id. The default
+    profile has no delay."""
+    r = client.post("/api/admin/approvals", headers=headers, json={"action": action, "params": {}, "password": password})
+    assert r.status_code == 201, r.text
+    aid = r.json()["id"]
+    r = client.post(f"/api/admin/approvals/{aid}/approve", headers=approver or headers,
+                    json={"password": approver_password or password})
+    assert r.status_code == 200, r.text
+    return aid
+
+
+@pytest.fixture
+def policy():
+    """Change global-policy flags for one test: policy({"dual_control.delay_minutes": 10}). Root does this
+    with a signed file or inline flags; a test sets the loaded values directly. Use after `client`."""
+    from app import gpc
+    saved = dict(gpc.current().values)
+
+    def setter(flags: dict):
+        for name, value in flags.items():
+            assert name in gpc.FLAGS, name
+            gpc.current().values[name] = value
+    yield setter
+    gpc.current().values.clear()
+    gpc.current().values.update(saved)
+
+
 # ── Domain helpers (keep tests short and intention-revealing) ───────────────
 
 PASSWORD = "Passw0rd!x"

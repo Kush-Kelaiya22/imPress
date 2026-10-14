@@ -5,7 +5,10 @@
 - GET  /api/admin/system/integrity             verification, backups, Degraded
 - POST /api/admin/system/integrity/verify      verify now
 - POST /api/admin/system/integrity/acknowledge clear Degraded (super admin may also accept the current state)
-- POST /api/admin/system/clear                 clear class data or reset everything (super admin, typed confirmation)
+- POST /api/admin/system/clear                 clear class data or reset everything (super admin, typed confirmation,
+                                               a second super admin's approval: services/approvals.py)
+- GET  /api/admin/system/policy                the effective global policy (read-only: root changes it)
+- GET  /api/system/signing-key                 public key that verifies this server's signed exports
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -20,6 +24,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import gpc, signing
 from ..activity import log_activity
 from ..auth import oauth2_scheme, validate_session
 from ..config import APP_VERSION
@@ -27,7 +32,7 @@ from ..database import async_session, get_db
 from ..dbgateway import SYSTEM, act_as
 from ..models import User
 from ..policy import allowed, require
-from ..services import events, integrity
+from ..services import approvals, auditsink, events, integrity
 from ..timeutil import istnow
 
 logger = logging.getLogger(__name__)
@@ -105,7 +110,8 @@ async def integrity_verify(user: User = Depends(require("users.manage"))):
 
 
 class Acknowledge(BaseModel):
-    accept_current: bool = False      # super admin: re-seal the database as it is now
+    accept_current: bool = False      # super admin: re-seal the database as it is now (needs an approval)
+    approval_id: int | None = None
 
 
 @router.post("/api/admin/system/integrity/acknowledge")
@@ -114,6 +120,7 @@ async def integrity_acknowledge(body: Acknowledge, user: User = Depends(require(
     if body.accept_current:
         if not allowed(user, "users.assign_role"):
             raise HTTPException(403, {"code": "FORBIDDEN", "message": "Only a super admin can accept the current state"})
+        await approvals.require(db, user, "integrity.accept_current", {}, body.approval_id)
         act_as(SYSTEM)
         await integrity.reseal_everything(f"accepted by {user.username}")
     await integrity.acknowledge()
@@ -134,11 +141,16 @@ CLEAR_SCOPES = {
 class ClearRequest(BaseModel):
     scope: str
     confirm: str
+    approval_id: int | None = None
 
 
 @router.get("/api/admin/system/clear")
 async def clear_options(user: User = Depends(require("users.assign_role"))):
-    return {k: {"description": d, "confirm": c} for k, (d, c) in CLEAR_SCOPES.items()}
+    return {"scopes": {k: {"description": d, "confirm": c} for k, (d, c) in CLEAR_SCOPES.items()
+                       if k != "everything" or gpc.get("system.reset_everything_allowed")},
+            "dual_control": gpc.get("dual_control.enabled"),
+            "delay_minutes": gpc.get("dual_control.delay_minutes"),
+            "retained_audit_days": gpc.get("audit.min_retention_days")}
 
 
 @router.post("/api/admin/system/clear")
@@ -149,6 +161,11 @@ async def clear_data(body: ClearRequest, request: Request, user: User = Depends(
         raise HTTPException(422, "scope must be class_data or everything")
     if body.confirm.strip() != CLEAR_SCOPES[body.scope][1]:
         raise HTTPException(422, {"code": "CONFIRM", "message": f"Type {CLEAR_SCOPES[body.scope][1]} to confirm"})
+    if body.scope == "everything" and not gpc.get("system.reset_everything_allowed"):
+        raise HTTPException(403, {"code": "POLICY_DISABLED",
+                                  "message": "A full reset is switched off by policy (system.reset_everything_allowed)"})
+    async with async_session() as adb:                  # the approval is spent first, in its own transaction
+        await approvals.require(adb, user, f"system.clear.{body.scope}", {}, body.approval_id)
     backup = integrity.backup_dir() / f"before-clear-{istnow():%Y%m%d-%H%M%S}.db"
     await integrity.copy_live_to(backup)
     keep_session = getattr(request.state, "session", None)
@@ -164,8 +181,18 @@ async def clear_data(body: ClearRequest, request: Request, user: User = Depends(
             await db.execute(text(f"DELETE FROM {t}"))
         if body.scope == "everything":
             for t in ("student_modules", "deployment_targets", "firmware_deployments", "firmware_artifacts",
-                      "esp_devices", "activity_logs", "login_throttle"):
+                      "esp_devices", "login_throttle"):
                 await db.execute(text(f"DELETE FROM {t}"))
+            keep_days = gpc.get("audit.min_retention_days")       # policy: recent audit entries survive a reset
+            if keep_days:
+                await db.execute(text("DELETE FROM activity_logs WHERE timestamp < :c"),
+                                 {"c": (istnow() - timedelta(days=keep_days)).isoformat(sep=" ")})
+                await db.execute(text("UPDATE activity_logs SET user_id = NULL WHERE user_id IS NOT NULL AND user_id != :u"),
+                                 {"u": user.id})
+            else:
+                await db.execute(text("DELETE FROM activity_logs"))
+            await db.execute(text("DELETE FROM approvals WHERE requested_by != :u OR (approved_by IS NOT NULL AND approved_by != :u)"),
+                             {"u": user.id})
             await db.execute(text("DELETE FROM user_sessions WHERE id != :k"),
                              {"k": keep_session.id if keep_session else -1})
             await db.execute(text("DELETE FROM users WHERE id != :u"), {"u": user.id})
@@ -175,3 +202,16 @@ async def clear_data(body: ClearRequest, request: Request, user: User = Depends(
     events.alert(f"{user.username} cleared the database ({body.scope.replace('_', ' ')}). "
                  f"A copy was saved first ({backup.name}).", "warning", "all")
     return {"status": "ok", "backup": backup.name}
+
+
+@router.get("/api/admin/system/policy")
+async def policy_view(user: User = Depends(require("audit.read"))):
+    """Read-only: nothing in the web app or the API changes the policy."""
+    problems = signing.verify_manifest_if_present()
+    return {**gpc.describe(), "audit": auditsink.status(), "code_manifest": problems}
+
+
+@router.get("/api/system/signing-key")
+async def signing_key():
+    """Public: the key that verifies the server's signed exports (scripts/verify_export.py)."""
+    return signing.export_public_key()

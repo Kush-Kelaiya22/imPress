@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
+from . import gpc
 from .transport import enforce_https, https_required
 from .config import APP_VERSION, settings, check_secure, insecure_settings
 from .database import init_db, async_session
@@ -28,6 +29,7 @@ from .models import User, UserSession
 from .auth import hash_password, _sha256_hex, session_token_from
 from .dbgateway import DatabaseWriteRefused
 from .routers.system import router as system_router
+from .routers.approvals import router as approvals_router
 from .routers.testmode import router as testmode_router
 
 
@@ -38,9 +40,24 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Create tables and seed a default super admin on startup."""
     check_secure(settings)
+    # Global policy (v2.2): root's switches. A policy that can't be applied stops a hardened server.
+    try:
+        policy = gpc.load(settings)
+    except gpc.PolicyError as exc:
+        raise RuntimeError(f"Global policy: {exc}") from None
+    gpc.enforce_startup(settings)
+    startup_alerts = [f"Policy file refused: {p}" for p in policy.problems]
+    if gpc.get("code.verify_manifest") != "off":
+        from . import signing
+        code = signing.verify_manifest_if_present()
+        if gpc.get("code.verify_manifest") == "enforce" and (not code["present"] or code["problems"]):
+            raise RuntimeError("The server's code does not match the root-signed manifest (policy code.verify_manifest=enforce): "
+                               + ("; ".join(code["problems"][:5]) or "MANIFEST.json is missing"))
+        if code["problems"]:
+            startup_alerts.append("The server's code differs from the signed manifest: " + "; ".join(code["problems"][:5]))
     if https_required():
         logger.info("HTTPS required for staff traffic; devices %s (IMPRESS_REQUIRE_HTTPS, #152)",
-                    "too" if settings.DEVICE_HTTPS_ONLY else "may use HTTP")
+                    "too" if gpc.device_https_only(settings) else "may use HTTP")
     else:
         logger.warning("IMPRESS_REQUIRE_HTTPS is off: passwords and class data may cross the network unencrypted")
     from .services.firmware_signing import site_key_digest
@@ -98,6 +115,10 @@ async def lifespan(app: FastAPI):
     from .services import integrity
     await integrity.startup()
     integrity_task = asyncio.create_task(integrity.integrity_loop())
+    from .services import housekeeping
+    maintenance_task = asyncio.create_task(housekeeping.maintenance_loop())
+    for note in startup_alerts:
+        await housekeeping.report(note)
 
     try:
         yield
@@ -114,6 +135,7 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         integrity_task.cancel()
+        maintenance_task.cancel()
         session_task.cancel()
         try:
             await session_task
@@ -235,6 +257,7 @@ app.include_router(deployments.router)
 app.include_router(ws_router)
 app.include_router(system_router)
 app.include_router(testmode_router)
+app.include_router(approvals_router)
 
 
 # ── Static Files & Templates ────────────────────────────────────────

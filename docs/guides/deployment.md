@@ -133,6 +133,8 @@ Gateways and hubs speak plain `http://` and `ws://` unless they are built with *
 The device checks the server's certificate against the chosen trust and the host name; a mismatch is a connection error (logged, retried), never a fallback to HTTP.
 
 ### Backups
+`scripts/backup.sh --dest <folder or user@host:/path> --encrypt-to <gpg id> --keep 35` writes a consistent, checksummed archive of the database, the firmware folder and `.env` to a place you choose (see the script's header, and the [hardening checklist](production-hardening.md)).
+
 imPress keeps two **temporary** copies for self-repair (start-up and a rolling copy every 5 minutes, in `IMPRESS_TEMP_BACKUP_DIR`, by default under the system temporary folder; see [data integrity](../design/data-integrity.md)). They are not backups: they live on the same machine and are replaced constantly. Point `IMPRESS_TEMP_BACKUP_DIR` at a folder only the service account can read (for example `/temp/backups`), and keep real backups as well:
 
 - `impress.db` is a single SQLite file: back it up with `sqlite3 impress.db ".backup '/backups/impress-$(date +%F).db'"` (safe while running).

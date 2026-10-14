@@ -61,6 +61,8 @@ DELETE_RULES = {
     ("firmware_deployments", "requested_by"): "null",
     ("activity_logs", "user_id"): "audit",
     ("class_occurrence_exceptions", "created_by"): "null",
+    ("approvals", "requested_by"): "delete",        # a request only makes sense with its requester; the audit trail keeps the record
+    ("approvals", "approved_by"): "null",
 }
 
 

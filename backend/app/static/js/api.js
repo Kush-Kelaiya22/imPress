@@ -448,11 +448,22 @@ const systemApi = {
   status() { return apiRequest('/system/status'); },
   integrity() { return apiRequest('/admin/system/integrity'); },
   verify() { return apiRequest('/admin/system/integrity/verify', { method: 'POST' }); },
-  acknowledge(acceptCurrent = false) {
-    return apiRequest('/admin/system/integrity/acknowledge', { method: 'POST', body: JSON.stringify({ accept_current: acceptCurrent }) });
+  acknowledge(acceptCurrent = false, approvalId = null) {
+    return apiRequest('/admin/system/integrity/acknowledge', { method: 'POST', body: JSON.stringify({ accept_current: acceptCurrent, approval_id: approvalId }) });
   },
   clearOptions() { return apiRequest('/admin/system/clear'); },
-  clear(scope, confirm) { return apiRequest('/admin/system/clear', { method: 'POST', body: JSON.stringify({ scope, confirm }) }); },
+  clear(scope, confirm, approvalId) {
+    return apiRequest('/admin/system/clear', { method: 'POST', body: JSON.stringify({ scope, confirm, approval_id: approvalId }) });
+  },
+  policy() { return apiRequest('/admin/system/policy'); },
+};
+
+// Dual control: a second super admin approves dangerous actions (v2.2)
+const approvalsApi = {
+  list() { return apiRequest('/admin/approvals'); },
+  request(action, password) { return apiRequest('/admin/approvals', { method: 'POST', body: JSON.stringify({ action, params: {}, password }) }); },
+  approve(id, password) { return apiRequest(`/admin/approvals/${id}/approve`, { method: 'POST', body: JSON.stringify({ password }) }); },
+  deny(id) { return apiRequest(`/admin/approvals/${id}/deny`, { method: 'POST' }); },
 };
 
 const testModeApi = {
