@@ -57,6 +57,7 @@ hardware/DEVICE_COMPATIBILITY
 firmware/OTA_ARCHITECTURE
 firmware/FIRMWARE_VERSIONING
 firmware/RECOVERY_PROCEDURE
+reference/placeholders
 reference/data-model
 reference/hardware
 reference/known-issues

@@ -254,11 +254,11 @@ Install the tools once: `pip install "esptool>=5" esp-idf-nvs-partition-gen` (th
    key,type,encoding,value
    impress,namespace,,
    init_done,data,u8,1
-   wifi_ssid,data,string,ClassroomWiFi
-   wifi_pass,data,string,wifi-password
-   backend_h,data,string,192.168.1.10
+   wifi_ssid,data,string,<WIFI_SSID>
+   wifi_pass,data,string,<WIFI_PASSWORD>
+   backend_h,data,string,<SERVER_IP>
    backend_p,data,u16,8000
-   api_key,data,string,<IMPRESS_DEVICE_API_KEY>
+   api_key,data,string,<DEVICE_KEY>
    class_id,data,i32,0
    ```
    Hub (`s3-settings.csv`). The namespace, the flag and two key names are different, and the port is `i32`:
@@ -266,11 +266,11 @@ Install the tools once: `pip install "esptool>=5" esp-idf-nvs-partition-gen` (th
    key,type,encoding,value
    s3_cfg,namespace,,
    init,data,u8,1
-   wifi_ssid,data,string,ClassroomWiFi
-   wifi_pass,data,string,wifi-password
-   backend_host,data,string,192.168.1.10
+   wifi_ssid,data,string,<WIFI_SSID>
+   wifi_pass,data,string,<WIFI_PASSWORD>
+   backend_host,data,string,<SERVER_IP>
    backend_port,data,i32,8000
-   api_key,data,string,<IMPRESS_DEVICE_API_KEY>
+   api_key,data,string,<DEVICE_KEY>
    class_id,data,i32,0
    ```
 2. Make the partition image (the NVS partition is 24 KB on both boards):

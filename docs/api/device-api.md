@@ -157,6 +157,8 @@ Computed from the latest values on every read (`services/health.py`); the first 
 | `poll_vote` | stored only if the student is known, the poll is active, the option is in range, and no vote yet for (poll, student) |
 | `ota_result` | `{mac_address (12 hex, as the S3 registered), version, result: applied\|rolled_back\|failed, error, device_mac}` from the S3 via its C6 (#33). Updates the device: `applied` with the pushed version → `ota_status: applied`; another version → `failed`; `rolled_back` clears the pending version; `failed` keeps it. Logged as `module.ota_result`. Unknown MAC or result → `skipped` |
 
+**Who counts (#186):** in a class with a roster, only its enrolled students; an answer or vote from anyone else is skipped and the class's teachers get `answer_not_counted` with the student's number and name, so they can enrol the student. A class with no enrolments at all counts every known student, as before. A gateway with its own key also records only for its linked class (v2.2).
+
 Each stored answer or vote broadcasts the live count to the class room (`quiz_answer` with `total_answers`, `poll_vote` with `total_votes`). Duplicates within one batch are caught too, because the session autoflushes before each duplicate check.
 
 ## Attendance

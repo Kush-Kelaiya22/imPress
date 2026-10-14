@@ -30,6 +30,22 @@ Added for the 2.2 line (milestone `varun/v2.2`), each a step-by-step procedure t
 
 These issues are in the release line's milestone (`varun/v2.1`) with the `testing` label. While one of them is open, every `varun/v2.1.N` release is marked **Beta**; when the last one closes they become **Stable** automatically ([releases](../guides/releases.md#beta-and-stable)).
 
+
+```mermaid
+flowchart LR
+    B84["#84 bring-up, SPI soak"] --> B85["#85 identity, join, relay"] --> B86["#86 quizzes and polls"]
+    B86 --> B83["#83 timed quizzes"]
+    B86 --> B87["#87 burst and endurance"]
+    B84 --> B90["#90 diagnostics"]
+    B90 --> B88["#88 gateway OTA"] --> B89["#89 hub OTA, staged rollout"]
+    B88 --> B92["#92 keys, signing, TLS"]
+    B86 --> B93["#93 range, power, buttons"]
+    B84 --> B91["#91 hub variants"]
+    B85 --> N183["#183 identity edge cases"]
+    B86 --> N184["#184 neighbouring rooms"]
+    B86 --> N185["#185 v2.2 changes"]
+```
+
 ## How to record a result
 
 Replace *not run* with:

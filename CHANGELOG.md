@@ -11,14 +11,20 @@ All notable changes to imPress, for the people who install and use it. Each pull
 ### Added
 
 - A design proposal for authenticating the radio messages between student modules and the hub, for review before it is built: [mesh frame authentication](docs/design/mesh-authentication.md). ([#187](https://github.com/Kush-Kelaiya22/imPress/issues/187))
+- More detailed documentation: 14 new diagrams (scheduling, deployment topology, firmware versions, recovery, configuration, WebSocket connection, sign-in and session, hardware test order, test layers, imports, development loop, the classroom node), a 2.1 → 2.2 upgrade procedure, the protection of every communication path, and a [placeholders](docs/reference/placeholders.md) page. The guides no longer show real addresses or ports; they use placeholders such as `<SERVER_IP>` and `<SERIAL_PORT>`.
 - Every release now says what its firmware is and is not: each board's folder has `BUILD_INFO.json` (commit, ESP-IDF version, chip, flash settings, image checksum) and `FLASHING.txt` (esptool commands with the offsets of that build), every download has a signed build-provenance attestation (`gh attestation verify <file> -R Kush-Kelaiya22/imPress`), and the release page states that a release image is not approved for over-the-air updates until the server's TrustedInstaller has qualified it and an administrator has approved it.
 - A classroom simulator for developers (`firmware/sim/classroom_sim.py`): student modules, a hub and a gateway exchange frames through the firmware's own protocol code, with repeatable radio and SPI faults (loss, duplicates, corruption, reordering). Its tests run in CI, including a simulated room feeding the real server. It found two ways answers can be lost ([#181](https://github.com/Kush-Kelaiya22/imPress/issues/181), [#182](https://github.com/Kush-Kelaiya22/imPress/issues/182)).
 - Quiz answers from a student module now carry the time the student took to answer, measured on the module from the moment the question arrived (it was always 0).
 - A gateway can be built with its classroom code (`CLASSROOM_CODE` in menuconfig) so the server links it to the class held in that room when it first registers. Empty by default: gateways are linked in the admin page as before.
 - `firmware/activate_idf.ps1` finds and activates an ESP-IDF installation in PowerShell on Windows. ([#114](https://github.com/Kush-Kelaiya22/imPress/issues/114))
 
+### Changed
+
+- A class with a roster now counts only its enrolled students' answers and votes. An answer from anyone else is not counted, and the teacher sees who it was on the live page, to enrol them if they belong there. A class with no enrolled students at all counts everyone, as before. ([#186](https://github.com/Kush-Kelaiya22/imPress/issues/186))
+
 ### Fixed
 
+- An unconfigured hub now looks for its updates on the same server as its gateway: the hub's built-in default server address differed from the gateway's. `firmware/activate_idf.ps1` no longer searches one developer's own drive.
 - A student's answer or vote lost on the radio is now sent again until the hub confirms it (at most three more times), and the module shows *Answer received*, or *Not delivered: press again* if it never got through. Before, a lost answer was silently missing from the results. Needs the v2.2 hub and module firmware; older hubs and modules keep working as before. ([#181](https://github.com/Kush-Kelaiya22/imPress/issues/181))
 
 ### Security

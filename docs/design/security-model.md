@@ -30,7 +30,35 @@ flowchart LR
     M -- "no authentication on air" --> HUB
     GW -- "X-API-Key (own device key; shared key only to enrol)" --> API
     HUB -- "X-API-Key" --> API
-    BR -- "session token (TLS)" --> API
+    BR -- "session cookie (TLS)" --> API
+```
+
+Each path in detail (v2.2):
+
+| Path | Protection | What is trusted, and what is left |
+|---|---|---|
+| Browser → server | TLS required for staff traffic (HSTS); `HttpOnly`, `SameSite=Strict`, `Secure` session cookie; `X-Impress-Request` on cookie-authenticated changes; `Origin` checked on teacher sockets | the server certificate (your CA or a public one) |
+| Server → TrustedInstaller | the same process; no HTTP route reaches it; its reports are sealed with a key derived from `IMPRESS_JWT_SECRET` | the server host and its secret |
+| Gateway (C6) → server | per-device key, scoped to the gateway's class; TLS when `BACKEND_TLS` is on (`IMPRESS_DEVICE_HTTPS_ONLY` refuses plain HTTP) | without device TLS anyone on the classroom network can read device traffic: turn it on (#92) |
+| Hub (S3) ↔ gateway (C6), SPI | CRC16 per 4096-byte slot, bounded records | **physical**: both boards sit in one enclosure; whoever can attach wires can inject frames. No cryptography. A corrupted slot is lost today (#182) |
+| Student modules ↔ hub, ESP-NOW | CRC16, de-duplication, enrollment format checks, delivery acknowledgement (#181) | **none on air**: unauthenticated broadcast (#187). The server limits the damage: known students only, active quiz only, the gateway's own class, one answer per student and question |
+| Firmware to devices | approved, qualified (sealed report for these exact bytes), site-signed image; the device checks SHA-256 before it boots it | the site signing key, kept off the server's repository |
+
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant P as Proxy (HTTPS)
+    participant S as Server
+    B->>P: POST /api/auth/login (username, password)
+    P->>S: forwarded, X-Forwarded-Proto https
+    S->>S: throttle check, bcrypt verify, create session (store sha256 only)
+    S-->>B: Set-Cookie impress_session HttpOnly Secure SameSite=Strict
+    B->>S: PUT /api/... + cookie + X-Impress-Request: 1
+    S->>S: session valid (idle, hard expiry, user active)?<br/>CSRF header present? policy.py allows?
+    S-->>B: 200 / 401 / 403
+    B->>S: POST /api/auth/logout + X-Impress-Request: 1
+    S-->>B: session revoked, cookie cleared
 ```
 
 ## Authentication and authorization
