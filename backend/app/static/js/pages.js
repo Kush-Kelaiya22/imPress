@@ -165,11 +165,11 @@ async function renderAdminDashboard(app) {
           <div class="card">
             <div class="card-header"><div><h2>Classrooms today</h2><div class="card-sub">Activated now, or with a slot today</div></div>
               <a href="#/admin/classes" class="btn btn-sm btn-outline">All classrooms</a></div>
-            ${todays.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Classroom</th><th>Room</th><th>Time</th><th>Status</th><th>Students</th><th>Faculty</th><th></th></tr></thead><tbody>
+            ${todays.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Classroom</th><th class="col-wide">Room</th><th>Time</th><th>Status</th><th class="col-wide">Students</th><th class="col-wide">Faculty</th><th></th></tr></thead><tbody>
               ${todays.map(c => { const [k, t] = classStatus(c); const s = (c.meeting_schedule || []).find(x => x.day === day);
-                return `<tr><td><div class="cell-person">${classGlyph(c)}<div><b>${escHtml(c.course_name || c.name)}</b><span>${escHtml(c.code)}</span></div></div></td>
-                <td class="nowrap">${escHtml(c.classroom_code || '—')}</td><td class="nowrap">${s ? `${s.start}–${s.end}` : '—'}</td><td>${statusPill(k, t)}</td>
-                <td>${c.student_count || 0}</td><td class="text-sm">${escHtml(facultyText(c))}</td>
+                return `<tr><td><div class="cell-person">${classGlyph(c)}<div><b>${escHtml(c.course_name || c.name)}</b><span>${escHtml(c.code)}${c.classroom_code ? ` · ${escHtml(c.classroom_code)}` : ''}</span></div></div></td>
+                <td class="nowrap col-wide">${escHtml(c.classroom_code || '—')}</td><td class="nowrap">${s ? `${s.start}–${s.end}` : '—'}</td><td>${statusPill(k, t)}</td>
+                <td class="col-wide">${c.student_count || 0}</td><td class="col-wide text-sm">${escHtml(facultyText(c))}</td>
                 <td><a href="#/class?id=${c.id}" class="btn btn-sm btn-outline">Open</a></td></tr>`; }).join('')}
               </tbody></table></div>` : emptyState('No classes today', 'Timetabled and activated classrooms appear here.', 'calendar')}
           </div>

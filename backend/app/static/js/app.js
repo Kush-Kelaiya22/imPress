@@ -181,8 +181,10 @@ async function router() {
     return;
   }
 
+  if (typeof Motion !== 'undefined') Motion.reset(document.getElementById('app'));
   try {
     await handler(app, getParams());
+    if (seq === routeSeq && typeof Motion !== 'undefined') Motion.enter(document.getElementById('app'));   // the route changed: play the entry
   } catch (err) {
     if (err instanceof StaleRender || seq !== routeSeq) return;   // superseded navigation
     if (err.message === 'Unauthorized') return;

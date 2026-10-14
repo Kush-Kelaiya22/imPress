@@ -37,6 +37,7 @@ design/mesh-authentication
 design/security-model
 design/data-integrity
 design/gpc
+design/ui-design
 design/authorization
 design/scheduling
 design/student-ota

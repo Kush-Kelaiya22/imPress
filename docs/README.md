@@ -27,6 +27,7 @@ The portal is deliberately served by imPress rather than embedded from GitHub: i
 | ↳ [Wire protocols](design/protocols.md) | encode or decode any byte on any link |
 | ↳ [Mesh design](design/mesh.md) | understand ESP-NOW relaying, root discovery, de-duplication, timing |
 | ↳ [Security model](design/security-model.md) | reason about threats, auth, keys, sessions, OTA integrity |
+| ↳ [Web app design and motion](design/ui-design.md) | the Apple HIG and Material 3 Expressive choices, the spring tokens, the rules that keep motion from glitching |
 | ↳ [Global policy control](design/gpc.md) | the root-signed feature flags, the standard and hardened profiles, inline overrides, the signed code manifest |
 | ↳ [Data integrity](design/data-integrity.md) | the database gateway, row seals, temporary backups, Degraded and self-repair, clearing data |
 | ↳ [Design decisions](design/decisions.md) | read the decision records behind non-obvious choices |
