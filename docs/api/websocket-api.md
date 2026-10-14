@@ -25,6 +25,25 @@ Opening a socket **doesn't** extend the teacher's session (`refresh_activity=Fal
 
 ## Server → client events
 
+```mermaid
+sequenceDiagram
+    participant B as Browser (teacher)
+    participant S as Server
+    participant G as Gateway (C6)
+    B->>S: wss://…/ws/class/#lt;CLASS_ID#gt;?role=teacher<br/>cookie impress_session, Origin
+    S->>S: same origin? session valid? class access?
+    S-->>B: connected (or close 4401 / 4403 / 4404)
+    G->>S: wss or ws://…/ws/class/#lt;CLASS_ID#gt;?role=device<br/>X-API-Key: device key
+    S->>S: key valid? gateway linked to this class?
+    S-->>G: connected (or close 4403)
+    B->>S: start a quiz (REST)
+    S-->>G: command quiz_question
+    S-->>B: quiz_question
+    G->>S: answers arrive by REST /api/device/batch
+    S-->>B: answer_received
+```
+
+
 Every frame has `type` (the vanilla SPA dispatches on it). Frames the C6 gateway and the React UI need also carry **`event`**.
 
 | `event` | `type` | Payload | Sent when | Audience |
