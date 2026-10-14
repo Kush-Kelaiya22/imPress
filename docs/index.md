@@ -28,6 +28,7 @@ design/protocols
 design/mesh
 design/mesh-authentication
 design/security-model
+design/data-integrity
 design/authorization
 design/scheduling
 design/student-ota
@@ -43,6 +44,7 @@ api/websocket-api
 api/device-api
 guides/configuration
 guides/csv-imports
+guides/test-mode
 guides/ota-updates
 guides/releases
 guides/testing

@@ -39,7 +39,7 @@ def test_login_returns_opaque_token_and_timeouts(client):
     body = r.json()
     assert body["token_type"] == "bearer"
     assert body["access_token"].startswith("impress_") and len(body["access_token"]) > 40
-    assert body["idle_timeout_s"] == 60 * 60 and body["hard_timeout_s"] == 360 * 60
+    assert body["idle_timeout_s"] == 5 * 60 and body["hard_timeout_s"] == 360 * 60      # v2.2: 5-minute idle limit
 
 
 @pytest.mark.parametrize("username,password", [("admin", "wrong"), ("nobody", "admin123"), ("", "")])
@@ -120,7 +120,7 @@ def test_expired_session_cannot_be_revived_by_activity_ping(client, db):
 def test_status_endpoints_do_not_extend_the_session(client, db):
     from app.timeutil import istnow
     h = auth(login(client))
-    old = istnow() - timedelta(minutes=30)
+    old = istnow() - timedelta(minutes=3)      # inside the 5-minute idle limit
     _shift_session(db, last_activity_at=old)
     for path in ("/api/auth/session", "/api/auth/session-status"):
         assert client.get(path, headers=h).status_code == 200
@@ -130,7 +130,7 @@ def test_status_endpoints_do_not_extend_the_session(client, db):
 def test_regular_api_call_extends_the_session(client, db):
     from app.timeutil import istnow
     h = auth(login(client))
-    _shift_session(db, last_activity_at=istnow() - timedelta(minutes=30))
+    _shift_session(db, last_activity_at=istnow() - timedelta(minutes=3))
     assert client.get("/api/admin/users", headers=h).status_code == 200
     assert (istnow() - _session_row(db).last_activity_at).total_seconds() < 5
 
@@ -138,7 +138,7 @@ def test_regular_api_call_extends_the_session(client, db):
 def test_explicit_activity_ping_extends_the_session(client, db):
     from app.timeutil import istnow
     h = auth(login(client))
-    _shift_session(db, last_activity_at=istnow() - timedelta(minutes=30))
+    _shift_session(db, last_activity_at=istnow() - timedelta(minutes=3))
     r = client.post("/api/auth/activity", headers=h)
     assert r.status_code == 200 and r.json()["hard_remaining_s"] > 0
     assert (istnow() - _session_row(db).last_activity_at).total_seconds() < 5
@@ -148,7 +148,7 @@ def test_session_status_counts_down_and_warns_near_hard_limit(client, db):
     from app.timeutil import istnow
     h = auth(login(client))
     s = client.get("/api/auth/session-status", headers=h).json()
-    assert 0 < s["idle_seconds_remaining"] <= 3600 and s["warning_active"] is False
+    assert 0 < s["idle_seconds_remaining"] <= 300 and s["warning_active"] is False
     _shift_session(db, expires_at=istnow() + timedelta(minutes=3))
     s = client.get("/api/auth/session-status", headers=h).json()
     assert s["warning_active"] is True and s["hard_seconds_remaining"] <= 180

@@ -47,7 +47,10 @@ Student modules never join Wi-Fi. They form an **ESP-NOW mesh** and relay each o
 | Live participation | Quizzes (planned or impromptu, per-question timing) and polls (live or planned) with per-option results |
 | Mesh networking | Multi-hop ESP-NOW relaying (TTL 5) with de-duplication at the student, hub and server layers: one press is one answer |
 | Classroom management | Courses and sections, timetable clash warnings, CSV import of students, staff, **questions, courses and sections**, enrollment, attendance, co-faculty |
-| Access control | `super_admin` > `admin` > `teacher`; server-side sessions with idle and absolute expiry; one class-access rule everywhere |
+| Access control | `super_admin` > `admin` > `teacher`; server-side sessions (5 min idle, 30 min for a teacher during their class, 6 h absolute); **one device per account** (a second sign-in elsewhere is refused and flagged); salted bcrypt over SHA-256 password hashes; one class-access rule everywhere |
+| Data integrity | Every database write passes a **gateway** that checks the account's permission for that table; every row is **sealed** (HMAC-SHA256), so a change made outside imPress is detected within 5 minutes, reverted from a temporary backup and flagged **Degraded** with a toast to administrators. Clearing or resetting is a super-admin action, never a command: [data integrity](docs/design/data-integrity.md) |
+| Web app | Sidebar layout with Overview, Classrooms, Quizzes & polls, Students, Courses, Devices, Firmware & OTA, User access and Activity log; **live**: pages update on their own as data changes (no reloading); light and dark themes |
+| Test data | **Debug mode** for super admins: the real database is set aside while you work on a copy; a spreadsheet-like editor (paste from Google Sheets / Excel, CSV upload) and a seeded generator of realistic, consistent test data; save, export or delete it afterwards: [debug mode and test data](docs/guides/test-mode.md) |
 | Device security | **per-device keys** issued at registration (reset and revoke one device without touching the others); **signed firmware** verified on the device and at upload; **HTTPS/WSS** for device traffic. Signing and TLS are opt-in site settings: see [OTA updates](docs/guides/ota-updates.md#signing-images) and [TLS for devices](docs/guides/deployment.md#tls-for-devices) |
 | Device fleet | Live presence per class, **health states with diagnostics**, an **inventory of student modules** each gateway has seen |
 | Firmware | A validated, immutable **firmware registry**; approval before use; **staged OTA deployments** (canary, batches, retries, timeouts) to hubs and gateways; **automatic rollback** on devices; operator rollback |
@@ -151,9 +154,20 @@ Up to 300 student modules per room. Measured footprints, configurations and what
 
 ### Installation
 
+The quickest way, without Docker, is the launcher. It does everything in one step: it finds or installs Python 3.12+, creates `backend/.venv`, installs the dependencies, writes `backend/.env` with generated secrets, frees the port if something is using it, and starts the server.
+
 ```bash
 git clone https://github.com/Kush-Kelaiya22/imPress.git
 cd imPress
+./launcher.sh          # macOS and Linux
+launcher.bat           # Windows (double-click it, or run it in cmd)
+```
+
+Run it again any time to start the server; it only installs what is missing. `IMPRESS_HOST=0.0.0.0` makes the server reachable by classroom gateways, `IMPRESS_PORT` changes the port (default 8000). **The launcher stops whatever program is listening on that port.**
+
+The step-by-step equivalent, used by the deployment guide for servers:
+
+```bash
 scripts/install.sh
 ```
 
@@ -288,9 +302,9 @@ More: [troubleshooting guide](docs/guides/troubleshooting.md), [known issues](do
 | Area | Pages |
 |---|---|
 | **Architecture** | [System overview](docs/architecture/overview.md) · [Backend](docs/architecture/backend.md) · [Firmware](docs/architecture/firmware.md) · [Data flows](docs/architecture/data-flows.md) |
-| **Design** | [Wire protocols](docs/design/protocols.md) · [Mesh](docs/design/mesh.md) · [Security model](docs/design/security-model.md) · [Design decisions](docs/design/decisions.md) |
+| **Design** | [Wire protocols](docs/design/protocols.md) · [Mesh](docs/design/mesh.md) · [Security model](docs/design/security-model.md) · [Data integrity](docs/design/data-integrity.md) · [Design decisions](docs/design/decisions.md) |
 | **API** | [REST](docs/api/rest-api.md) · [WebSocket](docs/api/websocket-api.md) · [Device and gateway](docs/api/device-api.md) |
-| **Guides** | [Development setup](docs/guides/development-setup.md) · [Configuration](docs/guides/configuration.md) · [Deployment](docs/guides/deployment.md) · [CSV imports](docs/guides/csv-imports.md) · [OTA updates](docs/guides/ota-updates.md) · [Testing](docs/guides/testing.md) · [Troubleshooting](docs/guides/troubleshooting.md) |
+| **Guides** | [Development setup](docs/guides/development-setup.md) · [Configuration](docs/guides/configuration.md) · [Deployment](docs/guides/deployment.md) · [CSV imports](docs/guides/csv-imports.md) · [Debug mode and test data](docs/guides/test-mode.md) · [OTA updates](docs/guides/ota-updates.md) · [Testing](docs/guides/testing.md) · [Troubleshooting](docs/guides/troubleshooting.md) |
 | **Firmware** | [OTA architecture](docs/firmware/OTA_ARCHITECTURE.md) · [Versioning](docs/firmware/FIRMWARE_VERSIONING.md) · [Recovery procedure](docs/firmware/RECOVERY_PROCEDURE.md) |
 | **Hardware** | [Classroom node requirements](docs/hardware/CLASSROOM_NODE_REQUIREMENTS.md) · [Device compatibility](docs/hardware/DEVICE_COMPATIBILITY.md) |
 | **Testing** | [Test strategy](docs/testing/TEST_STRATEGY.md) · [Hardware validation](docs/testing/HARDWARE_VALIDATION.md) |

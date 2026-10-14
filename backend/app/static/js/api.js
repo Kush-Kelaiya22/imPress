@@ -26,6 +26,8 @@ async function apiRequest(path, options = {}) {
   const headers = {
     'Content-Type': 'application/json',
     ...CSRF,
+    // live refresh (v2.2): not user activity, unless the user acted since it started
+    ...(window.__quiet && !(typeof Live !== 'undefined' && Live.lastUser >= window.__quiet) ? { 'X-Impress-Background': '1' } : {}),
     ...options.headers,
   };
 
@@ -42,7 +44,7 @@ async function apiRequest(path, options = {}) {
     const d = err.detail;
     // {"detail": {"code", "message"}} (#116) or FastAPI's string / validation list
     const msg = typeof d === 'string' ? d : (d && d.message) || 'Request failed';
-    throw Object.assign(new Error(msg), { status: res.status, code: d && d.code });
+    throw Object.assign(new Error(msg), { status: res.status, code: d && d.code, detail: d });
   }
 
   if (res.status === 204) return null;
@@ -160,6 +162,10 @@ const adminApi = {
   async deleteUser(userId) {
     return apiRequest(`/admin/users/${userId}`, { method: 'DELETE' });
   },
+  async endSessions(userId) {                     // v2.2: sign a user out everywhere
+    return apiRequest(`/admin/users/${userId}/end-sessions`, { method: 'POST' });
+  },
+  async studentsSummary() { return apiRequest('/admin/students/summary'); },
   async resetPassword(userId, newPassword) {
     return apiRequest(`/admin/users/${userId}/reset-password`, {
       method: 'POST',
@@ -436,7 +442,44 @@ const classesApi = {
 
 // ── Quizzes ─────────────────────────────────────────────────────
 
+// ── System, database integrity, debug (test) mode (v2.2) ─────────
+
+const systemApi = {
+  status() { return apiRequest('/system/status'); },
+  integrity() { return apiRequest('/admin/system/integrity'); },
+  verify() { return apiRequest('/admin/system/integrity/verify', { method: 'POST' }); },
+  acknowledge(acceptCurrent = false) {
+    return apiRequest('/admin/system/integrity/acknowledge', { method: 'POST', body: JSON.stringify({ accept_current: acceptCurrent }) });
+  },
+  clearOptions() { return apiRequest('/admin/system/clear'); },
+  clear(scope, confirm) { return apiRequest('/admin/system/clear', { method: 'POST', body: JSON.stringify({ scope, confirm }) }); },
+};
+
+const testModeApi = {
+  state() { return apiRequest('/admin/test-mode'); },
+  enable(dataset = null) { return apiRequest('/admin/test-mode/enable', { method: 'POST', body: JSON.stringify({ dataset }) }); },
+  disable() { return apiRequest('/admin/test-mode/disable', { method: 'POST' }); },
+  decide(id, action, name = '') {
+    return apiRequest(`/admin/test-mode/pending/${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify({ action, name }) });
+  },
+  async download(kind, id) {
+    const res = await fetch(`${API_BASE}/admin/test-mode/${kind}/${encodeURIComponent(id)}/export.zip`, { headers: CSRF });
+    if (!res.ok) throw new Error(`Export failed (${res.status})`);
+    const url = URL.createObjectURL(await res.blob());
+    const a = Object.assign(document.createElement('a'), { href: url, download: `impress-test-data-${id}.zip` });
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  },
+  deleteDataset(name) { return apiRequest(`/admin/test-mode/datasets/${encodeURIComponent(name)}`, { method: 'DELETE' }); },
+  schema() { return apiRequest('/admin/test-data/schema'); },
+  generate(seed, counts) { return apiRequest('/admin/test-data/generate', { method: 'POST', body: JSON.stringify({ seed, counts }) }); },
+  validate(sheets) { return apiRequest('/admin/test-data/validate', { method: 'POST', body: JSON.stringify({ sheets }) }); },
+  async import(sheets, simulate, seed) {
+    return apiRequest('/admin/test-data/import', { method: 'POST', body: JSON.stringify({ sheets, simulate_activity: simulate, seed }) });
+  },
+};
+
 const quizzesApi = {
+  overview() { return apiRequest('/quizzes/overview'); },
   templateUrl: `${API_BASE}/quizzes/questions/template.csv`,
 
   /** Validate a question CSV; returns a per-row report, stores nothing. */

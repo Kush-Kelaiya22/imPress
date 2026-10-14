@@ -20,6 +20,10 @@ from ..auth import (
     clear_session_cookie,
     session_token_from,
     validate_session,
+    needs_rehash,
+    live_sessions,
+    same_device,
+    idle_limit_minutes,
 )
 from ..activity import log_activity
 from .. import passwords
@@ -47,6 +51,30 @@ async def login(body: UserLogin, request: Request, response: Response, db: Async
     await throttle.succeeded(db, keys[0])
     if not user.is_active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Account is disabled")
+    from ..dbgateway import act_as, as_user
+    act_as(as_user(user))                                  # signed in: writes as this user from here
+    if needs_rehash(user.hashed_password):                 # upgrade to the v2.2 format (SHA-256 + bcrypt)
+        user.hashed_password = hash_password(body.password)
+
+    # One account, one device (v2.2): a second sign-in from another device or
+    # address is refused and flagged while the first session is alive.
+    if settings.SINGLE_SESSION:
+        elsewhere = [s for s in await live_sessions(db, user, now) if not same_device(s, request)]
+        if elsewhere:
+            first = max(elsewhere, key=lambda s: s.last_activity_at)
+            here = request.client.host if request.client else "?"
+            await log_activity(db, "auth.second_sign_in_blocked", user.id, "user", user.id, {
+                "flag": True, "ip": here, "user_agent": request.headers.get("user-agent", "")[:200],
+                "signed_in_from": first.ip, "since": first.created_at.isoformat()})
+            await db.commit()
+            from ..services import events
+            events.alert(f"Blocked a second sign-in of {user.username} from {here}: "
+                         f"already signed in from {first.ip or 'another device'}.", "warning")
+            raise HTTPException(status.HTTP_409_CONFLICT, {
+                "code": "ALREADY_SIGNED_IN",
+                "message": ("This account is already signed in on another device. Sign out there first, "
+                            "or wait until that session times out. An administrator can end it under User access."),
+            })
 
     # Create server-side session
     session, raw_token = await create_session(db, user, request)
@@ -62,7 +90,7 @@ async def login(body: UserLogin, request: Request, response: Response, db: Async
         token_type="bearer",
         expires_at=expires_at,
         created_at=session.created_at,
-        idle_timeout_s=settings.SESSION_IDLE_MINUTES * 60,
+        idle_timeout_s=await idle_limit_minutes(db, user, now) * 60,
         hard_timeout_s=settings.SESSION_HARD_MINUTES * 60,
         server_time=now,
     )
@@ -132,8 +160,12 @@ async def logout(request: Request, response: Response, db: AsyncSession = Depend
         clear_session_cookie(refused, request)
         return refused
     if not session.revoked:
-        session.revoked = True
-        await db.commit()
+        owner = await db.get(User, session.user_id)
+        if owner is not None and owner.is_active:
+            from ..dbgateway import act_as, as_user
+            act_as(as_user(owner))                       # ending one's own session
+            session.revoked = True
+            await db.commit()
     clear_session_cookie(response, request)
     return {"status": "ok"}
 
@@ -156,7 +188,8 @@ async def session_info(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid session")
 
     now = istnow()
-    idle_remaining = max(0, int((session.last_activity_at - now).total_seconds() + settings.SESSION_IDLE_MINUTES * 60))
+    idle_s = await idle_limit_minutes(db, user, now) * 60
+    idle_remaining = max(0, int((session.last_activity_at - now).total_seconds() + idle_s))
     hard_remaining = max(0, int((session.expires_at - now).total_seconds()))
 
     return {
@@ -166,7 +199,7 @@ async def session_info(
         "created_at": session.created_at,
         "last_activity_at": session.last_activity_at,
         "expires_at": session.expires_at,
-        "idle_timeout_s": settings.SESSION_IDLE_MINUTES * 60,
+        "idle_timeout_s": idle_s,
         "hard_timeout_s": settings.SESSION_HARD_MINUTES * 60,
         "server_time": now,
         "idle_remaining_s": idle_remaining,
@@ -201,7 +234,7 @@ async def session_status(
 
     now = istnow()
     idle_remaining = max(0, int(
-        (session.last_activity_at + timedelta(minutes=settings.SESSION_IDLE_MINUTES) - now).total_seconds()
+        (session.last_activity_at + timedelta(minutes=await idle_limit_minutes(db, user, now)) - now).total_seconds()
     ))
     hard_remaining = max(0, int((session.expires_at - now).total_seconds()))
     warning_active = hard_remaining <= settings.SESSION_WARNING_MINUTES * 60

@@ -13,7 +13,11 @@ Environment variables with prefix **`IMPRESS_`**, or a `.env` file in the workin
 | `IMPRESS_JWT_SECRET` | public default | Must be set in production. Legacy JWT helpers only (sessions are opaque). |
 | `IMPRESS_JWT_ALGORITHM` | `HS256` | Legacy. |
 | `IMPRESS_JWT_EXPIRE_MINUTES` | `1440` | Legacy. |
-| `IMPRESS_SESSION_IDLE_MINUTES` | `60` | Idle timeout. |
+| `IMPRESS_SESSION_IDLE_MINUTES` | `5` | Idle timeout (v2.2). Requests the web app makes on its own (live refresh) don't count as activity. |
+| `IMPRESS_SESSION_CLASS_IDLE_MINUTES` | `30` | Idle timeout for faculty (primary or co-faculty) while one of their classes is in session: activated, or inside a timetable slot including dated changes. |
+| `IMPRESS_SINGLE_SESSION` | `true` | One device per account: a sign-in from another device or address is refused while the first session is alive, flagged in the activity log and shown to administrators. Admins can end a user's sessions under *User access*. |
+| `IMPRESS_TEMP_BACKUP_DIR` | system temp folder | Where the integrity backups go (`<dir>/impress-backups/<database>`): `startup.db` and `rolling.db`, readable by the server's user only. For example `/temp/backups`. |
+| `IMPRESS_INTEGRITY_INTERVAL_S` | `300` | How often the database is verified and the rolling backup refreshed. |
 | `IMPRESS_SESSION_HARD_MINUTES` | `360` | Absolute session lifetime. |
 | `IMPRESS_SESSION_WARNING_MINUTES` | `5` | `session-status.warning_active` window. |
 | `IMPRESS_DEVICE_API_KEY` | public default | The shared **provisioning** key: must be set in production and equal every device's `api_key`. Devices register with it and are issued their own key (#66). |

@@ -35,3 +35,30 @@ def test_delete_needs_the_username(server, page):
     page.once("dialog", lambda d: d.accept("teach1"))
     page.locator("tr", has_text="teach1").locator("button", has_text="Delete permanently").click()
     expect(page.locator("tr", has_text="teach1")).to_have_count(0)
+
+
+def test_a_background_refresh_never_undoes_a_click(server, page):
+    """v2.2 live refresh: a refresh that fetched before the click must not draw over its result."""
+    base, api = server
+    _teacher(api)
+    login(page, base)
+    page.wait_for_url("**/#/admin*")
+    page.goto(base + "/#/admin/users")
+    row = page.locator("tr", has_text="teach1")
+    expect(row.locator("button", has_text="Deactivate")).to_be_visible()
+
+    # background requests answer late: the stale answer arrives after the click's
+    page.evaluate("""() => {
+      const real = window.fetch;
+      window.fetch = async (url, opts = {}) => {
+        const res = await real(url, opts);
+        if (opts.headers && opts.headers['X-Impress-Background'] && String(url).includes('/admin/users')) await new Promise(r => setTimeout(r, 1500));
+        return res;
+      };
+      void quietRefresh();          // in flight: fetches the users as they are now
+    }""")
+    page.once("dialog", lambda d: d.accept())
+    row.locator("button", has_text="Deactivate").click()
+    expect(page.locator("tr", has_text="teach1").locator("button", has_text="Reactivate")).to_be_visible()
+    page.wait_for_timeout(2000)                         # the stale background answer has arrived by now
+    assert page.locator("tr", has_text="teach1").locator("button", has_text="Reactivate").is_visible()   # no retry

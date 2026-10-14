@@ -198,6 +198,8 @@ async def class_websocket(websocket: WebSocket, class_id: int):
         await _refuse(websocket, role, 4400, "invalid role")
         return
 
+    from ..dbgateway import ANONYMOUS, act_as, as_device, as_user
+    act_as(as_user(user) if user is not None else as_device(None) if role == "device" else ANONYMOUS)
     await manager.connect(websocket, class_id, role, user_id=user.id if user is not None else None)
     logger.info(f"WS connected: class={class_id}, role={role}")
 
