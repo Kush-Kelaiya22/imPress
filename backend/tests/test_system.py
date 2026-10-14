@@ -22,7 +22,7 @@ def test_event_stream_starts_with_the_status_and_needs_a_session(client):
     async def go():
         from app.database import async_session
         async with async_session() as s:
-            user = (await s.execute(select(User).where(User.username == "admin"))).scalar_one()
+            user = (await s.execute(select(User).where(User.username == "impress.default.superAdmin"))).scalar_one()
 
         async def connected():
             return False
@@ -92,7 +92,7 @@ def test_reset_everything_keeps_only_the_acting_super_admin(client):
     r = client.post("/api/admin/system/clear", headers=su,
                     json={"scope": "everything", "confirm": "RESET EVERYTHING", "approval_id": aid})
     assert r.status_code == 200
-    assert [u["username"] for u in client.get("/api/admin/users", headers=su).json()] == ["admin"]
+    assert [u["username"] for u in client.get("/api/admin/users", headers=su).json()] == ["impress.default.superAdmin"]
 
 
 def test_the_database_state_is_for_administrators_only(client):

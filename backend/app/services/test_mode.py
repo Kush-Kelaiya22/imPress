@@ -77,7 +77,7 @@ def test_password() -> str | None:
 def state() -> dict:
     tm = integrity.read_state().get("test_mode") or {}
     return {"on": bool(tm.get("on")), "since": tm.get("since"), "by": tm.get("by"),
-            "pending": _pending(), "datasets": datasets()}
+            "forced": bool(gpc.get("test_mode.forced")), "pending": _pending(), "datasets": datasets()}
 
 
 def _pending() -> list[dict]:
@@ -161,10 +161,12 @@ async def enable(user, session, dataset: str | None = None) -> dict:
                 snap.unlink(missing_ok=True)
                 raise TestModeError("NO_DATASET", f"No saved dataset named {dataset}", 404)
             await integrity.restore_from(src)
-            await _carry_session(snap, getattr(session, "token_hash", None), user.id)
+            if user is not None:
+                await _carry_session(snap, getattr(session, "token_hash", None), user.id)
             if not (await integrity.verify_now()).ok:
                 await integrity.reseal_everything(f"dataset {dataset} loaded")
-        integrity.write_state(test_mode={"on": True, "since": istnow().isoformat(), "by": user.username,
+        integrity.write_state(test_mode={"on": True, "since": istnow().isoformat(), "by": user.username if user else "root",
+                                         "forced": user is None,
                                          "snapshot": snap.name, "sha256": sha, "dataset": dataset,
                                          "password": secrets.token_urlsafe(9)})
         await _refresh_backups()
@@ -174,7 +176,19 @@ async def enable(user, session, dataset: str | None = None) -> dict:
     return state()
 
 
+FORCED_MESSAGE = ("Test mode was enabled by root and cannot be disabled. "
+                  "This is intentional application design.")
+
+
+async def ensure_forced() -> None:
+    """Start-up with --test-mode: test mode is on, whatever it was, and stays on."""
+    if not state()["on"]:
+        await enable(None, None, None)
+
+
 async def disable(user, session) -> dict:
+    if gpc.get("test_mode.forced"):
+        raise TestModeError("TEST_MODE_FORCED", FORCED_MESSAGE, 403)
     tm = integrity.read_state().get("test_mode") or {}
     if not tm.get("on"):
         raise TestModeError("ALREADY_OFF", "Debug mode is not on")

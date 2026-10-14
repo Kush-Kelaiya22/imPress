@@ -7,14 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..activity import log_activity
 
-from ..policy import allowed, require
+from ..policy import allowed, ota_enabled, require
 from ..services import maintenance
 from ..timeutil import istnow
 from ..database import commit_or_conflict, get_db
 from ..models import FirmwareArtifact, FirmwareDeployment, User
 from ..services import deployments as engine
 
-router = APIRouter(prefix="/api/admin/deployments", tags=["deployments"])
+router = APIRouter(prefix="/api/admin/deployments", tags=["deployments"], dependencies=[Depends(ota_enabled)])
 
 
 class Strategy(BaseModel):

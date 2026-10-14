@@ -80,6 +80,17 @@ def client():
     from app.main import app
     asyncio.run(_reset_db())
     with TestClient(app) as c:
+        _post = c.post
+
+        def post(url, *args, **kwargs):
+            """New accounts start with temporary credentials (v2.2); most tests are not about that, so the first
+            sign-in's work is done for them. A test of the first-sign-in flow sends {"keep_pending": true}."""
+            keep = bool((kwargs.get("json") or {}).pop("keep_pending", False)) if isinstance(kwargs.get("json"), dict) else False
+            r = _post(url, *args, **kwargs)
+            if url == "/api/admin/users" and r.status_code == 201 and not keep:
+                finish_setup(c, r.json()["id"])
+            return r
+        c.post = post
         yield c
         c.portal.call(_drain_background_tasks)
 
@@ -99,7 +110,7 @@ def db(client):
     return run
 
 
-def login(client, username="admin", password="admin123"):
+def login(client, username="impress.default.superAdmin", password="admin123"):
     r = client.post("/api/auth/login", json={"username": username, "password": password})
     assert r.status_code == 200, r.text
     client.cookies.clear()      # tests authenticate with the bearer token; the cookie path has its own tests
@@ -139,13 +150,46 @@ def policy():
     gpc.current().values.update(saved)
 
 
+def finish_setup(client, user_id):
+    """New accounts start with temporary credentials (v2.2: 'pending setup'). Most tests are not about that:
+    this is the first sign-in's work already done. Tests of the first-sign-in flow don't call it."""
+    from sqlalchemy import update
+
+    from app.database import async_session
+    from app.dbgateway import SYSTEM, act_as
+    from app.models import User
+    from app.timeutil import istnow
+
+    async def go():
+        act_as(SYSTEM)
+        async with async_session() as s:
+            await s.execute(update(User).where(User.id == user_id).values(must_change_password=False, onboarded_at=istnow()))
+            await s.commit()
+    client.portal.call(go)
+
+
 # ── Domain helpers (keep tests short and intention-revealing) ───────────────
 
 PASSWORD = "Passw0rd!x"
 
 
 def make_user(client, admin_headers, username, role="teacher", password=PASSWORD):
-    """Create a user through the admin API; returns (user_id, auth headers)."""
+    """Create a user through the admin API; returns (user_id, auth headers). A super admin is created the way
+    root creates one (the console's function): the API refuses to."""
+    if role == "super_admin":
+        from sqlalchemy import select
+
+        from app.database import async_session
+        from app.models import User
+        from app.services import rootops
+        client.portal.call(rootops.create_account, username, "super_admin", f"{username}@example.edu", username.title(), password)
+
+        async def find():
+            async with async_session() as s:
+                return (await s.execute(select(User.id).where(User.username == username))).scalar_one()
+        uid = client.portal.call(find)
+        finish_setup(client, uid)
+        return uid, auth(login(client, username, password))
     r = client.post("/api/admin/users", headers=admin_headers, json={
         "username": username, "email": f"{username}@example.edu", "password": password,
         "full_name": username.title(), "role": role})

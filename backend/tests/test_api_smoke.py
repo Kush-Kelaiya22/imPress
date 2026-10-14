@@ -14,11 +14,11 @@ def test_health(client):
 
 def test_seeded_super_admin_can_log_in(client):
     me = client.get("/api/auth/me", headers=auth(login(client))).json()
-    assert me["username"] == "admin" and me["role"] == "super_admin"
+    assert me["username"] == "impress.default.superAdmin" and me["role"] == "super_admin"
 
 
 def test_bad_password_rejected(client):
-    assert client.post("/api/auth/login", json={"username": "admin", "password": "nope"}).status_code == 401
+    assert client.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "nope"}).status_code == 401
 
 
 def test_protected_routes_need_a_session(client):

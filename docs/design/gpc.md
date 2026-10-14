@@ -63,6 +63,10 @@ The launchers never select the hardened profile and never switch debug or plain 
 | `integrity.forensic_copies` | int | `3` | `10` | How many copies of a failed database are kept before an automatic restore replaces it. |
 | `integrity.before_clear_days` | int | `30` | `14` | Days the full copy taken before a clear or reset is kept (0 = never deleted). It is your way back, and a copy of the data. |
 | `test_mode.allowed` | bool | `True` | `False` | Debug mode and test data (copies of the database) may be used at all. |
+| `test_mode.forced` | bool | `False` | `False` | Test mode is forced on by root (launch flag --test-mode) and nobody can turn it off; the default super admin then signs in with a fixed lab password. |
+| `ota.enabled` | bool | `True` | `True` | Over-the-air firmware updates exist at all (off with --no-ota): uploads, deployments and pushes are refused and devices are offered nothing. |
+| `deadlock_prevention.enabled` | bool | `True` | `True` | If no active super admin exists, roll the database back and create a recovery account (global_deadlock_prevention). |
+| `backups.restore_requires_approval` | bool | `False` | `True` | Restoring a backup needs a second super admin's approval (so only a super admin can request it). |
 | `test_mode.export_allowed` | bool | `True` | `False` | Test-data copies may be exported as CSV files. |
 | `test_mode.pending_ttl_hours` | int | `168` | `24` | Hours a finished test database waits for a decision before it is deleted (0 = never). |
 | `test_mode.dataset_ttl_days` | int | `0` | `30` | Days a saved test dataset is kept (0 = never). |

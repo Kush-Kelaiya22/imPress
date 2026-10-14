@@ -67,9 +67,10 @@ def test_primary_teacher_cannot_be_deleted(client, su, db):
 def test_last_super_admin_cannot_be_deleted_by_another_path(client, su):
     other, other_h = make_user(client, su, "root2", role="super_admin")
     me = client.get("/api/auth/me", headers=su).json()["id"]
-    assert client.post(f"/api/admin/users/{me}/deactivate", headers=other_h).status_code == 200
-    # root2 is now the only active super admin; nobody else can remove it, and it can't remove itself
-    assert client.delete(f"/api/admin/users/{other}", headers=other_h).status_code == 403
+    # the default super admin is root's: another super admin can't deactivate or delete it, so there is always one
+    assert client.post(f"/api/admin/users/{me}/deactivate", headers=other_h).status_code == 403
+    assert client.delete(f"/api/admin/users/{me}", headers=other_h).status_code == 403
+    assert client.delete(f"/api/admin/users/{other}", headers=other_h).status_code == 403          # nor itself
 
 
 def test_failed_delete_changes_nothing(client, su, db, monkeypatch):
@@ -77,8 +78,8 @@ def test_failed_delete_changes_nothing(client, su, db, monkeypatch):
     from app.services import accounts
     real = accounts.delete_user
 
-    async def boom(db_, target):
-        await real(db_, target)
+    async def boom(db_, target, deleted_by=""):
+        await real(db_, target, deleted_by)
         raise RuntimeError("injected failure after the delete statements")
     monkeypatch.setattr(accounts, "delete_user", boom)
     with pytest.raises(RuntimeError):

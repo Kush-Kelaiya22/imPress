@@ -38,7 +38,7 @@ def test_legacy_raw_token_rows_revoked_and_scrubbed(client, db):
     raw = "impress_legacy-token-from-an-old-db"
 
     async def insert_legacy(s):
-        admin = (await s.execute(select(User).where(User.username == "admin"))).scalar_one()
+        admin = (await s.execute(select(User).where(User.username == "impress.default.superAdmin"))).scalar_one()
         now = istnow()
         s.add(UserSession(user_id=admin.id, token_hash=_sha256_hex(raw), session_token=raw,
                           created_at=now, last_activity_at=now,

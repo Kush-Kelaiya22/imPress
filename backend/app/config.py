@@ -53,8 +53,10 @@ class Settings(BaseSettings):
     # approve their own upload, and the approval is logged as such.
     FIRMWARE_SINGLE_APPROVER: bool = False
 
-    # ── First-run super admin ──
-    # Empty → a random password is generated and logged ONCE at first start.
+    # ── The default super admin, impress.default.superAdmin (v2.2) ──
+    # Empty: a random password is made at EVERY start and printed in the server console. Set one to keep it.
+    # IMPRESS_INITIAL_ADMIN_PASSWORD is the older name for the same setting and still works.
+    DEFAULT_SUPERADMIN_PASSWORD: str = ""
     INITIAL_ADMIN_PASSWORD: str = ""
 
     # ── Firmware / OTA ──
@@ -98,6 +100,12 @@ settings = Settings()
 # The release, from the repository's VERSION file (#42); /health reports it.
 _VERSION_FILE = Path(__file__).resolve().parents[2] / "VERSION"
 APP_VERSION = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else "unknown"
+
+
+# The accounts the system looks after itself (v2.2, services/bootstrap.py): the API can't delete, demote,
+# deactivate or reset these.
+DEFAULT_SUPERADMIN = "impress.default.superAdmin"
+RECOVERY_SUPERADMIN = "impress.recovery.superAdmin"
 
 
 def insecure_settings(s: Settings) -> list[str]:

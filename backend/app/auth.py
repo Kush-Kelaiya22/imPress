@@ -204,8 +204,10 @@ async def in_class_now(db: AsyncSession, user: User, now) -> bool:
 
 
 async def idle_limit_minutes(db: AsyncSession, user: User, now) -> int:
-    from .policy import is_staff
-    if is_staff(user) and await in_class_now(db, user, now):
+    # Only faculty get the longer limit while their class is in session; administrators and super admins
+    # time out after 5 minutes whatever the timetable says (v2.2).
+    from .policy import is_faculty
+    if is_faculty(user) and user.is_active and await in_class_now(db, user, now):
         return max(settings.SESSION_CLASS_IDLE_MINUTES, settings.SESSION_IDLE_MINUTES)
     return settings.SESSION_IDLE_MINUTES
 
@@ -276,6 +278,13 @@ async def live_sessions(db: AsyncSession, user: User, now) -> list[UserSession]:
     return [r for r in rows if now - r.last_activity_at <= limit]
 
 
+# What an account with temporary credentials may call: enough to sign in, set itself up, and sign out.
+PENDING_SETUP_PATHS = frozenset({
+    "/api/auth/me", "/api/auth/change-password", "/api/auth/logout", "/api/auth/preferences",
+    "/api/auth/onboarding", "/api/auth/password-strength", "/api/auth/session", "/api/auth/session-status",
+    "/api/auth/activity"})
+
+
 async def get_current_user(
     request: Request,
     token: str = Depends(oauth2_scheme),
@@ -315,6 +324,11 @@ async def get_current_user(
     request.state.session = session
     from .dbgateway import act_as, as_user
     act_as(as_user(user))                    # what this request may write (v2.2 database gateway)
+    if user.must_change_password and request.url.path not in PENDING_SETUP_PATHS:
+        # Temporary credentials (v2.2): the account can do nothing but finish setting itself up.
+        raise HTTPException(status.HTTP_403_FORBIDDEN, {
+            "code": "PASSWORD_CHANGE_REQUIRED",
+            "message": "Choose your own password to finish setting up this account."})
     return user
 
 

@@ -43,7 +43,7 @@ def test_duplicate_email_on_edit_is_400(client, su):
 def test_allowed_actions_for_a_super_admin(client, su):
     me = client.get("/api/auth/me", headers=su).json()["id"]
     uid, _ = make_user(client, su, "tch1")
-    assert _row(client, su, me)["allowed_actions"] == ["edit", "reset_password"]
+    assert _row(client, su, me)["allowed_actions"] == ["edit"]          # the default super admin is root's: its password is set at start-up
     assert _row(client, su, uid)["allowed_actions"] == [
         "edit", "deactivate", "change_role", "reset_password", "delete"]
 

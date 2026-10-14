@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import secrets
 import re
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -26,10 +25,12 @@ from .ws.handler import router as ws_router
 from .services.presence import presence_sweep_loop
 from .services.sessions import session_cleanup_loop
 from .models import User, UserSession
-from .auth import hash_password, _sha256_hex, session_token_from
+from .auth import _sha256_hex, session_token_from
 from .dbgateway import DatabaseWriteRefused
 from .routers.system import router as system_router
 from .routers.approvals import router as approvals_router
+from .routers.search import router as search_router
+from .routers.backups import router as backups_router
 from .routers.testmode import router as testmode_router
 
 
@@ -89,31 +90,19 @@ async def lifespan(app: FastAPI):
     from .services.quiz_timer import quiz_timer_loop
     quiz_timer_task = asyncio.create_task(quiz_timer_loop())
 
-    # Seed default super admin if no users exist
-    async with async_session() as db:
-        result = await db.execute(select(User).limit(1))
-        if not result.scalar_one_or_none():
-            password = settings.INITIAL_ADMIN_PASSWORD or secrets.token_urlsafe(12)
-            admin_user = User(
-                username="admin",
-                email="admin@impress.local",
-                hashed_password=hash_password(password),
-                full_name="Super Admin",
-                role="super_admin",
-            )
-            db.add(admin_user)
-            await db.commit()
-            if settings.INITIAL_ADMIN_PASSWORD:
-                logger.warning("Initial super admin 'admin' created with IMPRESS_INITIAL_ADMIN_PASSWORD")
-            else:
-                # Shown once, on the very first start only. Change it after login.
-                logger.warning("Initial super admin created: username=admin password=%s "
-                               "(shown once — change it now)", password)
+    # The default super admin (v2.2): created if missing, with this start's password (printed once, here).
+    from .services import bootstrap
+    await bootstrap.ensure_default_superadmin()
 
     # Database integrity (v2.2): baseline or verify (and repair), then the
     # start-up and rolling backups, after the first account exists.
     from .services import integrity
     await integrity.startup()
+    from .services import deadlock
+    await deadlock.check("start-up")                  # global_deadlock_prevention
+    if gpc.get("test_mode.forced"):                  # --test-mode: forced on by root, nobody can turn it off
+        from .services import test_mode as _tm
+        await _tm.ensure_forced()
     integrity_task = asyncio.create_task(integrity.integrity_loop())
     from .services import housekeeping
     maintenance_task = asyncio.create_task(housekeeping.maintenance_loop())
@@ -123,24 +112,12 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        presence_task.cancel()
-        try:
-            await presence_task
-        except asyncio.CancelledError:
-            pass
-        deployment_task.cancel()
-        quiz_timer_task.cancel()
-        try:
-            await quiz_timer_task
-        except asyncio.CancelledError:
-            pass
-        integrity_task.cancel()
-        maintenance_task.cancel()
-        session_task.cancel()
-        try:
-            await session_task
-        except asyncio.CancelledError:
-            pass
+        # Stop every background loop and WAIT for it: a loop cancelled in the middle of holding the integrity
+        # lock must release it before the event loop goes away.
+        tasks = [presence_task, deployment_task, quiz_timer_task, integrity_task, maintenance_task, session_task]
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 app = FastAPI(
@@ -258,6 +235,8 @@ app.include_router(ws_router)
 app.include_router(system_router)
 app.include_router(testmode_router)
 app.include_router(approvals_router)
+app.include_router(search_router)
+app.include_router(backups_router)
 
 
 # ── Static Files & Templates ────────────────────────────────────────

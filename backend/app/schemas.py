@@ -1,10 +1,17 @@
 """Pydantic request/response schemas."""
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+import re
+
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 from datetime import datetime, date
 from typing import Literal, Optional
 
-from .passwords import NewPassword
+
+# The icons a class can wear (the web app's icon set) and its colour (#RRGGBB).
+CLASS_ICONS = ("book", "code", "flask", "chart", "zap", "activity", "cpu", "database", "globe", "calculator", "palette",
+               "music", "heart", "leaf", "rocket", "camera", "school", "poll", "radio", "sparkles", "shield", "crown",
+               "calendar", "pin")
+COLOR_RE = r"^#[0-9A-Fa-f]{6}$"
 
 # Academic calendar: Monsoon → Winter → Summer (R5)
 SEMESTERS = ("Monsoon", "Winter", "Summer")
@@ -21,25 +28,29 @@ Role = Literal["teacher", "admin", "super_admin"]
 class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     email: str
-    password: NewPassword
+    password: str
     full_name: str = ""
     role: Role = "teacher"
 
 
 class AdminUserCreate(BaseModel):
-    """Admin-only: can create admin or teacher accounts."""
+    """An administrator or super admin creates an admin or faculty account. A super admin account
+    can't be created here (only in the console). With no `password` one is generated and returned once;
+    either way the person must choose their own at first sign-in."""
     username: str = Field(min_length=3, max_length=64)
     email: str
-    password: NewPassword
+    password: Optional[str] = None
     full_name: str = ""
-    role: Role = "teacher"  # admin/super_admin only grantable by a super admin
+    display_name: str = Field(default="", max_length=64)
+    role: Role = "teacher"  # admin only grantable by a super admin; super_admin is refused
+    designation: Literal["faculty", "ta"] = "faculty"
 
 
 class SuperAdminUserCreate(BaseModel):
     """Super admin: can create other admin accounts."""
     username: str = Field(min_length=3, max_length=64)
     email: str
-    password: NewPassword
+    password: str
     full_name: str = ""
 
 
@@ -51,22 +62,35 @@ class UserLogin(BaseModel):
 class PasswordChange(BaseModel):
     """A user changing their own password (requires current password)."""
     current_password: str
-    new_password: NewPassword
+    new_password: str
 
 
 class ProfileUpdate(BaseModel):
-    """A user updating their own profile (display name)."""
-    full_name: str = Field(..., min_length=1, max_length=128)
+    """A user updating their own profile: full name and/or the name they want to be called by."""
+    full_name: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    display_name: Optional[str] = Field(default=None, max_length=64)
 
 
 class PasswordReset(BaseModel):
-    """Admin resetting another user's password."""
-    new_password: NewPassword
+    """An administrator resetting another user's password. Without `new_password` one is generated and
+    returned once; the person must choose their own at next sign-in either way."""
+    new_password: Optional[str] = None
+
+
+class PreferencesUpdate(BaseModel):
+    """Any subset of the preferences in services/prefs.py; unknown keys are refused."""
+    model_config = {"extra": "allow"}
+
+
+class OnboardingComplete(BaseModel):
+    display_name: str = Field(min_length=1, max_length=64)
+    theme: Literal["system", "light", "dark"] = "system"
 
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    must_change_password: bool = False
     expires_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     idle_timeout_s: int
@@ -79,6 +103,9 @@ class UserResponse(BaseModel):
     username: str
     email: str
     full_name: str
+    display_name: str = ""
+    designation: str = "faculty"
+    must_change_password: bool = False
     role: str
     is_active: bool = True
     created_at: Optional[datetime] = None
@@ -86,12 +113,35 @@ class UserResponse(BaseModel):
     last_active_at: Optional[datetime] = None   # latest activity-log entry (v2.2 user access page)
     class_count: int = 0                        # classes taught, as primary teacher or co-faculty
     signed_in: bool = False                     # holds a live session now
+    temporary_password: Optional[str] = None    # shown ONCE, to the creator, when one was generated
 
     model_config = {"from_attributes": True}
+
+    @computed_field
+    @property
+    def status(self) -> str:
+        """inactive (deactivated) | pending_setup (temporary credentials, never signed in) | active"""
+        return "inactive" if not self.is_active else "pending_setup" if self.must_change_password else "active"
+
+    @computed_field
+    @property
+    def name(self) -> str:
+        """What the interface calls this person."""
+        return self.display_name or self.full_name or self.username
+
+
+class MeResponse(UserResponse):
+    """The signed-in user's own view: adds saved preferences and whether the welcome flow is still to do."""
+    preferences: dict = {}
+    onboarded: bool = True
 
 
 class RoleChange(BaseModel):
     role: Role
+
+
+class DesignationChange(BaseModel):
+    designation: Literal["faculty", "ta"]
 
 
 class UserUpdate(BaseModel):
@@ -201,6 +251,22 @@ class ClassCreate(BaseModel):
     teacher_id: Optional[int] = None  # assigned faculty (advisable), set by admin
     teacher_ids: Optional[list[int]] = None  # full faculty set (many-to-many); first becomes primary
     classroom_code: Optional[str] = Field(default=None, max_length=32)  # physical room label, e.g. "RM-201"
+    icon: str = ""                                       # one of CLASS_ICONS, or empty (chosen from the name)
+    color: str = ""                                      # "#RRGGBB" or empty
+
+    @field_validator("icon")
+    @classmethod
+    def _icon_is_known(cls, v: str) -> str:
+        if v and v not in CLASS_ICONS:
+            raise ValueError("icon must be one of: " + ", ".join(CLASS_ICONS))
+        return v
+
+    @field_validator("color")
+    @classmethod
+    def _color_is_hex(cls, v: str) -> str:
+        if v and not re.match(COLOR_RE, v):
+            raise ValueError("color must look like #5b4ee5")
+        return v
 
     @field_validator("term")
     @classmethod
@@ -262,7 +328,23 @@ class ClassUpdate(BaseModel):
     location: Optional[str] = None
     capacity: Optional[int] = None
     is_active: Optional[bool] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
     teacher_ids: Optional[list[int]] = None  # replace faculty set (many-to-many); first becomes primary
+
+    @field_validator("icon")
+    @classmethod
+    def _icon_is_known(cls, v):
+        if v and v not in CLASS_ICONS:
+            raise ValueError("icon must be one of: " + ", ".join(CLASS_ICONS))
+        return v
+
+    @field_validator("color")
+    @classmethod
+    def _color_is_hex(cls, v):
+        if v and not re.match(COLOR_RE, v):
+            raise ValueError("color must look like #5b4ee5")
+        return v
 
     @field_validator("term")
     @classmethod
@@ -301,6 +383,8 @@ class ClassResponse(BaseModel):
     course_code: str = ""
     course_name: str = ""
     course_section: str = ""
+    icon: str = ""
+    color: str = ""
     term: str = ""
     year: Optional[int] = None
     start_date: Optional[date] = None

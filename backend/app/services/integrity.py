@@ -244,13 +244,18 @@ async def acknowledge() -> None:
     events.status({"db": "ok"}, "admins")
 
 
+async def check_and_backup_locked() -> None:
+    """check_and_backup for a caller that already holds the lock."""
+    rep = await verify_now()
+    if rep.ok:
+        await copy_live_to(backup_dir() / "rolling.db")
+    else:
+        await repair(rep)
+
+
 async def check_and_backup() -> None:
     async with _lock:
-        rep = await verify_now()
-        if rep.ok:
-            await copy_live_to(backup_dir() / "rolling.db")
-        else:
-            await repair(rep)
+        await check_and_backup_locked()
 
 
 async def integrity_loop() -> None:

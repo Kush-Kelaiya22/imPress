@@ -12,7 +12,7 @@ from conftest import PASSWORD, auth, login, make_class, make_user
 OTHER_DEVICE = {"user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/141.0 Safari/537.36"}
 
 
-def _age_sessions(db, minutes, user="admin"):
+def _age_sessions(db, minutes, user="impress.default.superAdmin"):
     from app.models import User, UserSession
     from app.timeutil import istnow
 
@@ -87,9 +87,9 @@ def test_a_second_device_is_refused_and_flagged(client, db, monkeypatch):
     alerts = []
     monkeypatch.setattr(events, "alert", lambda msg, level="warning", audience="admins": alerts.append(msg))
     login(client)
-    r = client.post("/api/auth/login", json={"username": "admin", "password": "admin123"}, headers=OTHER_DEVICE)
+    r = client.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "admin123"}, headers=OTHER_DEVICE)
     assert r.status_code == 409 and r.json()["detail"]["code"] == "ALREADY_SIGNED_IN"
-    assert alerts and "admin" in alerts[0]
+    assert alerts and "impress.default.superAdmin" in alerts[0]
     from app.models import ActivityLog
 
     async def flagged(s):
@@ -100,16 +100,16 @@ def test_a_second_device_is_refused_and_flagged(client, db, monkeypatch):
 
 def test_the_same_device_may_sign_in_again(client):
     login(client)
-    assert client.post("/api/auth/login", json={"username": "admin", "password": "admin123"}).status_code == 200
+    assert client.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "admin123"}).status_code == 200
 
 
 def test_after_sign_out_or_timeout_another_device_may_sign_in(client, db):
     tok = login(client)
     client.post("/api/auth/logout", headers=auth(tok))
-    r = client.post("/api/auth/login", json={"username": "admin", "password": "admin123"}, headers=OTHER_DEVICE)
+    r = client.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "admin123"}, headers=OTHER_DEVICE)
     assert r.status_code == 200
     _age_sessions(db, 6)
-    assert client.post("/api/auth/login", json={"username": "admin", "password": "admin123"}).status_code == 200
+    assert client.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "admin123"}).status_code == 200
 
 
 def test_an_admin_can_end_a_users_sessions(client):
@@ -137,13 +137,13 @@ def test_old_hashes_still_work_and_are_upgraded_at_sign_in(client, db):
     from app.models import User
 
     async def downgrade(s):
-        u = (await s.execute(select(User).where(User.username == "admin"))).scalar_one()
+        u = (await s.execute(select(User).where(User.username == "impress.default.superAdmin"))).scalar_one()
         u.hashed_password = bcrypt.hashpw(b"admin123", bcrypt.gensalt()).decode()
     db(downgrade)
-    assert client.post("/api/auth/login", json={"username": "admin", "password": "admin123"}).status_code == 200
+    assert client.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "admin123"}).status_code == 200
 
     async def current(s):
-        return (await s.execute(select(User.hashed_password).where(User.username == "admin"))).scalar_one()
+        return (await s.execute(select(User.hashed_password).where(User.username == "impress.default.superAdmin"))).scalar_one()
     assert db(current).startswith("$i2$")
 
 

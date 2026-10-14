@@ -14,7 +14,8 @@ APP = Path(__file__).resolve().parents[1] / "app"
 # Routes a logged-in user calls about their own session; any staff role may.
 SELF_SERVICE = {"/api/auth/me", "/api/auth/change-password", "/api/auth/logout",
                 "/api/auth/session", "/api/auth/session-status", "/api/auth/activity",
-                "/api/events"}          # the signed-in user's own live-update stream (v2.2)
+                "/api/events",          # the signed-in user's own live-update stream (v2.2)
+                "/api/auth/preferences", "/api/auth/onboarding"}    # their own settings and welcome (v2.2)
 
 
 def _routes():

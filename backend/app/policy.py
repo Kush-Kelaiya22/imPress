@@ -25,6 +25,7 @@ from __future__ import annotations
 from fastapi import Depends, HTTPException
 
 from .auth import get_current_user
+from .config import DEFAULT_SUPERADMIN
 from .models import ClassSession, User
 
 RING = {"super_admin": 0, "admin": 1, "teacher": 2}
@@ -92,6 +93,19 @@ def require(permission: str):
     return dependency
 
 
+def feature(flag: str, what: str):
+    """Route dependency: refuse with 403 when root switched the feature off (a policy flag, launch flag --no-ota)."""
+    async def dependency() -> None:
+        from . import gpc
+        if not gpc.get(flag):
+            raise forbidden("FEATURE_DISABLED", f"{what} is switched off by root (policy flag {flag}). "
+                            "This is intentional: it can only be changed where the server is started.")
+    return dependency
+
+
+ota_enabled = feature("ota.enabled", "Over-the-air updates")
+
+
 # ── Resource scope ───────────────────────────────────────────────────────
 
 def class_access(user: User, cls: ClassSession) -> bool:
@@ -135,6 +149,8 @@ def account_refusal(actor: User, target: User, action: str) -> HTTPException | N
     (migration 9, #116) so that concurrent requests cannot bypass it."""
     if not allowed(actor, "users.manage"):
         return forbidden("FORBIDDEN", "Not allowed: users.manage")
+    if target.username == DEFAULT_SUPERADMIN and action in ("deactivate", "delete", "change_role", "reset_password"):
+        return forbidden("PROTECTED_ACCOUNT", "This account is managed by root: its password is set when the server starts")
     if RING.get(target.role, 99) == 0 and not allowed(actor, "users.manage_privileged"):
         return forbidden("FORBIDDEN_TARGET", "Only a super admin can manage a super admin")
     if actor.id == target.id and action in ("deactivate", "delete", "change_role"):
@@ -143,6 +159,26 @@ def account_refusal(actor: User, target: User, action: str) -> HTTPException | N
     if action == "change_role" and not allowed(actor, "users.assign_role"):
         return forbidden("FORBIDDEN_ROLE", "Only a super admin can change roles")
     return None
+
+
+def is_faculty_role(role: str) -> bool:
+    """Faculty (and TAs): the teacher role. Role names are compared here and nowhere else."""
+    return role == "teacher"
+
+
+def is_super_role(role: str) -> bool:
+    return role == "super_admin"
+
+
+def is_faculty(user: User | None) -> bool:
+    return bool(user is not None and is_faculty_role(user.role))
+
+
+def role_label(role: str, designation: str = "") -> str:
+    """What the interface calls a role: faculty, TA, admin, super admin."""
+    if is_faculty_role(role):
+        return "TA" if designation == "ta" else "faculty"
+    return role.replace("_", " ")
 
 
 def is_staff(user: User | None) -> bool:

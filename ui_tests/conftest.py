@@ -36,13 +36,21 @@ class Api:
     def __init__(self, base, token=None):
         self.base, self.token = base, token
 
+    console_env = None          # set by the server fixture: how to run the root console against this server
+
     def __call__(self, path, body=None, method=None):
         req = urllib.request.Request(self.base + path, method=method or ("POST" if body is not None else "GET"))
         req.add_header("content-type", "application/json")
         if self.token:
             req.add_header("authorization", f"Bearer {self.token}")
         with urllib.request.urlopen(req, json.dumps(body).encode() if body is not None else None) as r:
-            return json.loads(r.read() or b"null")
+            out = json.loads(r.read() or b"null")
+        if path == "/api/admin/users" and body is not None and isinstance(out, dict) and out.get("username") \
+                and not (body or {}).get("keep_pending") and Api.console_env:
+            # New accounts start with temporary credentials; most tests are not about that: finish the setup as root would.
+            subprocess.run([sys.executable, "-m", "app.console", "-c", f"users finish-setup {out['username']}"],
+                           cwd=ROOT / "backend", env=Api.console_env, capture_output=True, check=True)
+        return out
 
     def upload(self, path, filename, data: bytes):
         """multipart/form-data POST of one file field named 'file'."""
@@ -73,6 +81,7 @@ def server():
            "IMPRESS_JWT_SECRET": "ui-secret-not-default", "IMPRESS_DEVICE_API_KEY": DEVICE_KEY,
            "IMPRESS_INITIAL_ADMIN_PASSWORD": ADMIN_PASSWORD, "IMPRESS_FIRMWARE_DIR": str(tmp / "fw"),
            "IMPRESS_FIRMWARE_ALLOW_UNSIGNED": "true", "IMPRESS_FIRMWARE_SINGLE_APPROVER": "true"}   # #123
+    Api.console_env = env
     log = open(tmp / "server.log", "w")
     proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(port),
                              "--log-level", "warning"], cwd=ROOT / "backend", env=env, stdout=log,
@@ -87,15 +96,14 @@ def server():
                 if proc.poll() is not None:
                     raise RuntimeError((tmp / "server.log").read_text())
                 time.sleep(0.25)
-        # v2.2 allows one device per account: the test's API calls use their
-        # own super admin, so the browser can still sign in as "admin".
-        token = Api(base)("/api/auth/login", {"username": "admin", "password": ADMIN_PASSWORD})["access_token"]
-        admin = Api(base, token)
-        uid = admin("/api/admin/users", {"username": "ui-api", "email": "ui-api@example.edu", "password": ADMIN_PASSWORD,
-                                         "full_name": "UI test API", "role": "admin"})["id"]
-        admin(f"/api/admin/users/{uid}/role", {"role": "super_admin"})
+        # v2.2 allows one device per account: the test's API calls use their own super admin (created the
+        # way root creates one: in the console), so the browser can still sign in as the default super admin.
+        out = subprocess.run([sys.executable, "-m", "app.console", "-c", "superadmin create ui-api --password Temp-ui-api-1"],
+                             cwd=ROOT / "backend", env=env, capture_output=True, text=True)
+        assert "created super admin" in out.stdout, out.stdout + out.stderr
+        temp = Api(base)("/api/auth/login", {"username": "ui-api", "password": "Temp-ui-api-1"})["access_token"]
+        Api(base, temp)("/api/auth/change-password", {"current_password": "Temp-ui-api-1", "new_password": ADMIN_PASSWORD})
         api_token = Api(base)("/api/auth/login", {"username": "ui-api", "password": ADMIN_PASSWORD})["access_token"]
-        admin("/api/auth/logout", {})
         yield base, Api(base, api_token)
     finally:
         proc.terminate()
@@ -136,7 +144,7 @@ def page(browser, request):
     assert not errors, f"uncaught JavaScript errors: {errors}"
 
 
-def login(page, base, username="admin", password=ADMIN_PASSWORD):
+def login(page, base, username="impress.default.superAdmin", password=ADMIN_PASSWORD):
     page.goto(base + "/#/login")
     page.fill("#login-user", username)
     page.fill("#login-pass", password)

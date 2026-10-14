@@ -233,6 +233,19 @@ async def add_device_caps(conn: AsyncConnection) -> None:
                                               "ota_slot_kb": "INTEGER", "rollback_supported": "BOOLEAN"}})
 
 
+# v2.2: display names, faculty/TA, first-sign-in state, preferences; a class's icon and colour.
+# Existing accounts are NOT 'pending setup' (must_change_password stays false) but see the welcome once.
+_ACCOUNT_COLUMNS = {
+    "users": {"display_name": "VARCHAR(64) DEFAULT ''", "designation": "VARCHAR(8) DEFAULT 'faculty'",
+              "must_change_password": "BOOLEAN DEFAULT 0", "onboarded_at": "DATETIME", "preferences": "JSON"},
+    "class_sessions": {"icon": "VARCHAR(24) DEFAULT ''", "color": "VARCHAR(7) DEFAULT ''"},
+}
+
+
+async def add_account_and_class_fields(conn: AsyncConnection) -> None:
+    await _add_columns(conn, _ACCOUNT_COLUMNS)
+
+
 # Append-only. (version, name, step)
 MIGRATIONS: list[tuple[int, str, Step]] = [
     (1, "add_v2_columns", add_v2_columns),
@@ -247,6 +260,7 @@ MIGRATIONS: list[tuple[int, str, Step]] = [
     (10, "add_deployment_deferral", add_deployment_deferral),
     (11, "add_firmware_qualification", add_firmware_qualification),
     (12, "add_device_caps", add_device_caps),
+    (13, "add_account_and_class_fields", add_account_and_class_fields),
 ]
 
 LATEST = MIGRATIONS[-1][0]
