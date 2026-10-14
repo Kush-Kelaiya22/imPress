@@ -116,7 +116,7 @@ svg.ic.lg { width: 22px; height: 22px; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.25rem; }
 .grid-main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 1.25rem; align-items: start; }
-@media (max-width: 1100px) { .grid-main, .grid-3 { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .grid-main, .grid-3, .grid-2 { grid-template-columns: 1fr; } }
 @media (max-width: 760px) { .grid-2 { grid-template-columns: 1fr; } }
 
 /* ── App shell: sidebar + topbar ───────────────────────────────────── */
@@ -367,8 +367,13 @@ input[type="file"] { padding: 7px; }
 .table tr.selected td { background: var(--primary-soft); }
 .table td strong, .table td b { color: var(--text); }
 .cell-person { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.cell-person b { display: block; font-weight: 600; color: var(--text); }
-.cell-person span { display: block; font-size: 12.5px; color: var(--muted); }
+.cell-person > div > b { display: block; font-weight: 600; color: var(--text); }
+.cell-person > div > span { display: block; font-size: 12.5px; color: var(--muted); }
+.table td code, .table td .chip, .table .status, .table .badge, .table .role { white-space: nowrap; }
+.chips { display: flex; gap: 4px; white-space: nowrap; }
+.chips.wrap { flex-wrap: wrap; white-space: normal; }
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); font-size: 12px; color: var(--text-2); }
+.row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; }
 .table-foot { display: flex; justify-content: space-between; align-items: center; padding: 12px 4px 0; color: var(--muted); font-size: 13px; flex-wrap: wrap; gap: 8px; }
 .pager { display: flex; gap: 6px; }
 .pager button { min-width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface);

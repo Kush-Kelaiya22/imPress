@@ -473,7 +473,7 @@ async function renderAdminCourses(app) {
     <div class="container mt-2">
       <div class="page-header">
         <h1>Course Catalog</h1>
-        <button class="btn btn-primary" id="btn-new-course">+ New Course</button>
+        <button class="btn btn-primary" id="btn-new-course">${icon('plus', 'sm')} New Course</button>
       </div>
 
       <div class="card hidden" id="course-form-card">
@@ -763,7 +763,7 @@ async function renderAdminClassForm(app, params) {
             <div class="form-section-title">Meeting Schedule</div>
             <div class="form-group">
               <div id="schedule-rows"></div>
-              <button type="button" class="btn btn-sm btn-outline mt-1" id="btn-add-schedule">+ Add Time Slot</button>
+              <button type="button" class="btn btn-sm btn-outline mt-1" id="btn-add-schedule">${icon('plus', 'sm')} Add Time Slot</button>
             </div>
           </div>
 
@@ -1174,14 +1174,14 @@ async function renderAdminStudents(app) {
         </form>
       </div>
 
-      <div class="grid-main">
+      <div>
         <div class="card">
           <div class="card-header"><div><h2 id="student-count">${students.length} Student${students.length !== 1 ? 's' : ''}</h2>
             <div class="card-sub">Every registered student across your classrooms</div></div>
             <label class="searchbox">${icon('search', 'sm')}<input type="search" id="stu-search" placeholder="Search by name or enrollment no.…" data-live="1" /></label></div>
           <div id="student-table-area">${_renderStudentTable(students)}</div>
         </div>
-        <div>${ov.side}</div>
+        <div class="grid-2">${ov.side}</div>
       </div>
     </div>
   `;
@@ -1450,17 +1450,17 @@ async function renderAdminModules(app) {
                     ${d.verified_at ? `<br><span class="text-success text-sm">${icon('check', 'sm')} verified</span>` : ''}
                   </td>
                   <td class="text-sm">
-                    ${d.pending_version ? `→ v${escHtml(d.pending_version)} <span class="badge badge-outline">${escHtml(d.ota_status)}</span>` : '<span class="text-muted">up to date</span>'}
+                    ${d.pending_version ? `→ v${escHtml(d.pending_version)} <span class="badge badge-outline">${escHtml(d.ota_status)}</span>` : '<span class="text-muted nowrap">up to date</span>'}
                   </td>
                   <td class="text-sm">${d.class_code ? `${escHtml(d.class_code)} · ${escHtml(d.class_name)}` : '—'}</td>
                   <td class="text-sm text-center">${d.device_type === 'c6' ? (d.student_count || 0) : '—'}</td>
                   <td class="text-sm text-center">${d.free_heap ? formatBytes(d.free_heap) : '—'}</td>
                   <td class="text-sm text-center">${d.total_flash ? formatBytes(d.total_flash) : '—'}</td>
-                  <td class="nowrap">
+                  <td><div class="row-actions" style="justify-content:flex-start">
                     <button class="btn btn-xs btn-outline" onclick="window._showDiagnostics(${d.id})">Diagnostics</button>
                     <button class="btn btn-xs btn-outline" onclick="window._pushOta(${d.id}, '${escHtml(d.device_name || d.mac_address).replace(/'/g, "\\'")}', '${escHtml(d.device_type)}', '${escHtml(d.firmware_version || '')}')">Push OTA</button>
                     ${d.is_active && !d.verified_at ? `<button class="btn btn-xs btn-outline" onclick="window._verifyModule(${d.id})">Verify</button>` : ''}
-                  </td>
+                  </div></td>
                 </tr>
               `).join('')}
             </tbody>
@@ -1676,7 +1676,7 @@ async function renderAdminFirmware(app) {
           </p>
           <div class="csv-drop" id="fw-drop" role="button" tabindex="0" aria-label="Choose a firmware image">
             <p style="margin:0 0 0.5rem">Drop a firmware .bin here or click to browse</p>
-            <input type="file" id="fw-file" accept=".bin,application/octet-stream" />
+            <input type="file" id="fw-file" class="sr-only" accept=".bin,application/octet-stream" />
             <button type="button" class="btn btn-sm btn-outline" id="fw-browse">Choose File</button>
           </div>
           <progress id="fw-progress" class="hidden" max="100" value="0" style="width:100%;margin-top:0.5rem"></progress>
@@ -2170,9 +2170,9 @@ async function renderClassDetail(app, params) {
     <div class="container mt-2">
       <div class="page-header flex-between">
         <div>
-          <h1>${escHtml(cls.course_name || cls.name)}</h1>
+          <h1 class="flex gap-1" style="align-items:center;flex-wrap:wrap">${escHtml(cls.course_name || cls.name)} ${cls.is_active ? statusPill('live', 'Live now') : ''}</h1>
           ${cls.course_code ? `<p class="text-muted">${escHtml(cls.course_code)}${cls.course_section ? ` — Section ${escHtml(cls.course_section)}` : ''}</p>` : ''}
-          <div class="class-meta mt-1">
+          <div class="chips wrap mt-1">
             ${cls.term ? `<span class="chip"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> ${escHtml(cls.term)} ${cls.year || ''}</span>` : ''}
             ${cls.start_date ? `<span class="chip"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> ${escHtml(cls.start_date)} → ${escHtml(cls.end_date || '?')}</span>` : ''}
             ${cls.exam_date ? `<span class="chip"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg> Exam ${escHtml(cls.exam_date)}${cls.exam_start_time ? ` · ${escHtml(cls.exam_start_time)}${cls.exam_end_time ? `–${escHtml(cls.exam_end_time)}` : ''}` : ''}</span>` : ''}
@@ -2199,8 +2199,8 @@ async function renderClassDetail(app, params) {
         </div>
         <div class="flex gap-1">
           ${cls.is_active
-            ? `<button class="btn btn-danger" onclick="deactivateClass('${classId}')">Deactivate</button>`
-            : `<button class="btn btn-success" onclick="activateClass('${classId}')">Activate</button>`
+            ? `<button class="btn btn-danger-soft" onclick="deactivateClass('${classId}')">${icon('power', 'sm')} End session</button>`
+            : `<button class="btn btn-primary" onclick="activateClass('${classId}')">${icon('play', 'sm')} Start session</button>`
           }
         </div>
       </div>
@@ -2210,7 +2210,7 @@ async function renderClassDetail(app, params) {
         <div class="card">
           <div class="card-header">
             <h2>Quizzes</h2>
-            <a href="#/quiz?class_id=${classId}" class="btn btn-sm btn-primary">+ New Quiz</a>
+            <a href="#/quiz?class_id=${classId}" class="btn btn-sm btn-primary">${icon('plus', 'sm')} New quiz</a>
           </div>
           ${quizzes.length === 0 ? '<p class="text-muted" style="padding:1rem">No quizzes yet.</p>' : ''}
           <div class="list-compact">
@@ -2241,7 +2241,7 @@ async function renderClassDetail(app, params) {
         <div class="card">
           <div class="card-header">
             <h2>Polls</h2>
-            <a href="#/poll?class_id=${classId}" class="btn btn-sm btn-primary">+ New Poll</a>
+            <a href="#/poll?class_id=${classId}" class="btn btn-sm btn-primary">${icon('plus', 'sm')} New poll</a>
           </div>
           ${polls.length === 0 ? '<p class="text-muted" style="padding:1rem">No polls yet.</p>' : ''}
           <div class="list-compact">
@@ -2283,7 +2283,7 @@ async function renderClassDetail(app, params) {
           <h2><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Students (${students.length})</h2>
           <div class="flex gap-1" style="flex-wrap:wrap">
             <button class="btn btn-sm btn-outline" onclick="toggleClassCsvImport()"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg> Import CSV</button>
-            <button class="btn btn-sm btn-primary" onclick="toggleClassStudentForm()">+ Enroll Student</button>
+            <button class="btn btn-sm btn-primary" onclick="toggleClassStudentForm()">${icon('plus', 'sm')} Enroll Student</button>
           </div>
         </div>
 
@@ -2833,7 +2833,7 @@ async function renderQuizCreate(app, params) {
               </div>
             </div>
 
-            <button type="button" class="btn btn-outline mb-2" onclick="addQuizQuestion()">+ Add Question</button>
+            <button type="button" class="btn btn-outline mb-2" onclick="addQuizQuestion()">${icon('plus', 'sm')} Add Question</button>
 
             <div class="flex gap-1">
               <button type="submit" class="btn btn-primary">Create Quiz</button>

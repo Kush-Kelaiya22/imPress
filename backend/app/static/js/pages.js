@@ -168,7 +168,7 @@ async function renderAdminDashboard(app) {
             ${todays.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Classroom</th><th>Room</th><th>Time</th><th>Status</th><th>Students</th><th>Faculty</th><th></th></tr></thead><tbody>
               ${todays.map(c => { const [k, t] = classStatus(c); const s = (c.meeting_schedule || []).find(x => x.day === day);
                 return `<tr><td><div class="cell-person">${classGlyph(c)}<div><b>${escHtml(c.course_name || c.name)}</b><span>${escHtml(c.code)}</span></div></div></td>
-                <td>${escHtml(c.classroom_code || '—')}</td><td>${s ? `${s.start}–${s.end}` : '—'}</td><td>${statusPill(k, t)}</td>
+                <td class="nowrap">${escHtml(c.classroom_code || '—')}</td><td class="nowrap">${s ? `${s.start}–${s.end}` : '—'}</td><td>${statusPill(k, t)}</td>
                 <td>${c.student_count || 0}</td><td class="text-sm">${escHtml(facultyText(c))}</td>
                 <td><a href="#/class?id=${c.id}" class="btn btn-sm btn-outline">Open</a></td></tr>`; }).join('')}
               </tbody></table></div>` : emptyState('No classes today', 'Timetabled and activated classrooms appear here.', 'calendar')}
@@ -512,19 +512,19 @@ function userRow(u, me) {
   const roleIcon = { super_admin: 'crown', admin: 'shield', teacher: 'users' }[u.role] || 'user';
   const btns = [
     a.has('edit') && `<button class="btn btn-sm btn-outline btn-icon" title="Edit" aria-label="Edit ${escHtml(u.username)}" onclick="editUser(${u.id})">${icon('edit', 'sm')}</button>`,
-    u.signed_in && a.has('deactivate') && `<button class="btn btn-sm btn-outline" onclick="endUserSessions(${u.id}, '${name}')">${icon('logout', 'sm')} End sessions</button>`,
+    u.signed_in && a.has('deactivate') && `<button class="btn btn-sm btn-outline btn-icon" title="End sessions" onclick="endUserSessions(${u.id}, '${name}')">${icon('logout', 'sm')}<span class="sr-only">End sessions</span></button>`,
     a.has('deactivate') && `<button class="btn btn-sm btn-outline" onclick="setUserActive(${u.id}, '${name}', false)">Deactivate</button>`,
     a.has('reactivate') && `<button class="btn btn-sm btn-outline" onclick="setUserActive(${u.id}, '${name}', true)">Reactivate</button>`,
-    a.has('reset_password') && `<button class="btn btn-sm btn-outline" onclick="resetUserPassword(${u.id}, '${name}')">${icon('key', 'sm')} Reset pwd</button>`,
-    a.has('delete') && `<button class="btn btn-sm btn-danger-ghost" onclick="deleteUser(${u.id}, '${name}')">Delete permanently</button>`,
-  ].filter(Boolean).join(' ');
+    a.has('reset_password') && `<button class="btn btn-sm btn-outline btn-icon" title="Reset password" onclick="resetUserPassword(${u.id}, '${name}')">${icon('key', 'sm')}<span class="sr-only">Reset pwd</span></button>`,
+    a.has('delete') && `<button class="btn btn-sm btn-danger-ghost btn-icon" title="Delete permanently" onclick="deleteUser(${u.id}, '${name}')">${icon('trash', 'sm')}<span class="sr-only">Delete permanently</span></button>`,
+  ].filter(Boolean).join('');
   return `<tr data-user="${u.id}">
     <td><div class="cell-person">${avatar(u.full_name || u.username)}<div><b>${escHtml(u.full_name || u.username)}</b><span>${escHtml(u.email)} · @${escHtml(u.username)}</span></div></div></td>
     <td><span class="role ${escHtml(u.role)}">${icon(roleIcon, 'sm')} ${escHtml(roleName(u.role))}</span></td>
-    <td>${u.role === 'teacher' ? `${u.class_count} classroom${u.class_count === 1 ? '' : 's'}` : 'All classrooms'}</td>
+    <td class="nowrap">${u.role === 'teacher' ? `${u.class_count} classroom${u.class_count === 1 ? '' : 's'}` : 'All classrooms'}</td>
     <td>${u.is_active ? statusPill('active', 'Active') : statusPill('inactive', 'Inactive')}${u.signed_in ? ' <span class="badge badge-sm badge-info">Signed in</span>' : ''}</td>
-    <td class="text-sm">${u.last_active_at ? timeAgo(istParseToEpoch(u.last_active_at)) : 'Never'}</td>
-    <td class="nowrap">${u.id === me.id ? '<span class="text-muted text-sm">You</span> ' : ''}${btns}</td></tr>`;
+    <td class="text-sm nowrap">${u.last_active_at ? timeAgo(istParseToEpoch(u.last_active_at)) : 'Never'}</td>
+    <td><div class="row-actions">${u.id === me.id ? '<span class="text-muted text-sm">You</span>' : ''}${btns}</div></td></tr>`;
 }
 
 function wireUsers(app, users, me) {
@@ -773,20 +773,19 @@ function _renderStudentTable(students) {
   if (!students.length) return emptyState('No students found', 'Register a student, import a CSV file, or change the search.', 'users');
   const S = window._studentSummary;
   return `<div class="table-wrap"><table class="table">
-    <thead><tr><th>Student</th><th>Enrollment no.</th><th>Programme</th><th>Classes</th><th>Module</th><th>Attendance</th><th>Participation</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Student</th><th>Enrollment no.</th><th>Classes</th><th>Module</th><th>Attendance</th><th>Participation</th><th>Status</th><th></th></tr></thead>
     <tbody>${students.map(s => { const m = S[s.id] || {}; return `<tr>
-      <td><div class="cell-person">${avatar(s.student_name)}<div><b>${escHtml(s.student_name)}</b><span>${escHtml(s.email || '—')}</span></div></div></td>
+      <td><div class="cell-person">${avatar(s.student_name)}<div><b>${escHtml(s.student_name)}</b><span>${escHtml([s.program, s.email].filter(Boolean).join(' · ') || '—')}</span></div></div></td>
       <td><code>${escHtml(s.roll_number)}</code></td>
-      <td class="text-sm">${escHtml(s.program || '—')}</td>
-      <td class="text-sm">${(m.classes || []).length ? escHtml(m.classes.slice(0, 2).join(', ')) + (m.classes.length > 2 ? ` +${m.classes.length - 2}` : '') : '<span class="text-muted">—</span>'}</td>
+      <td>${(m.classes || []).length ? `<div class="chips" title="${escHtml(m.classes.join(', '))}">${m.classes.slice(0, 1).map(c => `<span class="chip">${escHtml(c)}</span>`).join('')}${m.classes.length > 1 ? `<span class="chip">+${m.classes.length - 1}</span>` : ''}</div>` : '<span class="text-muted">—</span>'}</td>
       <td>${m.module_linked ? `<span class="badge badge-success">${icon('check', 'sm')} Linked</span>` : `<span class="badge badge-warning">${icon('alert', 'sm')} Not linked</span>`}</td>
       <td style="min-width:130px">${bar(m.attendance_pct)}</td><td style="min-width:130px">${bar(m.participation_pct)}</td>
       <td>${s.is_active ? statusPill('active', 'Active') : statusPill('inactive', 'Inactive')}</td>
-      <td class="nowrap"><a class="btn btn-sm btn-ghost btn-icon" href="#/student?id=${s.id}" title="View" aria-label="View ${escHtml(s.student_name)}">${icon('eye', 'sm')}</a>
+      <td><div class="row-actions"><a class="btn btn-sm btn-ghost btn-icon" href="#/student?id=${s.id}" title="View" aria-label="View ${escHtml(s.student_name)}">${icon('eye', 'sm')}</a>
         <button class="btn btn-sm btn-ghost btn-icon" title="Edit" aria-label="Edit" onclick="window._editStudent(${s.id})">${icon('edit', 'sm')}</button>
         ${s.is_active ? `<button class="btn btn-sm btn-ghost btn-icon" title="Deactivate" aria-label="Deactivate" onclick="window._deactivateStudent(${s.id})">${icon('pause', 'sm')}</button>`
           : `<button class="btn btn-sm btn-ghost btn-icon" title="Reactivate" aria-label="Reactivate" onclick="window._reactivateStudent(${s.id})">${icon('play', 'sm')}</button>`}
-        <button class="btn btn-sm btn-ghost btn-icon text-danger" title="Delete permanently" aria-label="Delete permanently" onclick="window._hardDeleteStudent(${s.id}, '${escHtml(s.student_name).replace(/'/g, "\\'")}')">${icon('trash', 'sm')}</button></td>
+        <button class="btn btn-sm btn-ghost btn-icon text-danger" title="Delete permanently" aria-label="Delete permanently" onclick="window._hardDeleteStudent(${s.id}, '${escHtml(s.student_name).replace(/'/g, "\\'")}')">${icon('trash', 'sm')}</button></div></td>
     </tr>`; }).join('')}</tbody></table></div>`;
 }
 
