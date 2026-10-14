@@ -34,6 +34,10 @@ int mesh_init(uint32_t device_id);
  */
 int mesh_send(msg_type_t type, const uint8_t *payload, uint16_t length);
 
+/** As mesh_send(); *msg_id (if not NULL) receives the frame's mesh message
+ *  id, which the hub's MSG_ACK names (#181). Set even if sending failed. */
+int mesh_send_id(msg_type_t type, const uint8_t *payload, uint16_t length, uint32_t *msg_id);
+
 /**
  * @brief Set callback for incoming messages (from S3, e.g., quiz questions).
  * @param callback   void (*cb)(const msg_t *msg)

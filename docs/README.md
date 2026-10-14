@@ -27,6 +27,7 @@ The portal is deliberately served by imPress rather than embedded from GitHub: i
 | ↳ [Wire protocols](design/protocols.md) | encode or decode any byte on any link |
 | ↳ [Mesh design](design/mesh.md) | understand ESP-NOW relaying, root discovery, de-duplication, timing |
 | ↳ [Security model](design/security-model.md) | reason about threats, auth, keys, sessions, OTA integrity |
+| ↳ [Data integrity](design/data-integrity.md) | the database gateway, row seals, temporary backups, Degraded and self-repair, clearing data |
 | ↳ [Design decisions](design/decisions.md) | read the decision records behind non-obvious choices |
 | **[API](api/rest-api.md)** | integrate with the backend |
 | ↳ [REST API](api/rest-api.md) | call any HTTP endpoint (request/response contracts, errors) |
@@ -37,6 +38,7 @@ The portal is deliberately served by imPress rather than embedded from GitHub: i
 | ↳ [Configuration](guides/configuration.md) | look up any backend setting or device Kconfig/NVS key |
 | ↳ [Deployment](guides/deployment.md) | put imPress in a real classroom |
 | ↳ [CSV imports](guides/csv-imports.md) | bulk-create quiz questions, courses and sections from a spreadsheet; export sections |
+| ↳ [Debug mode and test data](guides/test-mode.md) | try imPress on realistic generated or pasted data without touching the real database |
 | ↳ [OTA updates](guides/ota-updates.md) | ship firmware to deployed hubs and gateways |
 | ↳ [Releases](guides/releases.md) | release names, how releases are made, Beta and Stable, the container image, flashing prebuilt images |
 | ↳ [Changelog](https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/CHANGELOG.md) | what was added, changed, removed and fixed in each release |

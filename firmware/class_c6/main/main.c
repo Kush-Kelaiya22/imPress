@@ -173,9 +173,20 @@ static void batch_flush(void)
 
 /* ── Protocol → JSON Conversion ─────────────────────────────────────── */
 
+/* A 10-character enrollment number from a radio frame, always terminated:
+ * the sender's NUL byte is not trusted (a malformed or spoofed frame would
+ * otherwise make cJSON read past the field). */
+static const char *enrollment_of(const char *field, char out[11])
+{
+    memcpy(out, field, 10);
+    out[10] = '\0';
+    return out;
+}
+
 static cJSON *msg_to_json(msg_type_t type, const uint8_t *payload, uint16_t len,
                           uint32_t sender_device_id)
 {
+    char en[11];
     cJSON *j = NULL;
 
     switch (type) {
@@ -211,7 +222,7 @@ static cJSON *msg_to_json(msg_type_t type, const uint8_t *payload, uint16_t len,
         j = cJSON_CreateObject();
         cJSON_AddStringToObject(j, "type", "student_join");
         /* Enrollment number is the primary identity */
-        cJSON_AddStringToObject(j, "enrollment_number", p->enrollment);
+        cJSON_AddStringToObject(j, "enrollment_number", enrollment_of(p->enrollment, en));
         /* This gateway relays the mesh event — used for attribution/student_count */
         cJSON_AddStringToObject(j, "device_mac", s_mac_str);
         cJSON_AddStringToObject(j, "class_code",
@@ -228,7 +239,7 @@ static cJSON *msg_to_json(msg_type_t type, const uint8_t *payload, uint16_t len,
         const payload_student_leave_t *p = (const payload_student_leave_t *)payload;
         j = cJSON_CreateObject();
         cJSON_AddStringToObject(j, "type", "student_leave");
-        cJSON_AddStringToObject(j, "enrollment_number", p->enrollment);
+        cJSON_AddStringToObject(j, "enrollment_number", enrollment_of(p->enrollment, en));
         cJSON_AddStringToObject(j, "device_mac", s_mac_str);
         cJSON_AddNumberToObject(j, "device_id", p->device_id);
         cJSON_AddNumberToObject(j, "reason", p->reason);
@@ -246,7 +257,7 @@ static cJSON *msg_to_json(msg_type_t type, const uint8_t *payload, uint16_t len,
         cJSON_AddNumberToObject(j, "quiz_id", p->quiz_id);
         cJSON_AddNumberToObject(j, "question_order", p->question_num);
         /* Primary identity: enrollment number */
-        cJSON_AddStringToObject(j, "enrollment_number", p->enrollment);
+        cJSON_AddStringToObject(j, "enrollment_number", enrollment_of(p->enrollment, en));
         cJSON_AddNumberToObject(j, "selected_option", p->selected_option);
         cJSON_AddNumberToObject(j, "response_time_ms", p->response_time_ms);
         cJSON_AddNumberToObject(j, "device_id", p->device_id);  /* diagnostics */
@@ -259,7 +270,7 @@ static cJSON *msg_to_json(msg_type_t type, const uint8_t *payload, uint16_t len,
         cJSON_AddStringToObject(j, "type", "poll_vote");
         cJSON_AddNumberToObject(j, "poll_id", p->poll_id);
         /* Primary identity: enrollment number */
-        cJSON_AddStringToObject(j, "enrollment_number", p->enrollment);
+        cJSON_AddStringToObject(j, "enrollment_number", enrollment_of(p->enrollment, en));
         cJSON_AddNumberToObject(j, "selected_option", p->selected_option);
         cJSON_AddNumberToObject(j, "device_id", p->device_id);  /* diagnostics */
         break;
@@ -270,7 +281,7 @@ static cJSON *msg_to_json(msg_type_t type, const uint8_t *payload, uint16_t len,
         if (len < 11) break;
         j = cJSON_CreateObject();
         cJSON_AddStringToObject(j, "type", "attendance");
-        cJSON_AddStringToObject(j, "enrollment_number", (const char *)payload);
+        cJSON_AddStringToObject(j, "enrollment_number", enrollment_of((const char *)payload, en));
         break;
     }
     case MSG_OTA_APPLIED: {

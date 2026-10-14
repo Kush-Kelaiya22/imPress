@@ -25,7 +25,10 @@ from .ws.handler import router as ws_router
 from .services.presence import presence_sweep_loop
 from .services.sessions import session_cleanup_loop
 from .models import User, UserSession
-from .auth import hash_password, _sha256_hex
+from .auth import hash_password, _sha256_hex, session_token_from
+from .dbgateway import DatabaseWriteRefused
+from .routers.system import router as system_router
+from .routers.testmode import router as testmode_router
 
 
 logger = logging.getLogger(__name__)
@@ -49,6 +52,7 @@ async def lifespan(app: FastAPI):
                        insecure_settings(settings))
     await init_db()
     logger.info("Database tables created")
+
     async with async_session() as db:      # pre-v2.1 <type>-<version>.bin files → registry
         from .services.firmware_store import adopt_legacy_files
         await adopt_legacy_files(db)
@@ -89,6 +93,12 @@ async def lifespan(app: FastAPI):
                 logger.warning("Initial super admin created: username=admin password=%s "
                                "(shown once — change it now)", password)
 
+    # Database integrity (v2.2): baseline or verify (and repair), then the
+    # start-up and rolling backups, after the first account exists.
+    from .services import integrity
+    await integrity.startup()
+    integrity_task = asyncio.create_task(integrity.integrity_loop())
+
     try:
         yield
     finally:
@@ -103,6 +113,7 @@ async def lifespan(app: FastAPI):
             await quiz_timer_task
         except asyncio.CancelledError:
             pass
+        integrity_task.cancel()
         session_task.cancel()
         try:
             await session_task
@@ -139,6 +150,8 @@ app.middleware("http")(enforce_https)
 # /activity ping refreshes itself, and /logout is pointless to refresh.
 _ACTIVITY_FREE_PATHS = frozenset({
     "/api/auth/session-status",
+    "/api/events",
+    "/api/system/status",
     "/api/auth/session",
     "/api/auth/activity",
     "/api/auth/login",
@@ -147,40 +160,63 @@ _ACTIVITY_FREE_PATHS = frozenset({
 
 
 @app.middleware("http")
+async def database_principal(request: Request, call_next):
+    """Every request starts as anonymous for the database gateway (v2.2);
+    signing in (user) or a device key (device) raises it."""
+    from .dbgateway import ANONYMOUS, act_as
+    act_as(ANONYMOUS)
+    return await call_next(request)
+
+
+@app.exception_handler(DatabaseWriteRefused)
+async def _write_refused(request: Request, exc: DatabaseWriteRefused):
+    """A write the gateway refused: 403, flagged in the activity log."""
+    from .dbgateway import SYSTEM, act_as
+    from .activity import log_activity
+    act_as(SYSTEM)
+    try:
+        async with async_session() as db:
+            await log_activity(db, "db.write_refused", getattr(exc.principal.user, "id", None), "database", None,
+                               {"flag": True, "table": exc.table, "by": exc.principal.label, "why": exc.why,
+                                "path": request.url.path})
+            await db.commit()
+    except Exception:
+        logger.exception("could not log a refused write")
+    return JSONResponse({"detail": {"code": "DB_WRITE_REFUSED",
+                                    "message": f"Not allowed to change {exc.table}: {exc.why}"}}, status_code=403)
+
+
+@app.middleware("http")
 async def refresh_session_activity(request: Request, call_next):
     """Touch last_activity_at for live user sessions on each API request.
 
     Best-effort and never raises: a refresh failure must not take down a
-    request. Only sessions that are still inside the idle + hard windows are
-    refreshed (mirrors validate_session) so an expired session is never
-    resurrected by the refresh.
+    request. Only a session still inside its idle limit (5 minutes, 30 for
+    faculty during their classes) and the hard limit is refreshed, so an
+    expired session is never resurrected. Requests the web app makes on its
+    own (live refresh, X-Impress-Background: 1) are not activity (v2.2).
     """
     path = request.url.path
-    if path.startswith("/api") and path not in _ACTIVITY_FREE_PATHS:
-        authz = request.headers.get("authorization")
-        if authz and authz.lower().startswith("bearer "):
-            token = authz.split(" ", 1)[1].strip()
-            if token:
-                try:
-                    now = istnow()
-                    idle_cutoff = now - timedelta(
-                        minutes=settings.SESSION_IDLE_MINUTES
-                    )
-                    async with async_session() as db:
-                        result = await db.execute(
-                            select(UserSession).where(
-                                UserSession.token_hash == _sha256_hex(token),
-                                UserSession.revoked.is_(False),
-                                UserSession.expires_at > now,
-                                UserSession.last_activity_at > idle_cutoff,
-                            )
-                        )
-                        session = result.scalar_one_or_none()
-                        if session is not None:
-                            session.last_activity_at = now
-                            await db.commit()
-                except Exception:
-                    logger.exception("Session activity refresh error")
+    if (path.startswith("/api") and path not in _ACTIVITY_FREE_PATHS
+            and request.headers.get("x-impress-background") != "1"):
+        token = session_token_from(request)
+        if token:
+            try:
+                from .auth import idle_limit_minutes
+                now = istnow()
+                async with async_session() as db:
+                    session = (await db.execute(select(UserSession).where(
+                        UserSession.token_hash == _sha256_hex(token),
+                        UserSession.revoked.is_(False),
+                        UserSession.expires_at > now,
+                    ))).scalar_one_or_none()
+                    user = await db.get(User, session.user_id) if session is not None else None
+                    if user is not None and now - session.last_activity_at <= timedelta(
+                            minutes=await idle_limit_minutes(db, user, now)):
+                        session.last_activity_at = now
+                        await db.commit()
+            except Exception:
+                logger.exception("Session activity refresh error")
     return await call_next(request)
 
 # ── Routers ──────────────────────────────────────────────────────────
@@ -197,6 +233,8 @@ app.include_router(students.router)
 app.include_router(firmware.router)
 app.include_router(deployments.router)
 app.include_router(ws_router)
+app.include_router(system_router)
+app.include_router(testmode_router)
 
 
 # ── Static Files & Templates ────────────────────────────────────────

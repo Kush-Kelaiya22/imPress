@@ -38,9 +38,12 @@ menu "imPress S3 Class Module Configuration"
     menu "Backend Server (OTA)"
         config BACKEND_HOST
             string "Backend IP or hostname"
-            default "192.168.1.100"
+            default "192.168.137.1"
             help
-                IP or hostname of the FastAPI backend (for OTA downloads).
+                IP or hostname of the FastAPI backend (for OTA downloads):
+                the same server as the gateway's BACKEND_HOST. The default is
+                the address Windows gives a computer sharing a Mobile Hotspot;
+                set your server's address (<SERVER_IP>) for any other setup.
 
         config BACKEND_PORT
             int "Backend port (HTTP, or HTTPS with BACKEND_TLS)"
@@ -124,6 +127,15 @@ menu "imPress S3 Class Module Configuration"
             help
                 WiFi channel used for ESP-NOW mesh between S3 and students.
                 Must match student module channel.
+
+        config MESH_ANSWER_ACK
+            bool "Acknowledge joins, answers and votes (#181)"
+            default y
+            help
+                Confirm every join, answer and vote queued for the server with
+                a MSG_ACK, so student modules resend what the radio lost and
+                tell the student when an answer did not get through. Modules
+                without this feature ignore the ACKs.
 
     endmenu
 

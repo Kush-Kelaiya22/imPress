@@ -27,6 +27,7 @@ os.environ.update({
     # The in-process test client is neither HTTPS nor loopback; test_transport.py
     # checks the HTTPS rule itself (#152).
     "IMPRESS_REQUIRE_HTTPS": "false",
+    "IMPRESS_TEMP_BACKUP_DIR": str(_TMP / "backups"),
 })
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -54,6 +55,10 @@ async def _reset_db():
     (_TMP / "test.db").unlink(missing_ok=True)
     # uploaded firmware is state too: a file left by one test must not exist in the next
     shutil.rmtree(_TMP / "firmware_bins", ignore_errors=True)
+    # v2.2 state next to the database: Degraded / debug-mode flags, test data, temporary backups
+    (_TMP / "test.state.json").unlink(missing_ok=True)
+    shutil.rmtree(_TMP / "test-data", ignore_errors=True)
+    shutil.rmtree(_TMP / "backups", ignore_errors=True)
 
 
 # Fire-and-forget DB tasks the app spawns (presence pushes, WS presence
@@ -97,6 +102,7 @@ def db(client):
 def login(client, username="admin", password="admin123"):
     r = client.post("/api/auth/login", json={"username": username, "password": password})
     assert r.status_code == 200, r.text
+    client.cookies.clear()      # tests authenticate with the bearer token; the cookie path has its own tests
     return r.json()["access_token"]
 
 
