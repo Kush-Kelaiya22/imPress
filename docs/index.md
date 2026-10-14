@@ -33,7 +33,9 @@ architecture/firmware
 architecture/data-flows
 design/protocols
 design/mesh
+design/mesh-authentication
 design/security-model
+design/data-integrity
 design/authorization
 design/scheduling
 design/student-ota
@@ -49,6 +51,7 @@ api/websocket-api
 api/device-api
 guides/configuration
 guides/csv-imports
+guides/test-mode
 guides/ota-updates
 guides/releases
 guides/testing
@@ -63,6 +66,7 @@ hardware/DEVICE_COMPATIBILITY
 firmware/OTA_ARCHITECTURE
 firmware/FIRMWARE_VERSIONING
 firmware/RECOVERY_PROCEDURE
+reference/placeholders
 reference/data-model
 reference/hardware
 reference/known-issues
@@ -82,7 +86,9 @@ engineering/SYSTEM_AUDIT
 engineering/V2.1_ENGINEERING_REPORT
 engineering/V2_V3_COMPARISON
 engineering/REFACTOR_ROADMAP
+engineering/V2.2_PLAN
 releases/v2.1
+releases/v2.2
 ```
 
 ## Find what you need

@@ -83,6 +83,9 @@ class UserResponse(BaseModel):
     is_active: bool = True
     created_at: Optional[datetime] = None
     allowed_actions: list[str] = []   # what the caller may do to this account (#119)
+    last_active_at: Optional[datetime] = None   # latest activity-log entry (v2.2 user access page)
+    class_count: int = 0                        # classes taught, as primary teacher or co-faculty
+    signed_in: bool = False                     # holds a live session now
 
     model_config = {"from_attributes": True}
 

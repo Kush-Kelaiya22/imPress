@@ -68,7 +68,7 @@ def test_a_quiz_runs_end_to_end_through_a_gateway(client):
     assert [m["state"] for m in snap["student_modules"]] == ["connected"] * 5
 
     token = th["Authorization"].split()[1]
-    with client.websocket_connect(f"/ws/class/{cid}?role=teacher&token={token}") as teacher, \
+    with client.websocket_connect(f"/ws/class/{cid}?role=teacher", headers=auth(token)) as teacher, \
          client.websocket_connect(f"/ws/class/{cid}?role=device&api_key={DEVICE_KEY}") as device:
         teacher.receive_json(), device.receive_json()                     # "connected"
 

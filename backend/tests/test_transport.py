@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from conftest import DEVICE
+from conftest import DEVICE, auth
 
 
 @pytest.fixture
@@ -64,7 +64,7 @@ def test_loopback_is_exempt():
 
 def test_teacher_socket_needs_wss(strict):
     with pytest.raises(WebSocketDisconnect) as e:
-        with strict.websocket_connect("/ws/class/1?role=teacher&token=x") as ws:
+        with strict.websocket_connect("/ws/class/1?role=teacher", headers=auth("x")) as ws:
             ws.receive_json()
     assert e.value.code == 4403
 

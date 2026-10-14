@@ -67,7 +67,7 @@ flowchart TB
 | `database.py` | Async engine, `async_session` factory, `get_db` dependency, `_migrate_columns()` (additive ALTERs for SQLite), `_scrub_raw_session_tokens()`, `init_db()`. |
 | `models.py` | SQLAlchemy ORM. See [data model](../reference/data-model.md). |
 | `schemas.py` | Pydantic request/response models, including `Role` and enrollment-number validation. |
-| `auth.py` | Password hashing (bcrypt), opaque session creation/validation (hash-only storage), `get_current_user[_light]`, `require_admin` / `require_super_admin` / `require_teacher_or_admin`. |
+| `auth.py` | Password hashing (`$i2$` bcrypt over SHA-256, legacy hashes upgraded at sign-in), per-user idle limit (5 min, 30 min for staff during their class), one-device check, opaque session creation/validation (hash-only storage), `get_current_user[_light]`, `require_admin` / `require_super_admin` / `require_teacher_or_admin`. |
 | `routers/*.py` | HTTP endpoints. See [REST API](../api/rest-api.md) and [device API](../api/device-api.md). |
 | `ws/handler.py` | `/ws/class/{id}`: authenticates teacher (session token) or device (API key), registers the socket with its role, checks class access (#121), handles `ping` and `device_data` (devices only), and refreshes device presence on any device message. |
 | `ws/manager.py` | `ConnectionManager`: `class_id → {socket: role}`, `broadcast_to_class`, `broadcast_to_role`, dead-socket pruning. |
@@ -77,6 +77,10 @@ flowchart TB
 | `services/sessions.py` | 5-minute cleanup of hard-expired, idle-expired and revoked sessions. |
 | `services/firmware_store.py`, `firmware_image.py`, `firmware_signing.py` | The firmware registry: images are parsed and validated (#35), signatures verified (#66), and stored as `<sha256>.bin` (content-addressed, immutable). |
 | `services/deployments.py` | The OTA deployment engine (#38): per-device state machine, stages, retries, timeouts; `deployments_loop` every 5 s. |
+| `dbgateway.py` | The database gateway (v2.2): per-table write rules for the acting principal (`act_as`, `as_system`), row seals and table aggregates kept at commit, `verify()`. See [data integrity](../design/data-integrity.md). |
+| `services/integrity.py` | Start-up and rolling temporary backups, the 5-minute verification, automatic restore and the **Degraded** state. |
+| `services/events.py` | In-process publish/subscribe for `/api/events`: coalesced `changed` topics, alerts (toasts), status. |
+| `services/test_mode.py`, `sandbox.py`, `dummy_data.py` | Debug mode (snapshot, swap, pending, datasets), sheet validation and all-or-nothing import, the seeded generator. See [debug mode and test data](../guides/test-mode.md). |
 | `device_auth.py` | Device authentication (#66): the shared provisioning key and per-device keys. |
 | `services/mesh_bridge.py` | Helpers that broadcast device commands (`device_command`, e.g. `ota_update`) and data to class rooms. |
 | `schedule.py` | Timetable clash detection, returned as *warnings*, never hard errors. |
@@ -119,18 +123,20 @@ flowchart LR
     B --> C["start presence_sweep_loop (15 s)<br/>start session_cleanup_loop (5 min)"]
     C --> D{"users table empty?"}
     D -- yes --> E["seed super admin 'admin'<br/>password = IMPRESS_INITIAL_ADMIN_PASSWORD<br/>or random, logged once"]
-    D -- no --> F["serve"]
-    E --> F
+    D -- no --> G
+    E --> G["integrity.startup()<br/>baseline seals on first use, else verify (restore if needed)<br/>→ startup.db + rolling.db"]
+    G --> F["serve"]
 ```
 
-On shutdown both loops are cancelled and awaited.
+`init_db` also installs the database gateway on the engine and creates its tables. On shutdown the loops are cancelled and awaited.
 
 ## Background tasks
 
 | Task | Interval | What it does |
 |---|---|---|
 | `presence_sweep_loop` | 15 s (`SWEEP_INTERVAL_S`) | Devices with `is_connected` and `last_seen` older than 30 s (`OFFLINE_AFTER_S`) are marked offline (`esp_device.offline` logged once), and a presence push is scheduled. |
-| `session_cleanup_loop` | 300 s (`CLEANUP_INTERVAL_S`) | Deletes sessions that are hard-expired, idle-expired or revoked. |
+| `session_cleanup_loop` | 300 s (`CLEANUP_INTERVAL_S`) | Deletes sessions that are hard-expired, idle-expired (by the longest idle limit) or revoked. |
+| `integrity_loop` | 300 s (`INTEGRITY_INTERVAL_S`) | Verifies the seals; refreshes `rolling.db` if they hold, restores it and flags Degraded if not. |
 | `_push_after_commit(device_id)` | on demand (fire-and-forget) | Opens its own DB session, resolves the device's class by walking `gateway_id` up to the class gateway, and pushes a presence snapshot to **teacher** sockets. Best-effort; never raises. |
 | `_touch_device_on_message` | on each device WS message | Refreshes `last_seen`, battery and RSSI for the gateway that spoke, then schedules a presence push. |
 
@@ -141,6 +147,21 @@ On shutdown both loops are cancelled and awaited.
 - `broadcast_to_class(class_id, data)` reaches teachers **and** devices. It is used for quiz/poll events, which both the C6 and the UIs consume.
 - `broadcast_to_role(class_id, data, "teacher")` is used for presence snapshots.
 - A socket whose send fails is pruned on the spot, and empty rooms are freed on disconnect.
+
+**Live pages (v2.2).** Every signed-in browser also holds one Server-Sent Events stream, `GET /api/events`. After each commit the gateway publishes the names of the tables that changed (coalesced to one event per 300 ms); the web app maps them to the open page and refetches it quietly, marked `X-Impress-Background: 1` so it doesn't count as activity. To avoid glitches, a refresh waits while the user is typing or scrolling (4 s), has a dialog open, has text selected or has unsaved input on the page; it runs at most every 2 s; the page's view state (tab, filters, scroll position) is kept; and a failed background refresh leaves the page as it was. Pages where a redraw would lose work (sign-in, the live class, quiz and poll pages, forms, settings, test data) are not refreshed in the background. The same stream carries toasts (alerts) and the debug-mode / Degraded status, and tells the page when its session ended.
+
+```mermaid
+sequenceDiagram
+    participant A as Teacher A (writes)
+    participant S as Server
+    participant B as Admin B (Students page open)
+    A->>S: POST /api/students
+    S->>S: commit → gateway: changed tables {students}
+    S-->>B: SSE data: {"type":"changed","topics":["students"]}
+    B->>B: busy? (typing, dialog, selection) → wait
+    B->>S: GET /api/students (X-Impress-Background: 1)
+    B->>B: redraw, keeping tab, filters and scroll position
+```
 
 Every frame carries `type` (read by the vanilla UI); device-relevant frames also carry `event` (read by the C6 and the React UI). The exact device contract is pinned by a fixture. See [WebSocket API](../api/websocket-api.md).
 

@@ -172,10 +172,13 @@ The page is **complete when GitHub Actions publishes it**: status section, summa
 | Asset | Contents |
 |---|---|
 | `impress-<owner>-<version>.zip` | `impress-<owner>-<version>/`: the source at the tagged commit with the release version stamped in, plus `release/firmware/` and `release/RELEASE_NOTES.md` |
-| `impress-<owner>-<version>-firmware.zip` | one folder per board (`class_c6`, `class_s3`, `student`): the application image, `bootloader/bootloader.bin`, `partition_table/partition-table.bin`, `ota_data_initial.bin`, `flash_args`, `flasher_args.json` and a `SHA256SUMS` file |
+| `impress-<owner>-<version>-firmware.zip` | one folder per board (`class_c6`, `class_s3`, `student`): the application image, `bootloader/bootloader.bin`, `partition_table/partition-table.bin`, `ota_data_initial.bin`, `flash_args`, `flasher_args.json`, a `SHA256SUMS` file, `BUILD_INFO.json` (commit, ESP-IDF version, chip, flash settings and files, application SHA-256) and `FLASHING.txt` (esptool commands generated from the build's `flash_args`, so the offsets are the build's own) |
 | `impress-<owner>-<version>-docs.zip` | `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `docs/`, the wiki pages (`wiki/`) and the release page |
-| `SHA256SUMS.txt` | checksums of the three zip files |
+| `SHA256SUMS.txt` | checksums of the zip files and the single-file images |
+| build provenance | a signed [GitHub attestation](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations) for every zip and image: which workflow built it, from which commit. Check one with `gh attestation verify <file> -R Kush-Kelaiya22/imPress` |
 | *Source code* (zip, tar.gz) | added by GitHub for every tag |
+
+**Built is not approved.** A release image has been compiled and packaged, nothing more: it reaches classroom devices over the air only after it is uploaded to a server, qualified there by the TrustedInstaller and approved by an administrator ([OTA architecture](../firmware/OTA_ARCHITECTURE.md#qualification-what-the-trustedinstaller-tests-before-any-device-sees-an-image)).
 
 The firmware is built by the workflow from the tagged commit with the committed `sdkconfig` files. It therefore contains the **default** Wi-Fi, server and key settings; see [flash prebuilt images](#flash-prebuilt-images). Signed images (#66) are not published: a site signs its own images with its own key ([OTA updates → signing](ota-updates.md#signing-images)).
 
@@ -251,11 +254,11 @@ Install the tools once: `pip install "esptool>=5" esp-idf-nvs-partition-gen` (th
    key,type,encoding,value
    impress,namespace,,
    init_done,data,u8,1
-   wifi_ssid,data,string,ClassroomWiFi
-   wifi_pass,data,string,wifi-password
-   backend_h,data,string,192.168.1.10
+   wifi_ssid,data,string,<WIFI_SSID>
+   wifi_pass,data,string,<WIFI_PASSWORD>
+   backend_h,data,string,<SERVER_IP>
    backend_p,data,u16,8000
-   api_key,data,string,<IMPRESS_DEVICE_API_KEY>
+   api_key,data,string,<DEVICE_KEY>
    class_id,data,i32,0
    ```
    Hub (`s3-settings.csv`). The namespace, the flag and two key names are different, and the port is `i32`:
@@ -263,11 +266,11 @@ Install the tools once: `pip install "esptool>=5" esp-idf-nvs-partition-gen` (th
    key,type,encoding,value
    s3_cfg,namespace,,
    init,data,u8,1
-   wifi_ssid,data,string,ClassroomWiFi
-   wifi_pass,data,string,wifi-password
-   backend_host,data,string,192.168.1.10
+   wifi_ssid,data,string,<WIFI_SSID>
+   wifi_pass,data,string,<WIFI_PASSWORD>
+   backend_host,data,string,<SERVER_IP>
    backend_port,data,i32,8000
-   api_key,data,string,<IMPRESS_DEVICE_API_KEY>
+   api_key,data,string,<DEVICE_KEY>
    class_id,data,i32,0
    ```
 2. Make the partition image (the NVS partition is 24 KB on both boards):

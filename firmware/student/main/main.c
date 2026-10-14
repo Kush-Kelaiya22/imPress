@@ -16,6 +16,7 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "esp_log.h"
 #include "esp_system.h"   /* esp_get_free_heap_size (emulator build, #154) */
 #include "esp_random.h"
@@ -55,6 +56,71 @@ static uint16_t s_current_poll_id;
 /* Answer deadline of a timed question (time_limit_s > 0), in ticks. */
 static volatile bool s_timed;
 static volatile TickType_t s_deadline;
+static volatile TickType_t s_question_start;   /* when the question arrived: response time */
+
+/* Delivery of the last answer or vote (#181). The hub confirms each one with
+ * a MSG_ACK; until it does, the identical frame is resent (the hub and the
+ * server de-duplicate it). Only once the hub has shown it sends ACKs (it
+ * acknowledges our join): an older hub sends none, and then nothing changes. */
+static SemaphoreHandle_t s_tx_lock;
+static answer_tx_t s_tx;
+static msg_type_t s_tx_type;
+static uint8_t s_tx_payload[sizeof(payload_quiz_answer_t)];   /* the larger of answer and vote */
+static uint16_t s_tx_len;
+static volatile bool s_hub_acks;
+
+_Static_assert(sizeof(payload_poll_vote_t) <= sizeof(s_tx_payload), "vote must fit the resend buffer");
+
+static uint32_t now_ms(void) { return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS); }
+static uint32_t jitter_ms(void) { return esp_random() % (ANSWER_JITTER_MS + 1); }
+
+/* Send an answer or vote and, if the hub confirms deliveries, track it. */
+static void send_tracked(msg_type_t type, const void *payload, uint16_t len)
+{
+    uint32_t id = 0;
+    mesh_send_id(type, payload, len, &id);
+    if (!s_hub_acks) {
+        return;
+    }
+    xSemaphoreTake(s_tx_lock, portMAX_DELAY);
+    s_tx_type = type;
+    memcpy(s_tx_payload, payload, len);
+    s_tx_len = len;
+    answer_tx_start(&s_tx, id, now_ms(), jitter_ms());
+    xSemaphoreGive(s_tx_lock);
+}
+
+/* Main loop: resend an unconfirmed answer; after the last try, let the
+ * student press again. */
+static void delivery_tick(void)
+{
+    uint8_t payload[sizeof(s_tx_payload)];
+    msg_type_t type;
+    uint16_t len;
+    xSemaphoreTake(s_tx_lock, portMAX_DELAY);
+    bool resend = answer_tx_poll(&s_tx, now_ms(), jitter_ms());
+    bool failed = s_tx.state == ANSWER_FAILED;
+    uint8_t tries = s_tx.resends;
+    type = s_tx_type;
+    len = s_tx_len;
+    memcpy(payload, s_tx_payload, len);
+    if (failed) {
+        s_tx.state = ANSWER_IDLE;
+    }
+    xSemaphoreGive(s_tx_lock);
+
+    if (resend) {
+        ESP_LOGI(TAG, "%s not confirmed yet: resend %u/%u", msg_type_name(type), tries, ANSWER_RESENDS);
+        mesh_send(type, payload, len);
+    }
+    if (failed) {
+        ESP_LOGW(TAG, "%s not confirmed by the hub after %u resends", msg_type_name(type), ANSWER_RESENDS);
+        if (s_state == STATE_ANSWERED) {
+            s_state = type == MSG_QUIZ_ANSWER ? STATE_QUIZ_ACTIVE : STATE_POLL_ACTIVE;
+            display_show_result("Not delivered: press again");
+        }
+    }
+}
 
 /* Ticks until the deadline; <= 0 once it has passed (wrap-safe). */
 static int32_t ticks_left(void)
@@ -88,7 +154,8 @@ static void on_mesh_message(const msg_t *msg)
                 s_current_quiz_id = q->quiz_id;
                 s_current_question = q->question_num;
                 s_selected_option = -1;
-                s_deadline = xTaskGetTickCount() + pdMS_TO_TICKS((uint64_t)q->time_limit_s * 1000);
+                s_question_start = xTaskGetTickCount();
+                s_deadline = s_question_start + pdMS_TO_TICKS((uint64_t)q->time_limit_s * 1000);
                 s_timed = q->time_limit_s > 0;
                 s_state = STATE_QUIZ_ACTIVE;
 
@@ -120,8 +187,33 @@ static void on_mesh_message(const msg_t *msg)
             break;
         }
 
+        case MSG_ACK: {                                   /* #181 */
+            if (msg->length < sizeof(payload_ack_t)) break;
+            payload_ack_t ack;
+            memcpy(&ack, msg->payload, sizeof(ack));
+            if (ack.device_id != s_device_id) break;      /* another module's */
+            if (!s_hub_acks) {
+                s_hub_acks = true;
+                ESP_LOGI(TAG, "Hub confirms deliveries: answers are resent until confirmed");
+            }
+            xSemaphoreTake(s_tx_lock, portMAX_DELAY);
+            bool delivered = answer_tx_ack(&s_tx, &ack, s_device_id);
+            msg_type_t type = s_tx_type;
+            xSemaphoreGive(s_tx_lock);
+            if (delivered) {
+                ESP_LOGI(TAG, "%s confirmed by the hub", msg_type_name(type));
+                if (s_state == STATE_ANSWERED) {
+                    display_show_result(type == MSG_QUIZ_ANSWER ? "Answer received" : "Vote received");
+                }
+            }
+            break;
+        }
+
         case MSG_QUIZ_END:
         case MSG_POLL_END: {
+            xSemaphoreTake(s_tx_lock, portMAX_DELAY);
+            s_tx.state = ANSWER_IDLE;                     /* nothing left to deliver it to */
+            xSemaphoreGive(s_tx_lock);
             s_state = STATE_IDLE;
             s_selected_option = -1;
             display_show_result("Session ended");
@@ -162,13 +254,13 @@ static void on_button_press(int button)
             answer.quiz_id = s_current_quiz_id;
             answer.question_num = s_current_question;
             answer.selected_option = (uint8_t)button;
-            answer.response_time_ms = 0;  /* TODO: track actual time */
+            answer.response_time_ms = (uint32_t)((xTaskGetTickCount() - s_question_start) * portTICK_PERIOD_MS);
             strncpy(answer.enrollment, g_student.enrollment,
                     sizeof(answer.enrollment) - 1);
             answer.device_id = s_device_id;   /* routing-only diagnostic */
-            mesh_send(MSG_QUIZ_ANSWER, (uint8_t *)&answer, sizeof(answer));
+            send_tracked(MSG_QUIZ_ANSWER, &answer, sizeof(answer));
             s_state = STATE_ANSWERED;
-            ESP_LOGI(TAG, "Answer sent: option %d", button);
+            ESP_LOGI(TAG, "Answer sent: option %d after %lu ms", button, (unsigned long)answer.response_time_ms);
         }
     }
     else if (s_state == STATE_POLL_ACTIVE) {
@@ -181,7 +273,7 @@ static void on_button_press(int button)
                 strncpy(vote.enrollment, g_student.enrollment,
                         sizeof(vote.enrollment) - 1);
                 vote.device_id = s_device_id;   /* routing-only diagnostic */
-                mesh_send(MSG_POLL_VOTE, (uint8_t *)&vote, sizeof(vote));
+                send_tracked(MSG_POLL_VOTE, &vote, sizeof(vote));
             s_state = STATE_ANSWERED;
             display_show_result("Vote sent!");
             ESP_LOGI(TAG, "Vote sent: option %d", button);
@@ -254,6 +346,7 @@ void app_main(void)
     /* Listen on the mesh in every state. An unprovisioned device MAY receive
      * (e.g. a server profile push) but MUST NOT join until identity is set,
      * so MSG_STUDENT_JOIN/answers are only sent after the gate below. */
+    s_tx_lock = xSemaphoreCreateMutex();             /* before any mesh callback (#181) */
     mesh_init(s_device_id);
     mesh_on_receive(on_mesh_message);
 
@@ -311,11 +404,12 @@ void app_main(void)
         ESP_LOGE(TAG, "Failed to connect to mesh");
     }
 
-    /* Main loop: events are handled by callbacks; this only runs the
-     * countdown of a timed question. */
+    /* Main loop: events are handled by callbacks; this runs answer
+     * delivery (#181) and the countdown of a timed question. */
     int shown = -1;
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(200));
+        delivery_tick();
         if (s_state != STATE_QUIZ_ACTIVE || !s_timed) {
             shown = -1;
             continue;
