@@ -27,7 +27,10 @@ menu "imPress C6 Gateway Configuration"
             string "Backend IP or hostname"
             default "192.168.137.1"
             help
-                IP or hostname of the FastAPI backend.
+                IP or hostname of the FastAPI backend. The default is the
+                address Windows gives a computer sharing a Mobile Hotspot;
+                set your server's address (<SERVER_IP>) for any other setup.
+                The hub's BACKEND_HOST must name the same server.
 
         config BACKEND_PORT
             int "Backend port (HTTP, or HTTPS with BACKEND_TLS)"
