@@ -105,9 +105,10 @@ def class_access(user: User, cls: ClassSession) -> bool:
 
 
 def roster_access(user: User, cls: ClassSession) -> bool:
-    """Enrol or remove students, list a class roster: the primary teacher or
-    an administrator. (Co-faculty are not included today; see #146.)"""
-    return allowed(user, "classes.manage_all") or (allowed(user, "students.manage") and cls.teacher_id == user.id)
+    """Enrol or remove students, list a class roster: anyone with class access
+    (primary teacher, co-faculty, administrator) who may manage students.
+    Decision #146: the same rule as quizzes, polls and results."""
+    return allowed(user, "students.manage") and class_access(user, cls)
 
 
 def class_owner_or_admin(user: User, cls: ClassSession) -> bool:

@@ -34,7 +34,7 @@ A lower ring number does **not** inherit everything automatically: each role hol
 1. **Authenticated**: a valid, unexpired, unrevoked session (`auth.get_current_user`), or a device key for device routes.
 2. **Active**: a deactivated account holds no permission.
 3. **Permission**: the route's `require("<permission>")` must be granted to the user's role (`GRANTS`). Default deny.
-4. **Scope**: the resource must be the caller's: `class_access` (primary teacher, co-faculty, admin) for classes, quizzes, polls, results and the class WebSocket; `roster_access` for enrolment; `class_owner_or_admin` for deleting a class.
+4. **Scope**: the resource must be the caller's: `class_access` (primary teacher, co-faculty, admin) for classes, quizzes, polls, results and the class WebSocket; `roster_access` for enrolment and rosters (the same people as `class_access`, decision #146); `class_owner_or_admin` for deleting a class.
 5. **Root rules**: checked last and override any grant (below).
 
 ## Permission matrix
@@ -48,7 +48,7 @@ A lower ring number does **not** inherit everything automatically: each role hol
 | `classes.read` | ✓ | ✓ | ✓ | open assigned classes, their live device tree and presence (scope: class access) |
 | `courses.read` | ✓ | ✓ | ✓ | list active courses |
 | `participation.read` | ✓ | ✓ | ✓ | quiz and poll details and results of assigned classes |
-| `students.manage` | ✓ | ✓ | ✓ | register, edit, import and enrol students (roster: primary teacher, #146) |
+| `students.manage` | ✓ | ✓ | ✓ | register, edit, import and enrol students (rosters of classes they may access: primary teacher or co-faculty, #146) |
 | `students.read` | ✓ | ✓ | ✓ | look up students |
 | `audit.read` | – | ✓ | ✓ | activity log |
 | `classes.manage_all` | – | ✓ | ✓ | every class: create for others, assign faculty, import/export, delete |
