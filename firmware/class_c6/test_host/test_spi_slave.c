@@ -17,6 +17,7 @@
 #include "spi_slave.h"
 #include "config.h"
 #include "protocol.h"
+#include "spi_link.h"
 
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); exit(1); } } while (0)
 
@@ -174,6 +175,40 @@ int main(void)
     for (int i = 0; i < SPI_SLOT_FIFO_DEPTH; i++) CHECK(spi_slave_send((const uint8_t *)"x", 1) == 0);
     CHECK(spi_slave_send((const uint8_t *)"y", 1) != 0);
     CHECK(spi_slave_send(buf, SPI_SLOT_PAYLOAD_MAX + 1) == SPI_SLOT_ERR_LEN);
+
+    /* ── A hub that acknowledges (#182): nothing lost to corrupted slots ── */
+    {
+        spi_link_t hub;
+        spi_link_init(&hub, 77, true);
+        uint8_t pay[SPI_SLOT_PAYLOAD_MAX], mosi[SPI_SLOT_BYTES], miso_pay[SPI_SLOT_PAYLOAD_MAX];
+        int hub_got_x = 0, c6_got_h1 = 0, c6_got_h2 = 0;
+        const char *hub_q[] = {"h1", "h2"};
+        int hub_qh = 0;
+        for (int i = 0; i < 60 && (hub_qh < 2 || s_ready_c6 != 0); i++) {
+            bool corrupt_to_hub = i % 3 == 1, corrupt_to_c6 = i % 5 == 2;
+            const char *head = hub_qh < 2 ? hub_q[hub_qh] : NULL;
+            int n = spi_link_tx(&hub, (const uint8_t *)head, head ? strlen(head) : 0, pay, sizeof pay);
+            spi_slot_encode(mosi, pay, (size_t)n);
+            if (corrupt_to_c6) mosi[3] ^= 0x01;
+            s3_clocks(mosi, SPI_SLOT_BYTES);
+            int got = spi_slave_read(buf, sizeof buf);
+            if (got == 2 && memcmp(buf, "h1", 2) == 0) c6_got_h1++;
+            if (got == 2 && memcmp(buf, "h2", 2) == 0) c6_got_h2++;
+            bool acked = false;
+            if (!corrupt_to_hub) {
+                int m = spi_slot_decode(s_miso, miso_pay, sizeof miso_pay);
+                CHECK(m >= 0);
+                size_t d = spi_link_rx(&hub, miso_pay, (size_t)m, &acked);
+                if (d == 1 && miso_pay[0] == 'x') hub_got_x++;
+            }
+            if (spi_link_drop_head(&hub, head != NULL, acked)) hub_qh++;
+        }
+        CHECK(c6_got_h1 == 1 && c6_got_h2 == 1);      /* each hub payload delivered exactly once */
+        CHECK(s_ready_c6 == 0);                       /* the gateway's queue drained */
+        /* 8 queued "x": the first went out before the gateway knew the hub
+         * acknowledges (old rule), every one after it arrived exactly once. */
+        CHECK(hub_got_x >= SPI_SLOT_FIFO_DEPTH - 1 && hub_got_x <= SPI_SLOT_FIFO_DEPTH);
+    }
 
     puts("PASS test_spi_slave");
     return 0;

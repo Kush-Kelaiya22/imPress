@@ -7,11 +7,13 @@ import re
 
 from fastapi.routing import APIRoute
 
-ROUTERS = ("auth", "admin", "classes", "quizzes", "polls", "device", "courses", "students", "firmware", "deployments")
+ROUTERS = ("auth", "admin", "classes", "quizzes", "polls", "device", "courses", "students", "firmware", "deployments",
+           "system", "testmode")
 
 # Deliberately public: signing in, liveness, and static CSV templates.
 PUBLIC = {
     ("POST", "/api/auth/login"),
+    ("GET", "/api/system/status"),          # the debug-mode banner shows on the sign-in page too (v2.2)
     ("GET", "/api/quizzes/questions/template.csv"),
     ("GET", "/api/admin/classes/import-template.csv"),
 }

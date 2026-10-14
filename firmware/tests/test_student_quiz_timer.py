@@ -14,7 +14,7 @@ def test_question_frame_sets_the_deadline_from_time_limit():
 def test_presses_after_the_deadline_send_nothing():
     body = functions(MAIN)["on_button_press"]
     quiz = body[body.index("STATE_QUIZ_ACTIVE"):body.index("STATE_POLL_ACTIVE")]
-    assert quiz.index("time_is_up") < quiz.index("mesh_send")
+    assert quiz.index("time_is_up") < quiz.index("send_tracked")      # sends (and tracks, #181) after the check
 
 
 def test_main_loop_shows_the_countdown_and_closes_the_question():

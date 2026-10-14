@@ -288,9 +288,11 @@ def backup(engine: AsyncEngine, from_version: int, to_version: int) -> Path | No
 
 
 async def schema_version(engine: AsyncEngine) -> int:
-    async with engine.connect() as conn:
-        applied = await _applied(conn)
-        await conn.commit()
+    from .dbgateway import as_system
+    with as_system():                       # may create schema_migrations (DDL): the server's own
+        async with engine.connect() as conn:
+            applied = await _applied(conn)
+            await conn.commit()
     return max(applied, default=0)
 
 

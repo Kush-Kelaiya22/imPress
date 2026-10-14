@@ -55,7 +55,7 @@ def test_valid_file_creates_courses_and_sections(server, page, tmp_path):
     page.click("#classes-csv-run")
     expect(page.locator("h2", has_text="3 Classrooms")).to_be_visible()     # the page re-rendered
     # the primary teacher shows up as faculty, like a classroom created in the form
-    expect(page.locator("tr", has_text="Linear Algebra")).to_contain_text("Teacher One")
+    expect(page.locator(".class-card", has_text="Linear Algebra")).to_contain_text("Teacher One")   # v2.2 cards
     codes = sorted(c["code"] for c in api("/api/admin/classes"))
     assert codes == ["CS101-A", "CS101-B", "MA201-A"]
 

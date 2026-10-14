@@ -14,6 +14,18 @@ Common rules for every import:
 - Quoted values may contain commas, quotes (`""`) and line breaks.
 - Re-uploading the same file is safe: rows that already exist are reported as duplicates and skipped.
 
+
+```mermaid
+flowchart TD
+    U["Upload CSV (≤ 1 MB, ≤ 500 rows)"] --> H{"Header exactly the template's?"}
+    H -- no --> R1["Refused: unknown or missing columns"]
+    H -- yes --> V["Server checks every row"]
+    V --> P["Preview: what would be created,<br/>the error of each invalid row; nothing saved"]
+    P --> E{"any row invalid?"}
+    E -- yes --> R2["Confirm is not possible: fix the file<br/>and upload it again"]
+    E -- no --> C["Confirm: every row saved in one transaction"]
+```
+
 ## Quiz questions
 
 1. Open a class → **New Quiz**.

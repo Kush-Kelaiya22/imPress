@@ -46,6 +46,8 @@ def _matrix(client, headers_for):
     out = {}
     order = {"GET": 0, "POST": 1, "PUT": 1, "PATCH": 1, "DELETE": 2}   # reads see the seeded data
     for method, path in sorted(set(_routes()), key=lambda r: (order[r[0]], r[1], r[0])):
+        if path == "/api/events":          # an endless stream; test_system.py covers it
+            continue
         url = re.sub(r"\{[^}]+\}", "1", path)
         kw = {"json": {}} if method in ("POST", "PUT", "PATCH") else {}
         out[f"{method} {path}"] = client.request(method, url, headers=headers_for(), **kw).status_code

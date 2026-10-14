@@ -88,3 +88,7 @@ desktop.ini
 .vscode/
 .idea/
 *.code-workspace
+
+# v2.2 runtime state next to the database: integrity/debug-mode flags and test data (contains real data)
+*.state.json
+test-data/

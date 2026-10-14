@@ -87,8 +87,16 @@ def server():
                 if proc.poll() is not None:
                     raise RuntimeError((tmp / "server.log").read_text())
                 time.sleep(0.25)
+        # v2.2 allows one device per account: the test's API calls use their
+        # own super admin, so the browser can still sign in as "admin".
         token = Api(base)("/api/auth/login", {"username": "admin", "password": ADMIN_PASSWORD})["access_token"]
-        yield base, Api(base, token)
+        admin = Api(base, token)
+        uid = admin("/api/admin/users", {"username": "ui-api", "email": "ui-api@example.edu", "password": ADMIN_PASSWORD,
+                                         "full_name": "UI test API", "role": "admin"})["id"]
+        admin(f"/api/admin/users/{uid}/role", {"role": "super_admin"})
+        api_token = Api(base)("/api/auth/login", {"username": "ui-api", "password": ADMIN_PASSWORD})["access_token"]
+        admin("/api/auth/logout", {})
+        yield base, Api(base, api_token)
     finally:
         proc.terminate()
         proc.wait(10)

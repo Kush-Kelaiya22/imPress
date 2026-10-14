@@ -208,6 +208,11 @@ _Static_assert(MESH_HEADER_SIZE == MESH_HDR_BYTES, "protocol.h MESH_HDR_BYTES mu
 
 int mesh_send(msg_type_t type, const uint8_t *payload, uint16_t length)
 {
+    return mesh_send_id(type, payload, length, NULL);
+}
+
+int mesh_send_id(msg_type_t type, const uint8_t *payload, uint16_t length, uint32_t *msg_id)
+{
     if (length > MESH_MAX_PAYLOAD) {        /* would exceed ESP-NOW's 250 bytes with the headers (#170) */
         ESP_LOGE(TAG, "mesh payload %u > %u bytes", (unsigned)length, (unsigned)MESH_MAX_PAYLOAD);
         return -1;
@@ -218,6 +223,9 @@ int mesh_send(msg_type_t type, const uint8_t *payload, uint16_t length)
     if (msg_len < 0) {
         ESP_LOGE(TAG, "Failed to encode message");
         return -1;
+    }
+    if (msg_id) {
+        *msg_id = mesh_msg_id(s_device_id, msg_buf, (size_t)msg_len);    /* what the hub's ACK names */
     }
 
     /* Prepend mesh header */

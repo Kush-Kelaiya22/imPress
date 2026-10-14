@@ -10,5 +10,5 @@ if cc -fsanitize=address -fsanitize-address-use-after-return=always -x c -c /dev
 fi
 export ASAN_OPTIONS="detect_stack_use_after_return=1:abort_on_error=1"
 cc -std=gnu11 -g -Wall -Wextra $SAN -Istubs -I../main -I../../protocol \
-   test_spi_slave.c ../main/spi_slave.c ../../protocol/protocol.c -o "$OUT/test_spi_slave"
+   test_spi_slave.c ../main/spi_slave.c ../../protocol/protocol.c ../../protocol/spi_link.c -o "$OUT/test_spi_slave"
 "$OUT/test_spi_slave"

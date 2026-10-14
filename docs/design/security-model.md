@@ -30,7 +30,35 @@ flowchart LR
     M -- "no authentication on air" --> HUB
     GW -- "X-API-Key (own device key; shared key only to enrol)" --> API
     HUB -- "X-API-Key" --> API
-    BR -- "session token (TLS)" --> API
+    BR -- "session cookie (TLS)" --> API
+```
+
+Each path in detail (v2.2):
+
+| Path | Protection | What is trusted, and what is left |
+|---|---|---|
+| Browser → server | TLS required for staff traffic (HSTS); `HttpOnly`, `SameSite=Strict`, `Secure` session cookie; `X-Impress-Request` on cookie-authenticated changes; `Origin` checked on teacher sockets | the server certificate (your CA or a public one) |
+| Server → TrustedInstaller | the same process; no HTTP route reaches it; its reports are sealed with a key derived from `IMPRESS_JWT_SECRET` | the server host and its secret |
+| Gateway (C6) → server | per-device key, scoped to the gateway's class; TLS when `BACKEND_TLS` is on (`IMPRESS_DEVICE_HTTPS_ONLY` refuses plain HTTP) | without device TLS anyone on the classroom network can read device traffic: turn it on (#92) |
+| Hub (S3) ↔ gateway (C6), SPI | CRC16 per 4096-byte slot, bounded records | **physical**: both boards sit in one enclosure; whoever can attach wires can inject frames. No cryptography. A corrupted slot is lost today (#182) |
+| Student modules ↔ hub, ESP-NOW | CRC16, de-duplication, enrollment format checks, delivery acknowledgement (#181) | **none on air**: unauthenticated broadcast (#187). The server limits the damage: known students only, active quiz only, the gateway's own class, one answer per student and question |
+| Firmware to devices | approved, qualified (sealed report for these exact bytes), site-signed image; the device checks SHA-256 before it boots it | the site signing key, kept off the server's repository |
+
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant P as Proxy (HTTPS)
+    participant S as Server
+    B->>P: POST /api/auth/login (username, password)
+    P->>S: forwarded, X-Forwarded-Proto https
+    S->>S: throttle check, bcrypt verify, create session (store sha256 only)
+    S-->>B: Set-Cookie impress_session HttpOnly Secure SameSite=Strict
+    B->>S: PUT /api/... + cookie + X-Impress-Request: 1
+    S->>S: session valid (idle, hard expiry, user active)?<br/>CSRF header present? policy.py allows?
+    S-->>B: 200 / 401 / 403
+    B->>S: POST /api/auth/logout + X-Impress-Request: 1
+    S-->>B: session revoked, cookie cleared
 ```
 
 ## Authentication and authorization
@@ -39,11 +67,39 @@ flowchart LR
 |---|---|---|
 | Transport | **HTTPS required** for staff traffic (#152) | Logins, the web app, the staff API and teacher WebSockets over plain HTTP from another computer are refused (`403 HTTPS_REQUIRED`, WS close 4403). TLS is what encrypts passwords and class data in transit; there is no second application-level cipher, because its key would travel over the same channel. Headers on every response: HSTS (over HTTPS), Content-Security-Policy on the app pages, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy`, `Cache-Control: no-store` on the API. Device-key routes may use HTTP until `IMPRESS_DEVICE_HTTPS_ONLY` |
 | Password guessing | **Throttled** (#153) | Failed logins are counted per username (5 free per 15 min) and per client address (20 free); then each failure doubles the wait (30 s … 15 min), answered `429 TOO_MANY_ATTEMPTS` with `Retry-After`, without checking the password. Counters are in the database (survive restarts); no permanent lockout. A wrong current password on *Change password* is throttled the same way. New passwords: ≥ 10 characters, not a common password, not the username, ≥ 4 different characters; existing passwords keep working |
-| Users | Opaque server-side **sessions** | `POST /api/auth/login` issues `impress_<urlsafe 64>`. Only `sha256(token)` is stored (`user_sessions.token_hash`; the legacy `session_token` column also holds the hash, #12). Validation checks revoked → hard expiry (6 h) → idle expiry (60 min) → user active. Logout revokes. Deactivation, deletion, a role change and an admin password reset revoke **all** of the user's sessions and close their open WebSockets (code 4401); changing your own password keeps only the current session (#118). |
+| Users | Opaque server-side **sessions** | `POST /api/auth/login` issues `impress_<urlsafe 64>`. Only `sha256(token)` is stored (`user_sessions.token_hash`; the legacy `session_token` column also holds the hash, #12). Validation checks revoked → hard expiry (6 h) → idle expiry (**5 min**, or **30 min** for staff while one of their classes is in session; v2.2) → user active. **One device per account** (v2.2): a sign-in while the account is live on another device is refused (409) and flagged; see [Sessions and passwords](#sessions-and-passwords-v22). Logout revokes. **Browsers** keep the token in an `impress_session` cookie (`HttpOnly`, `SameSite=Strict`, `Secure` over HTTPS, path `/`, lifetime = hard expiry): page scripts cannot read it, so an injected script cannot copy the session out; nothing is kept in `localStorage` (v2.2). API clients and scripts send the returned token as `Authorization: Bearer`. Deactivation, deletion, a role change and an admin password reset revoke **all** of the user's sessions and close their open WebSockets (code 4401); changing your own password keeps only the current session (#118). |
 | Roles | `teacher` < `admin` < `super_admin`, closed `Literal` set; permissions per role, scope rules and integrity rules in one module: [authorization model](authorization.md) (#122) | Only a super admin can grant or remove admin-level roles; nobody changes their own role (#10), deactivates or deletes their own account. **At least one active super admin always exists:** database triggers abort any write that would remove the last one, so no API route, concurrent pair of requests or internal code path can lock the installation out (#116). Teachers only see and operate their classes: one access rule (primary teacher, co-faculty, admin) for class, quiz, poll and results routes (#20, #21). |
-| Gateways and hubs | Shared `X-API-Key` | Constant-time comparison (`secrets.compare_digest`). WebSocket: `X-API-Key` header (the legacy `?api_key=` still accepted) (#11). |
-| Teacher WebSocket | `?token=` = the login session token | Same validator as REST, no activity refresh (#8). Joins only classes the user may access; a gateway's per-device key joins only its linked class; browsers cannot send device commands (#121). Requires `wss://` in deployment, because browsers can't set WS headers. |
+| Gateways and hubs | Shared `X-API-Key` for registration, then a per-device key (#66) | Constant-time comparison (`secrets.compare_digest`). WebSocket: `X-API-Key` header (the legacy `?api_key=` still accepted) (#11). A gateway's own key acts for its class only: its socket joins only the linked class (#121), and its batches record answers, votes and room links only for that class, and attendance only there (v2.2); a gateway linked to no class records none. The shared key is site-wide: set `IMPRESS_DEVICE_KEYS_REQUIRED=true` so it is accepted for registration only. |
+| Teacher WebSocket | The browser's session cookie (or a bearer header from a script); **never a URL parameter** (v2.2: URLs end up in proxy and server logs) | Same validator as REST, no activity refresh (#8). A browser handshake whose `Origin` is not this server is refused (4403: cross-site WebSocket hijacking). Joins only classes the user may access; a gateway's per-device key joins only its linked class; browsers cannot send device commands (#121). Requires `wss://` in deployment. |
 | Students | **None on air** | ESP-NOW frames are unauthenticated; identity is the enrollment number inside the payload. |
+
+## Sessions and passwords (v2.2)
+
+**Passwords** are stored as `$i2$` + bcrypt(base64(SHA-256(password))): bcrypt with its own random salt per password and cost factor, after a SHA-256 prehash so that long passphrases are not cut at bcrypt's 72-byte limit. Hashes from earlier versions (plain bcrypt) are still accepted and are upgraded at the next successful sign-in.
+
+**Idle limit.** A session ends after **5 minutes** without activity. For a member of staff while one of their classes is in session (activated, or inside a timetable slot, as primary teacher or co-faculty) the limit is **30 minutes**, so a teacher who talks for a while without touching the laptop is not signed out mid-lecture. The class check is cached for a minute per user. The web app's live refresh marks its requests `X-Impress-Background: 1`, which do not count as activity: an unattended screen still times out.
+
+**One device per account.** A device is the client address plus the browser and operating-system family from the `User-Agent` (a browser update is the same device; the same browser on another computer is not). While the account has a session that is still live from another device, a new sign-in is refused:
+
+```mermaid
+sequenceDiagram
+    participant B2 as Second device
+    participant S as Server
+    participant A as Administrators
+    B2->>S: POST /api/auth/login (correct password)
+    S->>S: live sessions of this account from another device?
+    alt yes
+        S->>S: activity log: auth.second_sign_in_blocked (flagged)
+        S-->>A: toast "Blocked a second sign-in of <user> from <IP>"
+        S-->>B2: 409 ALREADY_SIGNED_IN
+    else no
+        S-->>B2: 200 session cookie
+    end
+```
+
+The first device keeps working. To move to another device: sign out on the first one, wait for it to time out, or have an administrator use **End sessions** on the user. `IMPRESS_SINGLE_SESSION=false` disables the rule (for example behind a proxy that hides client addresses).
+
+**Database writes** go through the database gateway, which checks the acting user's permissions per table and seals every change; changes made outside the application are detected and reverted. See [data integrity](data-integrity.md).
 
 ## Threats and mitigations
 
@@ -54,7 +110,7 @@ flowchart LR
 | T3 | Privilege escalation admin → super_admin | Closed role set + grant rules (#10) | ✅ |
 | T4 | Ballot stuffing via anonymous endpoints | `/vote`, `/answer` require the device key and a registered device; option range checked (#9) | ✅ |
 | T5 | Duplicate or forged answers via the gateway path | Backend validates active quiz/poll, question, option, known student; one row per student (#6) | ✅ |
-| T6 | Cross-origin requests from malicious sites | CORS restricted to `CORS_ORIGINS` (#11); bearer tokens are not cookies, so CSRF doesn't apply | ✅ |
+| T6 | Cross-origin requests from malicious sites (CSRF, cross-site WebSocket) | CORS restricted to `CORS_ORIGINS` (#11). The session cookie is `SameSite=Strict`, and a state-changing request authenticated by the cookie must also carry `X-Impress-Request: 1`, which another site cannot add without a CORS preflight this server refuses (403 otherwise). Teacher sockets check `Origin` (v2.2) | ✅ |
 | T7 | Secrets in logs | SQL echo off by default; the C6 no longer logs the API key (#11) | ✅ |
 | T8 | Malicious firmware via OTA | Download only of the version an admin pushed to that device (#13); app **rollback** on boot failure (#13); **signed images** (#66): with the signed-app profile each device verifies every update's RSA-3072 signature against the site key in `esp_ota_end()`, and with `IMPRESS_FIRMWARE_SIGNING_KEY` the backend refuses unsigned or foreign images at upload | ✅ with the signed profile and site key in use (both opt-in: the key is each site's own). Physical attacks need hardware Secure Boot (not enabled) |
 | T9 | Radio spoofing: a rogue device sends answers with someone else's enrollment number | Answers count only for enrolled students and only once each. **No cryptographic protection on air.** | ⚠️ accepted risk |
@@ -71,7 +127,7 @@ flowchart LR
 1. ~~Sign OTA images~~: done in #66 (T8): `scripts/firmware_key.sh`, `scripts/build_signed.sh`, `IMPRESS_FIRMWARE_SIGNING_KEY`. See the [OTA guide](../guides/ota-updates.md#signing-images). Hardware Secure Boot V2 (irreversible) remains an option against physical attackers.
 2. ~~TLS for devices~~: done in #66 (T16): **Backend over TLS** on the hub and gateway, trusting public CAs or an embedded site CA; the server via a reverse proxy or `scripts/start.sh` with `IMPRESS_SSL_*`. Off by default, because it needs the site's certificate and port.
 3. ~~Per-device API keys~~: done in #66 (T15). Turn on `IMPRESS_DEVICE_KEYS_REQUIRED` once every device runs firmware with per-device keys.
-4. **Message authentication on the mesh** (e.g. a per-class key and HMAC over the frame) if answer spoofing becomes a concern. ESP-NOW also supports encrypted unicast peers, but not encrypted broadcast.
+4. **Message authentication on the mesh**: proposed in [mesh frame authentication](mesh-authentication.md) (#187), awaiting decisions. ESP-NOW also supports encrypted unicast peers, but not encrypted broadcast.
 5. **Purge git history** of the databases committed before v2 and rotate the affected passwords.
 
 ## Data handling

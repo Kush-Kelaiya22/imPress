@@ -70,7 +70,8 @@ def test_s3_mesh_heartbeat_is_encoded_once():
     recv = fns["on_espnow_recv"]
     hb = recv[recv.index("payload_heartbeat_t"):]   # the heartbeat reply block
     assert calls(hb, "mesh_master_broadcast") and not calls(hb, "msg_encode")
-    assert calls(fns["mesh_master_broadcast"], "msg_encode")   # broadcast encodes itself
+    assert calls(fns["mesh_master_broadcast"], "broadcast_ttl")   # broadcast encodes itself,
+    assert calls(fns["broadcast_ttl"], "msg_encode")              # in the TTL-aware helper (#181)
 
 
 def test_s3_heartbeat_record_is_not_copied_onto_itself():

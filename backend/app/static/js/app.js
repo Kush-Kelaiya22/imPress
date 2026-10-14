@@ -3,26 +3,32 @@
 // ── Router ─────────────────────────────────────────────────────
 
 const routes = {
-  '#/login': renderLogin,
-  '#/dashboard': renderDashboard,
-  '#/admin': renderAdminDashboard,
-  '#/admin/users': renderAdminUsers,
-  '#/admin/courses': renderAdminCourses,
-  '#/admin/classes': renderAdminClasses,
-  '#/admin/classes/new': renderAdminClassForm,
-  '#/admin/students': renderAdminStudents,
-  '#/admin/activity': renderAdminActivity,
-  '#/classes': renderClasses,
-  '#/class': renderClassDetail,
-  '#/admin/modules': renderAdminModules,
-  '#/admin/firmware': renderAdminFirmware,
-  '#/settings': renderSettings,
-  '#/quiz': renderQuizCreate,
-  '#/poll': renderPollCreate,
-  '#/quiz-results': renderQuizResults,
-  '#/poll-results': renderPollResults,
-  '#/student': renderStudentDetail,
+  '#/login': (a, p) => renderLogin(a, p),
+  '#/dashboard': (a, p) => renderDashboard(a, p),
+  '#/admin': (a, p) => renderAdminDashboard(a, p),
+  '#/admin/users': (a, p) => renderAdminUsers(a, p),
+  '#/admin/courses': (a, p) => renderAdminCourses(a, p),
+  '#/admin/classes': (a, p) => renderAdminClasses(a, p),
+  '#/admin/classes/new': (a, p) => renderAdminClassForm(a, p),
+  '#/admin/students': (a, p) => renderAdminStudents(a, p),
+  '#/admin/activity': (a, p) => renderAdminActivity(a, p),
+  '#/classes': (a, p) => renderClasses(a, p),
+  '#/class': (a, p) => renderClassDetail(a, p),
+  '#/admin/modules': (a, p) => renderAdminModules(a, p),
+  '#/admin/firmware': (a, p) => renderAdminFirmware(a, p),
+  '#/settings': (a, p) => renderSettings(a, p),
+  '#/quiz': (a, p) => renderQuizCreate(a, p),
+  '#/poll': (a, p) => renderPollCreate(a, p),
+  '#/quiz-results': (a, p) => renderQuizResults(a, p),
+  '#/poll-results': (a, p) => renderPollResults(a, p),
+  '#/student': (a, p) => renderStudentDetail(a, p),
+  '#/sessions': (a, p) => renderSessions(a, p),
+  '#/admin/system': (a, p) => renderSystem(a, p),
+  '#/admin/test-data': (a, p) => renderTestData(a, p),
 };
+
+// Pages that keep their own live connection or hold a form: no background re-render.
+const NO_QUIET = new Set(['#/login', '#/class', '#/quiz', '#/poll', '#/admin/classes/new', '#/settings', '#/admin/test-data']);
 
 window.toggleClassStudentForm = function () {
   document.getElementById('class-add-student').classList.toggle('hidden');
@@ -53,7 +59,7 @@ window.refreshClassRoster = async function (classId) {
     const countEl = document.querySelector('.page-header h1, .card-header h2');
     const headerEl = Array.from(document.querySelectorAll('.card-header h2'))
       .find(h => h.textContent.includes('Students'));
-    if (headerEl) headerEl.textContent = `🎓 Students (${roster.length})`;
+    if (headerEl) headerEl.textContent = `Students (${roster.length})`;
     window._rosterNames = Object.fromEntries(roster.map(s => [s.id, s.student_name]));
   } catch (err) {
     showToast(err.message, 'error');
@@ -113,6 +119,44 @@ window.addEventListener('unhandledrejection', (e) => {
   if (e.reason instanceof StaleRender) e.preventDefault();
 });
 
+/* Live refresh (v2.2): re-render the current page in the background with
+ * fresh data. The page's requests carry X-Impress-Background (not activity);
+ * the scroll position is kept. Ui.js decides when it is safe to run.
+ * A background render yields to the user: it does not take a new route
+ * sequence (that would discard the page's own re-render after a click), and
+ * if the user acts while it is fetching, it is dropped and tried again later,
+ * so data fetched before a click never overwrites the result of the click. */
+async function quietRefresh() {
+  const path = getRoute();
+  if (NO_QUIET.has(path) || !routes[path]) return;
+  const seq = routeSeq, started = Date.now();
+  let inFlight = true;
+  const el = document.getElementById('app');
+  const view = new Proxy(el, {
+    set(target, prop, value) {
+      if (seq !== routeSeq || (inFlight && Live.lastUser >= started)) throw new StaleRender();
+      target[prop] = value;
+      return true;
+    },
+    get(target, prop) {
+      const v = Reflect.get(target, prop);
+      return typeof v === 'function' ? v.bind(target) : v;
+    },
+  });
+  const y = window.scrollY;
+  window.__quiet = started;
+  try {
+    await routes[path](view, getParams());
+    window.scrollTo(0, y);
+  } catch (err) {
+    // a background refresh never replaces the page; a superseded one runs again later
+    if (err instanceof StaleRender && seq === routeSeq) { Live.pending = true; Live.schedule(2500); }
+  } finally {
+    inFlight = false;
+    if (window.__quiet === started) window.__quiet = 0;
+  }
+}
+
 async function router() {
   const seq = ++routeSeq;
   const app = viewFor(seq);
@@ -146,119 +190,85 @@ async function router() {
   }
 }
 
-window.addEventListener('hashchange', router);
-window.addEventListener('load', router);
-
-// ── Toast ──────────────────────────────────────────────────────
-
-function showToast(message, type = 'info') {
-  let container = document.getElementById('toast-container');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'toast-container';
-    container.className = 'toast-container';
-    document.body.appendChild(container);
-  }
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  toast.textContent = message;
-  container.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add('show'));
-  setTimeout(() => {
-    toast.classList.remove('show');
-    setTimeout(() => toast.remove(), 300);
-  }, 3000);
-}
-
-// ── Navbar ─────────────────────────────────────────────────────
-
-function renderNavbar(user, currentHash) {
-  const role = user.role || 'teacher';
-  const isAdmin = role === 'admin' || role === 'super_admin';
-  const links = [];
-
-  if (isAdmin) {
-    links.push({ href: '#/admin', label: '🏠 Admin', active: currentHash === '#/admin' });
-    links.push({ href: '#/admin/courses', label: '📘 Courses', active: currentHash === '#/admin/courses' });
-    links.push({ href: '#/admin/students', label: '🎓 Students', active: currentHash === '#/admin/students' });
-    links.push({ href: '#/admin/classes', label: '🏫 Classrooms', active: currentHash === '#/admin/classes' });
-    links.push({ href: '#/admin/modules', label: '📡 Modules', active: currentHash === '#/admin/modules' });
-    links.push({ href: '#/admin/firmware', label: '💾 Firmware', active: currentHash === '#/admin/firmware' });
-    links.push({ href: '#/admin/users', label: '👥 Users', active: currentHash === '#/admin/users' });
-    links.push({ href: '#/admin/activity', label: '📋 Activity', active: currentHash === '#/admin/activity' });
-  } else {
-    // Teachers: My Classes (admins manage classes via /admin/classes, R2)
-    links.push({ href: '#/classes', label: '📖 My Classes', active: currentHash === '#/classes' });
-  }
-
-  const navItems = links.map(l =>
-    `<a href="${l.href}" class="nav-link${l.active ? ' active' : ''}">${l.label}</a>`
-  ).join('');
-
-  return `
-    <nav class="navbar">
-      <div class="container nav-inner">
-        <a href="#/dashboard" class="nav-brand">📚 imPress</a>
-        <div class="nav-links">${navItems}</div>
-        <div class="nav-right">
-          <button class="btn btn-sm btn-outline theme-toggle" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
-            <span id="theme-icon">🌙</span>
-          </button>
-          <a href="#/settings" class="btn btn-sm btn-outline nav-settings-btn" title="Settings">⚙️ Settings</a>
-          <span class="badge">${escHtml(user.full_name || user.username)}</span>
-          <button class="btn btn-sm btn-outline" onclick="handleLogout()">Logout</button>
-        </div>
-      </div>
-    </nav>
-  `;
-}
-
-window.handleLogout = function () {
-  authApi.logout();
-  navigate('#/login');
-};
+window.addEventListener('hashchange', () => router());
+window.addEventListener('load', () => router());
 
 // ── Login ──────────────────────────────────────────────────────
 
 async function renderLogin(app) {
+  document.body.classList.remove('shell');
+  Live.stop();
+  loadSystemStatus();
+  const insecure = location.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
   app.innerHTML = `
     <div class="login-page">
-      <button class="theme-fab" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
-        <span class="icon-moon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span>
-        <span class="icon-sun"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></span>
-      </button>
-      <div class="login-card card">
-        <div class="login-header">
-          <span class="login-icon">📚</span>
-          <h1>imPress</h1>
-          <p class="text-muted">Classroom Participation System</p>
-        </div>
-        <form id="login-form">
-          <div class="form-group">
-            <label>Username</label>
-            <input type="text" id="login-user" required autocomplete="username" />
+      <div class="login-shell">
+        <section class="login-form-side">
+          <button class="icon-btn login-theme" onclick="toggleTheme()" aria-label="Toggle dark mode" data-theme-icon>${themeIcon()}</button>
+          <form id="login-form" novalidate>
+            <div class="login-brand"><span class="brand-mark">${icon('layers')}</span><span>imPress</span></div>
+            <h1>Welcome back</h1>
+            <p class="lead">Sign in to your imPress classroom account</p>
+            <div class="form-group">
+              <label for="login-user">Username</label>
+              <div class="input-icon">${icon('user')}<input type="text" id="login-user" required autocomplete="username" placeholder="Enter your username" /></div>
+            </div>
+            <div class="form-group">
+              <label for="login-pass">Password</label>
+              <div class="input-icon">${icon('lock')}<input type="password" id="login-pass" required autocomplete="current-password" placeholder="Enter your password" />
+                <button type="button" class="btn btn-ghost btn-icon btn-sm trail" id="login-eye" aria-label="Show password">${icon('eye')}</button></div>
+            </div>
+            ${insecure ? `<p class="callout danger" role="alert">This connection is not encrypted: your password would cross the
+                network in plain text. Use the <strong>https://</strong> address of this server.</p>` : ''}
+            <p id="login-error" class="callout danger" role="alert" style="display:none"></p>
+            <button type="submit" class="btn btn-primary btn-block mt-1">${icon('login')} Sign in</button>
+            <p class="text-muted text-sm text-center mt-2">Forgot your password? Ask an administrator to reset it.</p>
+            <div class="login-foot">${icon('lock', 'sm')} Secure sign-in for faculty and administrators. One device per account at a time.</div>
+          </form>
+        </section>
+        <aside class="login-art-side" aria-hidden="true">
+          <div class="login-art">
+            <div>
+              <div class="art-card">
+                <div class="flex-between"><b>Live participation</b><span class="status live">Live</span></div>
+                <div class="art-bars"><i style="height:30%"></i><i class="hi" style="height:48%"></i><i style="height:42%"></i><i style="height:60%"></i><i class="hi" style="height:95%"></i><i style="height:55%"></i><i style="height:70%"></i><i class="hi" style="height:85%"></i><i style="height:45%"></i></div>
+                <div class="flex-between"><div><b style="font-size:22px">87.5%</b><div class="text-sm text-muted">Participation rate</div></div><span class="chip">${icon('users', 'sm')} 42 / 48</span></div>
+              </div>
+              <div class="art-card"><div class="flex gap-1">${icon('users')}<span class="text-sm text-muted">Students online</span></div>
+                <div style="font-size:24px;font-weight:700;margin-top:6px">231 <span class="text-muted" style="font-size:14px">/ 248</span></div></div>
+            </div>
           </div>
-          <div class="form-group">
-            <label>Password</label>
-            <input type="password" id="login-pass" required autocomplete="current-password" />
+          <div>
+            <h2>Engage. Understand. Empower.</h2>
+            <p>Real-time participation, quizzes and classroom insights in one place.</p>
           </div>
-          ${location.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)
-            ? `<p class="text-danger text-sm" role="alert">This connection is not encrypted: your password would cross the
-                network in plain text. Use the <strong>https://</strong> address of this server (#152).</p>` : ''}
-          <button type="submit" class="btn btn-primary btn-block">Sign In</button>
-          <p id="login-error" class="text-danger text-center mt-1" style="display:none"></p>
-        </form>
+          <div class="login-feats">
+            <div><span class="feed-icon">${icon('chart')}</span>Live analytics</div>
+            <div><span class="feed-icon">${icon('users')}</span>Interactive quizzes</div>
+            <div><span class="feed-icon">${icon('fileCheck')}</span>Better outcomes</div>
+          </div>
+        </aside>
       </div>
-    </div>
-  `;
+    </div>`;
 
+  document.getElementById('login-eye').onclick = () => {
+    const f = document.getElementById('login-pass');
+    const show = f.type === 'password';
+    f.type = show ? 'text' : 'password';
+    document.getElementById('login-eye').innerHTML = icon(show ? 'eyeOff' : 'eye');
+  };
   document.getElementById('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const errEl = document.getElementById('login-error');
     errEl.style.display = 'none';
+    const username = document.getElementById('login-user').value.trim();
+    const password = document.getElementById('login-pass').value;
+    if (!username || !password) {
+      errEl.textContent = 'Enter your username and password.';
+      errEl.style.display = 'block';
+      return;
+    }
     try {
-      const username = document.getElementById('login-user').value.trim();
-      const password = document.getElementById('login-pass').value;
       await authApi.login(username, password);
       navigate('#/dashboard');
     } catch (err) {
@@ -276,7 +286,7 @@ async function renderSettings(app) {
     ${renderNavbar(user, '#/settings')}
     <div class="container mt-2">
       <div class="page-header">
-        <h1>⚙️ Settings</h1>
+        <h1>Settings</h1>
       </div>
 
       <div class="card card-form" style="max-width:480px">
@@ -374,469 +384,6 @@ async function renderSettings(app) {
   });
 }
 
-// ── Dashboard ──────────────────────────────────────────────────
-
-async function renderDashboard(app) {
-  const user = await authApi.me();
-  const isAdmin = user.role === 'admin' || user.role === 'super_admin';
-
-  if (isAdmin) {
-    navigate('#/admin');
-    return;
-  }
-
-  const classes = await classesApi.list();
-  const activeClasses = classes.filter(c => c.is_active);
-
-  app.innerHTML = `
-    ${renderNavbar(user, '#/dashboard')}
-    <div class="container mt-2">
-      <div class="page-header">
-        <h1>Welcome back, ${escHtml(user.full_name || user.username)}</h1>
-        <p class="text-muted">Faculty Dashboard</p>
-      </div>
-
-      <div class="stats-grid">
-        <div class="stat-card">
-          <span class="stat-icon">📖</span>
-          <div class="stat-value">${classes.length}</div>
-          <div class="stat-label">My Classes</div>
-        </div>
-        <div class="stat-card">
-          <span class="stat-icon">🟢</span>
-          <div class="stat-value">${activeClasses.length}</div>
-          <div class="stat-label">Active Now</div>
-        </div>
-      </div>
-
-      <div class="card mt-2">
-        <div class="card-header">
-          <h2>My Classes</h2>
-          <a href="#/classes" class="btn btn-sm btn-primary">View All</a>
-        </div>
-        ${classes.length === 0 ? '<p class="text-muted" style="padding:1rem">No classes assigned yet. Contact your admin.</p>' : ''}
-        ${classes.slice(0, 5).map(c => `
-          <a href="#/class?id=${c.id}" class="list-item">
-            <div>
-              <strong>${escHtml(c.course_name || c.name)}</strong>
-              <span class="badge badge-sm ${c.is_active ? 'badge-success' : 'badge-outline'}">${c.is_active ? 'Active' : 'Inactive'}</span>
-            </div>
-            <div class="text-muted text-sm">${c.course_code ? `${escHtml(c.course_code)} · ` : ''}${c.student_count || 0} students · ${c.quiz_count || 0} quizzes · ${c.poll_count || 0} polls${c.term ? ` · ${escHtml(c.term)} ${c.year || ''}` : ''}</div>
-          </a>
-        `).join('')}
-      </div>
-    </div>
-  `;
-}
-
-// ── Admin Dashboard ────────────────────────────────────────────
-
-async function renderAdminDashboard(app) {
-  const user = await authApi.me();
-  const [classes, users, activity, modules, students] = await Promise.all([
-    adminApi.listClasses(),
-    adminApi.listUsers(),
-    adminApi.activityLogs(10),
-    modulesApi.list('').catch(() => []),
-    studentsApi.list('').catch(() => []),
-  ]);
-
-  const teachers = users.filter(u => u.role === 'teacher');
-  const admins = users.filter(u => u.role === 'admin' || u.role === 'super_admin');
-  const activeClasses = classes.filter(c => c.is_active);
-  const devicesOnline = modules.filter(m => m.is_connected).length;
-  const totalStudents = students.length || classes.reduce((n, c) => n + (c.student_count || 0), 0);
-  const firstName = (user.full_name || user.username || '').trim().split(/\s+/)[0] || 'Admin';
-  const todayStr = istFormat(Date.now(), { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-
-  const nodeRows = classes.slice(0, 15).map(c => {
-    const fac = (c.faculty_names && c.faculty_names.length)
-      ? c.faculty_names.map(f => f.full_name || f.username || '—').slice(0, 2).join(', ')
-      : (c.teacher_name || '—');
-    return `
-      <tr>
-        <td>
-          <strong>${escHtml(c.name)}</strong>
-          ${c.code ? `<div class="text-muted text-sm">${escHtml(c.code)}</div>` : ''}
-        </td>
-        <td>${c.classroom_code ? `<span class="text-muted text-sm">${escHtml(c.classroom_code)}</span>` : '<span class="text-muted text-sm">—</span>'}</td>
-        <td><span class="badge ${c.is_active ? 'badge-success' : 'badge-outline'}">${c.is_active ? 'Active' : 'Inactive'}</span></td>
-        <td>${c.student_count || 0}</td>
-        <td class="text-muted text-sm">${escHtml(fac)}</td>
-        <td><a href="#/class?id=${c.id}" class="btn btn-sm btn-outline">Open</a></td>
-      </tr>
-    `;
-  }).join('');
-
-  const userRows = users.slice(0, 7).map(u => {
-    const initials = (u.full_name || u.username || '?').trim().charAt(0).toUpperCase();
-    return `
-      <a href="#/admin/users" class="dash-person">
-        <span class="dash-avatar">${escHtml(initials)}</span>
-        <span class="dash-person-body">
-          <span class="dash-person-name">${escHtml(u.full_name || u.username)}</span>
-          <span class="dash-person-meta">@${escHtml(u.username)} · ${u.role}</span>
-        </span>
-        <span class="dash-person-status ${u.is_active ? 'on' : 'off'}" title="${u.is_active ? 'Active' : 'Disabled'}"></span>
-      </a>
-    `;
-  }).join('');
-
-  const eventRows = activity.slice(0, 7).map(a => `
-    <div class="dash-event">
-      <div class="dash-event-dot"></div>
-      <div class="dash-event-body">
-        <div class="dash-event-main">${escHtml(a.action)}<span class="dash-event-tag">${escHtml(a.entity_type || '')}</span></div>
-        <div class="dash-event-meta">${a.username ? escHtml(a.username) : 'system'} · ${a.timestamp ? istDateTime(istParseToEpoch(a.timestamp)) : ''}</div>
-      </div>
-    </div>
-  `).join('');
-
-  app.innerHTML = `
-    ${renderNavbar(user, '#/admin')}
-    <div class="container mt-2">
-
-      <div class="dash-hero">
-        <div>
-          <div class="dash-eyebrow">Operations Overview</div>
-          <h1 class="dash-title">Good day, ${escHtml(firstName)}</h1>
-          <p class="dash-sub">Live snapshot of your platform — users, classrooms, devices and activity.</p>
-        </div>
-        <div class="dash-hero-side">
-          <div class="dash-date">${todayStr}</div>
-          <span class="dash-live"><span class="dash-dot"></span>System online</span>
-        </div>
-      </div>
-
-      <div class="kpi-grid">
-        <div class="kpi-card">
-          <div class="kpi-icon">👥</div>
-          <div class="kpi-body">
-            <div class="kpi-label">Total Users</div>
-            <div class="kpi-value">${users.length}</div>
-            <div class="kpi-sub">${admins.length} admins · ${teachers.length} faculty</div>
-          </div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-icon">🏫</div>
-          <div class="kpi-body">
-            <div class="kpi-label">Active Classes</div>
-            <div class="kpi-value">${activeClasses.length}<span class="kpi-unit"> / ${classes.length}</span></div>
-            <div class="kpi-sub">${classes.length - activeClasses.length} inactive</div>
-          </div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-icon">🎓</div>
-          <div class="kpi-body">
-            <div class="kpi-label">Students</div>
-            <div class="kpi-value">${totalStudents}</div>
-            <div class="kpi-sub">Across ${classes.length} classrooms</div>
-          </div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-icon">📡</div>
-          <div class="kpi-body">
-            <div class="kpi-label">Devices Online</div>
-            <div class="kpi-value">${devicesOnline}<span class="kpi-unit"> / ${modules.length}</span></div>
-            <div class="kpi-sub">${modules.length - devicesOnline} offline</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="metric-strip">
-        <span class="metric-chip">Faculty <b>${teachers.length}</b></span>
-        <span class="metric-chip">Admins <b>${admins.length}</b></span>
-        <span class="metric-chip">Classrooms <b>${classes.length}</b></span>
-        <span class="metric-chip">Recent Events <b>${activity.length}</b></span>
-      </div>
-
-      <div class="card mt-2 dash-panel">
-        <div class="card-header">
-          <h2>Live Classroom Nodes</h2>
-          <a href="#/admin/classes" class="btn btn-sm btn-outline">Manage</a>
-        </div>
-        ${classes.length === 0
-          ? '<p class="text-muted" style="padding:1rem">No classrooms yet. <a href="#/admin/classes/new">Create one</a>.</p>'
-          : `<div class="table-responsive">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Classroom</th>
-                    <th>Room</th>
-                    <th>Status</th>
-                    <th>Students</th>
-                    <th>Faculty</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>${nodeRows}</tbody>
-              </table>
-            </div>`}
-      </div>
-
-      <div class="grid-2 mt-2">
-        <div class="card">
-          <div class="card-header">
-            <h2>Recent Activity</h2>
-            <a href="#/admin/activity" class="btn btn-sm btn-outline">View All</a>
-          </div>
-          ${activity.length === 0
-            ? '<p class="text-muted" style="padding:1rem">No activity yet.</p>'
-            : `<div class="dash-events">${eventRows}</div>`}
-        </div>
-
-        <div class="card">
-          <div class="card-header">
-            <h2>User Accounts</h2>
-            <a href="#/admin/users" class="btn btn-sm btn-outline">Manage</a>
-          </div>
-          ${users.length === 0
-            ? '<p class="text-muted" style="padding:1rem">No users yet.</p>'
-            : `<div class="dash-people">${userRows}</div>`}
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-// ── Admin: User Management ────────────────────────────────────
-
-async function renderAdminUsers(app) {
-  const user = await authApi.me();
-  const users = await adminApi.listUsers();
-  const isSuperAdmin = user.role === 'super_admin';
-
-  app.innerHTML = `
-    ${renderNavbar(user, '#/admin/users')}
-    <div class="container mt-2">
-      <div class="page-header">
-        <h1>User Management</h1>
-        <div style="display:flex;gap:0.5rem">
-          <button class="btn btn-outline" id="btn-import-users-csv">⬆ Import CSV</button>
-          <button class="btn btn-primary" onclick="document.getElementById('create-user-modal').classList.remove('hidden')">+ New User</button>
-        </div>
-      </div>
-
-      <!-- Bulk User CSV Import -->
-      <div class="card hidden" id="users-csv-card" style="margin-top:1rem">
-        <div class="card-header">
-          <h2>Import Users from CSV</h2>
-          <button class="btn btn-sm btn-outline" onclick="document.getElementById('users-csv-card').classList.add('hidden')">✕</button>
-        </div>
-        <div style="padding:1rem">
-          <p class="form-hint" style="margin-top:0;margin-bottom:0.75rem">
-            All 5 columns below are <strong>compulsory</strong> in every row — no extra columns:
-            <strong>username</strong> (3–64 letters/digits/_ .), <strong>email</strong>, <strong>password</strong> (min 10 chars, not common, not the username),
-            <strong>full_name</strong>, <strong>role</strong> (teacher or admin). Admin accounts require super-admin rights.
-          </p>
-          <div class="csv-drop" id="users-csv-drop">
-            <p style="margin:0 0 0.5rem">Drop CSV file here or click to browse</p>
-            <input type="file" id="users-csv-file" accept=".csv" style="display:none" />
-            <button class="btn btn-sm btn-outline" id="users-csv-browse">Choose File</button>
-          </div>
-          <div id="users-csv-result" class="mt-1"></div>
-          <div class="mt-1"><button class="btn btn-primary" id="users-csv-upload" disabled>Upload & Import</button></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><h2>All Users (${users.length})</h2></div>
-        <div class="table-responsive">
-          <table class="table">
-            <thead><tr><th>Username</th><th>Full Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody>
-              ${users.map(u => `
-                <tr>
-                  <td><strong>${escHtml(u.username)}</strong></td>
-                  <td>${escHtml(u.full_name || '—')}</td>
-                  <td class="text-muted">${escHtml(u.email)}</td>
-                  <td><span class="badge ${u.role === 'super_admin' ? 'badge-primary' : u.role === 'admin' ? 'badge-success' : 'badge-outline'}">${u.role}</span></td>
-                  <td><span class="badge ${u.is_active ? 'badge-success' : 'badge-danger'}">${u.is_active ? 'Active' : 'Disabled'}</span></td>
-                  <td>
-                    ${u.id === user.id ? '<span class="text-muted text-sm">You</span>' : ''}
-                    ${userActionButtons(u)}
-                  </td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Create User Modal -->
-      <div id="create-user-modal" class="modal hidden">
-        <div class="modal-backdrop" onclick="this.parentElement.classList.add('hidden')"></div>
-        <div class="modal-content card">
-          <h2>Create New User</h2>
-          <form id="create-user-form">
-            <div class="form-group">
-              <label>Username</label>
-              <input type="text" id="new-username" required minlength="3" />
-            </div>
-            <div class="form-group">
-              <label>Full Name</label>
-              <input type="text" id="new-fullname" />
-            </div>
-            <div class="form-group">
-              <label>Email</label>
-              <input type="email" id="new-email" required />
-            </div>
-            <div class="form-group">
-              <label>Password</label>
-              <input type="password" id="new-password" required minlength="10" />
-            </div>
-            <div class="form-group">
-              <label>Role</label>
-              <select id="new-role">
-                <option value="teacher">Teacher</option>
-                ${isSuperAdmin ? '<option value="admin">Admin</option>' : ''}
-              </select>
-            </div>
-            <div class="flex gap-1">
-              <button type="submit" class="btn btn-primary">Create</button>
-              <button type="button" class="btn btn-outline" onclick="document.getElementById('create-user-modal').classList.add('hidden')">Cancel</button>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      <!-- Edit User Modal -->
-      <div id="edit-user-modal" class="modal hidden">
-        <div class="modal-backdrop" onclick="this.parentElement.classList.add('hidden')"></div>
-        <div class="modal-content card">
-          <h2>Edit User</h2>
-          <form id="edit-user-form">
-            <input type="hidden" id="edit-user-id" />
-            <div class="form-group">
-              <label>Username</label>
-              <input type="text" id="edit-username" disabled />
-            </div>
-            <div class="form-group">
-              <label>Full Name</label>
-              <input type="text" id="edit-fullname" />
-            </div>
-            <div class="form-group">
-              <label>Email</label>
-              <input type="email" id="edit-email" required />
-            </div>
-            <div class="form-group" id="edit-role-group">
-              <label>Role</label>
-              <select id="edit-role">
-                <option value="teacher">Teacher</option>
-                <option value="admin">Admin</option>
-                <option value="super_admin">Super admin</option>
-              </select>
-              <small class="text-muted">Changing the role signs the user out.</small>
-            </div>
-            <div class="flex gap-1">
-              <button type="submit" class="btn btn-primary">Save</button>
-              <button type="button" class="btn btn-outline" onclick="document.getElementById('edit-user-modal').classList.add('hidden')">Cancel</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  `;
-
-  document.getElementById('create-user-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    try {
-      await adminApi.createUser({
-        username: document.getElementById('new-username').value.trim(),
-        full_name: document.getElementById('new-fullname').value.trim(),
-        email: document.getElementById('new-email').value.trim(),
-        password: document.getElementById('new-password').value,
-        role: document.getElementById('new-role').value,
-      });
-      showToast('User created!', 'success');
-      renderAdminUsers(app);
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  });
-
-  // ── Bulk user CSV import ─────────────────────────────────────
-  const usersCsvCard = document.getElementById('users-csv-card');
-  const usersCsvDrop = document.getElementById('users-csv-drop');
-  const usersCsvFile = document.getElementById('users-csv-file');
-  const usersCsvUpload = document.getElementById('users-csv-upload');
-  const usersCsvResult = document.getElementById('users-csv-result');
-  let selectedUsersCsv = null;
-
-  document.getElementById('btn-import-users-csv').onclick = () => {
-    usersCsvCard.classList.toggle('hidden');
-    if (!usersCsvCard.classList.contains('hidden')) usersCsvCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  };
-
-  document.getElementById('users-csv-browse').onclick = (e) => { e.stopPropagation(); usersCsvFile.click(); };
-  usersCsvDrop.onclick = () => usersCsvFile.click();
-  usersCsvDrop.ondragover = (e) => { e.preventDefault(); usersCsvDrop.style.borderColor = 'var(--primary)'; };
-  usersCsvDrop.ondragleave = () => { usersCsvDrop.style.borderColor = ''; };
-  usersCsvDrop.ondrop = (e) => {
-    e.preventDefault();
-    usersCsvDrop.style.borderColor = '';
-    if (e.dataTransfer.files.length) {
-      usersCsvFile.files = e.dataTransfer.files;
-      usersCsvFile.dispatchEvent(new Event('change'));
-    }
-  };
-
-  usersCsvFile.addEventListener('change', () => {
-    const f = usersCsvFile.files[0];
-    if (!f) { selectedUsersCsv = null; usersCsvUpload.disabled = true; return; }
-    if (!f.name.toLowerCase().endsWith('.csv')) {
-      showToast('Please choose a .csv file', 'error');
-      usersCsvFile.value = '';
-      selectedUsersCsv = null;
-      usersCsvUpload.disabled = true;
-      return;
-    }
-    selectedUsersCsv = f;
-    usersCsvUpload.disabled = false;
-    usersCsvResult.innerHTML = `<p class="text-muted text-sm">Ready: ${escHtml(f.name)}</p>`;
-  });
-
-  usersCsvUpload.onclick = async () => {
-    if (!selectedUsersCsv) return;
-    usersCsvUpload.disabled = true;
-    usersCsvResult.innerHTML = '<p class="text-muted text-sm">Importing…</p>';
-    try {
-      const result = await adminApi.importUsersCsv(selectedUsersCsv);
-      if (result.skipped.length) {
-        usersCsvResult.innerHTML = `
-          <p style="color:var(--warning)">${result.inserted} inserted, ${result.skipped.length} skipped:</p>
-          <div class="table-wrap"><table class="table">
-            <thead><tr><th>Row</th><th>Username</th><th>Error</th></tr></thead>
-            <tbody>${result.skipped.map(e => `<tr><td>${e.row}</td><td><code>${escHtml(e.roll_number)}</code></td><td class="text-sm">${escHtml(e.error)}</td></tr>`).join('')}</tbody>
-          </table></div>`;
-      } else {
-        usersCsvResult.innerHTML = `<p style="color:var(--success)">✓ ${result.inserted} user(s) imported</p>`;
-      }
-      showToast(`${result.inserted} user(s) imported`, 'success');
-      renderAdminUsers(app);
-    } catch (err) {
-      usersCsvResult.innerHTML = '';
-      showToast(err.message, 'error');
-    } finally {
-      usersCsvUpload.disabled = false;
-    }
-  };
-}
-
-// Buttons come from the server's allowed_actions (#119): the server decides,
-// the page only shows what it would accept.
-function userActionButtons(u) {
-  const a = new Set(u.allowed_actions || []);
-  const name = escHtml(u.username).replace(/'/g, "\\'");
-  return [
-    a.has('edit') && `<button class="btn btn-sm btn-outline" onclick="editUser(${u.id})">✏️ Edit</button>`,
-    a.has('deactivate') && `<button class="btn btn-sm btn-outline" onclick="setUserActive(${u.id}, '${name}', false)">Deactivate</button>`,
-    a.has('reactivate') && `<button class="btn btn-sm btn-outline" onclick="setUserActive(${u.id}, '${name}', true)">Reactivate</button>`,
-    a.has('reset_password') && `<button class="btn btn-sm btn-outline" onclick="resetUserPassword(${u.id}, '${name}')">Reset pwd</button>`,
-    a.has('delete') && `<button class="btn btn-sm btn-outline text-danger" onclick="deleteUser(${u.id}, '${name}')">Delete permanently</button>`,
-  ].filter(Boolean).join(' ');
-}
-
 window.setUserActive = async function (userId, username, active) {
   if (!active && !confirm(`Deactivate "${username}"?\n\nThey are signed out everywhere and cannot log in until reactivated. Nothing is deleted.`)) return;
   try {
@@ -926,13 +473,13 @@ async function renderAdminCourses(app) {
     <div class="container mt-2">
       <div class="page-header">
         <h1>Course Catalog</h1>
-        <button class="btn btn-primary" id="btn-new-course">+ New Course</button>
+        <button class="btn btn-primary" id="btn-new-course">${icon('plus', 'sm')} New Course</button>
       </div>
 
       <div class="card hidden" id="course-form-card">
         <div class="card-header">
           <h2 id="course-form-title">New Course</h2>
-          <button class="btn btn-sm btn-outline" onclick="this.closest('.card').classList.add('hidden')">✕</button>
+          <button class="btn btn-sm btn-outline" onclick="this.closest('.card').classList.add('hidden')"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
         </div>
         <form id="course-form" style="padding:1rem">
           <div class="form-section">
@@ -1013,8 +560,8 @@ async function renderAdminCourses(app) {
                       <td class="text-muted" style="font-size:0.85rem">${escHtml(examInfo)}</td>
                       <td>${c.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-outline">Inactive</span>'}</td>
                       <td>
-                        <button class="btn btn-sm btn-outline" onclick="window._editCourse(${c.id})">✏️</button>
-                        <button class="btn btn-sm btn-outline text-danger" onclick="window._deleteCourse(${c.id})">🗑</button>
+                        <button class="btn btn-sm btn-outline" onclick="window._editCourse(${c.id})"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+                        <button class="btn btn-sm btn-outline text-danger" onclick="window._deleteCourse(${c.id})"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
                       </td>
                     </tr>
                   `}).join('')}
@@ -1216,7 +763,7 @@ async function renderAdminClassForm(app, params) {
             <div class="form-section-title">Meeting Schedule</div>
             <div class="form-group">
               <div id="schedule-rows"></div>
-              <button type="button" class="btn btn-sm btn-outline mt-1" id="btn-add-schedule">+ Add Time Slot</button>
+              <button type="button" class="btn btn-sm btn-outline mt-1" id="btn-add-schedule">${icon('plus', 'sm')} Add Time Slot</button>
             </div>
           </div>
 
@@ -1242,7 +789,7 @@ async function renderAdminClassForm(app, params) {
         <input type="time" class="input-sm" value="${s.start || '09:00'}" onchange="window.formScheduleSlots[${i}].start=this.value" />
         <span class="text-muted">to</span>
         <input type="time" class="input-sm" value="${s.end || '10:00'}" onchange="window.formScheduleSlots[${i}].end=this.value" />
-        <button type="button" class="btn btn-sm btn-outline text-danger" onclick="window.formScheduleSlots.splice(${i},1);window.formRenderScheduleRows()">✕</button>
+        <button type="button" class="btn btn-sm btn-outline text-danger" onclick="window.formScheduleSlots.splice(${i},1);window.formRenderScheduleRows()"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
       </div>
     `).join('');
   }
@@ -1272,7 +819,7 @@ async function renderAdminClassForm(app, params) {
             ? `<span class="faculty-option-sub">${escHtml(t.username)}</span>` : '';
           return `<div class="faculty-option${sel ? ' pick' : ''}" data-id="${t.id}">
             <span class="faculty-option-name">${escHtml(t.full_name || t.username)}${uname}</span>
-            ${sel ? '<span class="faculty-option-check">✓</span>' : ''}
+            ${sel ? '<span class="faculty-option-check"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span>' : ''}
           </div>`;
         }).join('');
     drop.querySelectorAll('.faculty-option').forEach(opt => {
@@ -1396,117 +943,11 @@ async function renderAdminClassForm(app, params) {
 
 // ├── Admin: Class listing (create/edit live on a dedicated page) ───
 
-async function renderAdminClasses(app) {
-  const user = await authApi.me();
-  const classes = await adminApi.listClasses();
-
-  function scheduleChips(schedule) {
-    if (!schedule || schedule.length === 0) return '<span class="text-muted">No schedule</span>';
-    return schedule.map(s =>
-      `<span class="badge badge-outline schedule-chip">${escHtml(s.day)} ${escHtml(s.start)}–${escHtml(s.end)}</span>`
-    ).join(' ');
-  }
-
-  app.innerHTML = `
-    ${renderNavbar(user, '#/admin/classes')}
-    <div class="container mt-2">
-      <div class="page-header">
-        <h1>Classrooms</h1>
-        <div class="flex gap-1">
-          <button class="btn btn-outline" id="btn-classes-import">Import CSV</button>
-          <button class="btn btn-outline" id="btn-classes-export">Export CSV</button>
-          <a href="#/admin/classes/new" class="btn btn-primary">+ New Classroom</a>
-        </div>
-      </div>
-
-      <div class="card mt-2 hidden" id="classes-import">
-        <div class="card-header flex-between">
-          <h2>Import courses and sections</h2>
-          <a class="btn btn-sm btn-outline" href="${adminApi.classTemplateUrl}" download>Download template</a>
-        </div>
-        <div style="padding:1rem">
-          <p class="form-hint" style="margin-top:0">
-            One row per section: <strong>course_code</strong>, <strong>course_name</strong>, <strong>section</strong>,
-            <strong>class_code</strong> (the join code), <strong>teacher_username</strong>; optional class_name,
-            classroom_code (room), term, year, capacity, location. Courses are created when new and matched by code
-            otherwise. Nothing is stored until you confirm, and a file with any invalid row stores nothing.
-          </p>
-          <div class="form-group">
-            <label for="classes-import-mode">Existing sections</label>
-            <select id="classes-import-mode">
-              <option value="create">Skip them: only create new sections</option>
-              <option value="update">Update them with the values in the file</option>
-            </select>
-          </div>
-          <div class="csv-drop" id="classes-csv-drop" role="button" tabindex="0" aria-label="Choose a CSV file of courses and sections">
-            <p style="margin:0 0 0.5rem">Drop a CSV file here or click to browse</p>
-            <input type="file" id="classes-csv-file" accept=".csv,text/csv" />
-            <button type="button" class="btn btn-sm btn-outline" id="classes-csv-browse">Choose File</button>
-          </div>
-          <progress id="classes-csv-progress" class="hidden" max="100" value="0" style="width:100%;margin-top:0.5rem"></progress>
-          <div id="classes-csv-result" class="mt-1" aria-live="polite"></div>
-        </div>
-      </div>
-
-      <div class="card mt-2">
-        <div class="card-header">
-          <h2>${classes.length} Classroom${classes.length !== 1 ? 's' : ''}</h2>
-        </div>
-        ${classes.length === 0
-          ? '<p style="padding:1.5rem;text-align:center" class="text-muted">No classrooms yet. Click "+ New Classroom" to create one.</p>'
-          : `<div class="table-wrap">
-              <table class="table">
-                <thead><tr>
-                  <th>Course</th><th>Section</th><th>Semester</th><th>Faculty</th>
-                  <th>Schedule</th><th>Location / Room</th><th>Students</th><th>Status</th><th></th>
-                </tr></thead>
-                <tbody>
-                  ${classes.map(c => `
-                    <tr>
-                      <td>
-                        <strong>${escHtml(c.course_name || c.name)}</strong>
-                        ${c.course_code ? `<br><span class="text-muted text-sm">${escHtml(c.course_code)}</span>` : ''}
-                      </td>
-                      <td>${c.course_section ? `<span class="badge badge-primary">${escHtml(c.course_section)}</span>` : '—'}</td>
-                      <td class="text-sm">
-                        ${c.term ? `${escHtml(c.term)} ${c.year || ''}` : '<span class="text-muted">—</span>'}
-                        ${c.start_date ? `<br><span class="text-muted">${escHtml(c.start_date)} → ${escHtml(c.end_date || '?')}</span>` : ''}
-                        ${c.exam_date ? `<br><span class="text-muted">Exam: ${escHtml(c.exam_date)}${c.exam_start_time ? ' · ' + escHtml(c.exam_start_time) : ''}</span>` : ''}
-                      </td>
-                      <td>
-                        ${(c.faculty_names || []).map(f =>
-                          `<span class="badge badge-outline" title="Faculty">${escHtml(f.full_name)}</span>`
-                        ).join(' ') || '<span class="text-muted">—</span>'}
-                      </td>
-                      <td>${scheduleChips(c.meeting_schedule)}${renderScheduleWarnings(c.warnings)}</td>
-                      <td class="text-muted">
-                        ${escHtml(c.location || '—')}
-                        ${c.classroom_code ? `<br><span class="badge badge-primary" title="Physical room label">${escHtml(c.classroom_code)}</span>` : ''}
-                      </td>
-                      <td>${c.student_count || 0}${c.capacity ? ` / ${c.capacity}` : ''}</td>
-                      <td><span class="badge ${c.is_active ? 'badge-success' : 'badge-outline'}">${c.is_active ? 'Active' : 'Inactive'}</span></td>
-                      <td style="white-space:nowrap">
-                        <a href="#/class?id=${c.id}" class="btn btn-sm btn-outline">Open</a>
-                        <a href="#/admin/classes/new?id=${c.id}" class="btn btn-sm btn-outline">✏️ Edit</a>
-                        <button class="btn btn-sm btn-outline text-danger" onclick="deleteClass(${c.id}, '${escHtml(c.name).replace(/'/g, "\\'")}')">🗑</button>
-                      </td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-            </div>`
-        }
-      </div>
-    </div>
-  `;
-  wireClassCsvImport(app);
-}
-
 window.renderScheduleWarnings = function (warnings) {
   if (!warnings || warnings.length === 0) return '';
   return `
     <div class="warn-box">
-      ${warnings.map(w => `<div class="warn-line">⚠️ ${escHtml(w.message)}</div>`).join('')}
+      ${warnings.map(w => `<div class="warn-line"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="m10.3 3.9-8.4 14.5A2 2 0 0 0 3.6 21h16.8a2 2 0 0 0 1.7-2.6L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg> ${escHtml(w.message)}</div>`).join('')}
     </div>`;
 }
 
@@ -1637,25 +1078,23 @@ window.deleteClass = async function (classId, name) {
 
 async function renderAdminStudents(app) {
   const user = await authApi.me();
-  const students = await studentsApi.list();
+  const [students, summary] = await Promise.all([studentsApi.list(), adminApi.studentsSummary().catch(() => [])]);
+  window._studentSummary = Object.fromEntries(summary.map(r => [r.id, r]));
+  const ov = studentOverview(students);
 
   app.innerHTML = `
     ${renderNavbar(user, '#/admin/students')}
-    <div class="container mt-2">
-      <div class="page-header">
-        <h1>Student Registry</h1>
-        <div style="display:flex;gap:0.5rem">
-          <input type="text" id="stu-search" class="input-sm" placeholder="Search name / roll…" style="min-width:200px" />
-          <button class="btn btn-outline" id="btn-import-csv">⬆ Import CSV</button>
-          <button class="btn btn-primary" id="btn-new-student">+ New Student</button>
-        </div>
-      </div>
+    <div class="container">
+      ${pageHeader('Students', 'Manage your students, track participation and module assignments.',
+        `<button class="btn btn-outline" id="btn-import-csv">${icon('upload')} Import students</button>
+         <button class="btn btn-primary" id="btn-new-student">${icon('plus')} Add student</button>`)}
+      ${ov.stats}
 
       <!-- CSV Import Card -->
       <div class="card hidden" id="csv-import-card">
         <div class="card-header">
           <h2>Import Students from CSV</h2>
-          <button class="btn btn-sm btn-outline" onclick="document.getElementById('csv-import-card').classList.add('hidden')">✕</button>
+          <button class="btn btn-sm btn-outline" onclick="document.getElementById('csv-import-card').classList.add('hidden')"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
         </div>
         <div style="padding:1rem">
           <p class="form-hint" style="margin-top:0;margin-bottom:0.75rem">
@@ -1681,7 +1120,7 @@ async function renderAdminStudents(app) {
       <div class="card hidden" id="student-form-card">
         <div class="card-header">
           <h2 id="student-form-title">New Student</h2>
-          <button class="btn btn-sm btn-outline" onclick="this.closest('.card').classList.add('hidden')">✕</button>
+          <button class="btn btn-sm btn-outline" onclick="this.closest('.card').classList.add('hidden')"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
         </div>
         <form id="student-form" style="padding:1rem">
           <div class="form-section" style="margin-top:0;padding-top:0;border-top:none">
@@ -1735,13 +1174,14 @@ async function renderAdminStudents(app) {
         </form>
       </div>
 
-      <div class="card mt-2">
-        <div class="card-header">
-          <h2 id="student-count">${students.length} Student${students.length !== 1 ? 's' : ''}</h2>
+      <div>
+        <div class="card">
+          <div class="card-header"><div><h2 id="student-count">${students.length} Student${students.length !== 1 ? 's' : ''}</h2>
+            <div class="card-sub">Every registered student across your classrooms</div></div>
+            <label class="searchbox">${icon('search', 'sm')}<input type="search" id="stu-search" placeholder="Search by name or enrollment no.…" data-live="1" /></label></div>
+          <div id="student-table-area">${_renderStudentTable(students)}</div>
         </div>
-        <div id="student-table-area">
-          ${_renderStudentTable(students)}
-        </div>
+        <div class="grid-2">${ov.side}</div>
       </div>
     </div>
   `;
@@ -1846,7 +1286,7 @@ async function renderAdminStudents(app) {
     statusEl.textContent = 'Importing…';
     try {
       const result = await studentsApi.importCsv(selectedCsv);
-      statusEl.textContent = `✓ ${result.inserted} inserted, ${result.skipped.length} skipped`;
+      statusEl.textContent = `Done: ${result.inserted} inserted, ${result.skipped.length} skipped`;
       if (result.skipped.length) {
         const r = result.skipped;
         document.getElementById('csv-preview').innerHTML = `
@@ -1900,38 +1340,6 @@ async function renderAdminStudents(app) {
   });
 }
 
-function _renderStudentTable(students) {
-  if (students.length === 0) return '<p style="padding:1.5rem;text-align:center" class="text-muted">No students found.</p>';
-  return `
-    <div class="table-wrap">
-      <table class="table">
-        <thead><tr>
-          <th>Roll #</th><th>Name</th><th>Program</th><th>Email</th><th>Device</th><th>Status</th><th></th>
-        </tr></thead>
-        <tbody>
-          ${students.map(s => `
-            <tr>
-              <td><span class="badge badge-primary">${escHtml(s.roll_number)}</span></td>
-              <td><strong>${escHtml(s.student_name)}</strong></td>
-              <td class="text-muted">${escHtml(s.program || '—')}</td>
-              <td class="text-muted text-sm">${escHtml(s.email || '—')}</td>
-              <td>${s.device_mac ? `<code class="text-sm">${escHtml(s.device_mac)}</code>` : '<span class="text-muted">—</span>'}</td>
-              <td>${s.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-outline">Inactive</span>'}</td>
-              <td>
-                <button class="btn btn-sm btn-outline" onclick="window._editStudent(${s.id})">✏️</button>
-                ${s.is_active
-                  ? `<button class="btn btn-sm btn-outline" title="Deactivate" onclick="window._deactivateStudent(${s.id})">⏸</button>`
-                  : `<button class="btn btn-sm btn-outline" title="Reactivate" onclick="window._reactivateStudent(${s.id})">▶</button>`}
-                <button class="btn btn-sm btn-outline text-danger" title="Delete record permanently" onclick="window._hardDeleteStudent(${s.id}, '${escHtml(s.student_name).replace(/'/g, "\\'")}')">🗑</button>
-              </td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
 window._editStudent = async function (id) {
   try {
     const s = await studentsApi.get(id);
@@ -1978,7 +1386,7 @@ window._reactivateStudent = async function (id) {
 };
 
 window._hardDeleteStudent = async function (id, name) {
-  if (!confirm(`⚠️ Permanently delete student "${name || id}"?\n\nThis removes the record, its course enrollments and attendance history. This cannot be undone.`)) return;
+  if (!confirm(`Permanently delete student "${name || id}"?\n\nThis removes the record, its course enrollments and attendance history. This cannot be undone.`)) return;
   if (!confirm('Are you absolutely sure? This action is irreversible.')) return;
   try {
     await studentsApi.hardDelete(id);
@@ -1990,43 +1398,6 @@ window._hardDeleteStudent = async function (id, name) {
     showToast(err.message, 'error');
   }
 };
-
-// ── Admin: Activity Logs ──────────────────────────────────────
-
-async function renderAdminActivity(app) {
-  const user = await authApi.me();
-  const activity = await adminApi.activityLogs(100);
-
-  app.innerHTML = `
-    ${renderNavbar(user, '#/admin/activity')}
-    <div class="container mt-2">
-      <div class="page-header">
-        <h1>Activity Logs</h1>
-        <p class="text-muted">${activity.length} entries</p>
-      </div>
-
-      <div class="card">
-        ${activity.length === 0 ? '<p class="text-muted" style="padding:1rem">No activity recorded yet.</p>' : ''}
-        <div class="table-responsive">
-          <table class="table">
-            <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Entity</th><th>Details</th></tr></thead>
-            <tbody>
-              ${activity.map(a => `
-                <tr>
-                  <td class="text-muted text-sm">${a.timestamp ? istDateTime(istParseToEpoch(a.timestamp)) : '—'}</td>
-                  <td>${escHtml(a.username || 'system')}</td>
-                  <td><span class="badge badge-outline">${escHtml(a.action)}</span></td>
-                  <td>${a.entity_type ? `${a.entity_type} #${a.entity_id || '?'}` : '—'}</td>
-                  <td class="text-sm">${a.details && Object.keys(a.details).length > 0 ? escHtml(JSON.stringify(a.details)) : '—'}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  `;
-}
 
 // ── Admin: Modules & Devices (R7 connectivity, R8 OTA) ──────────
 
@@ -2040,22 +1411,19 @@ async function renderAdminModules(app) {
 
   app.innerHTML = `
     ${renderNavbar(user, '#/admin/modules')}
-    <div class="container mt-2">
-      <div class="page-header">
-        <h1>📡 Classroom Nodes & Student Modules</h1>
-        <p class="text-muted">${devices.length} registered devices — monitoring (telemetry) + OTA push</p>
-      </div>
-
+    <div class="container">
+      ${pageHeader('Devices', 'Monitor gateways, hubs and student modules across your classrooms.', '', todayLabel())}
       <div class="stats-grid">
-        <div class="card stat-card"><span class="stat-icon">📟</span><div class="stat-value">${devices.length}</div><div class="stat-label">Total devices</div></div>
-        <div class="card stat-card"><span class="stat-icon">🟢</span><div class="stat-value">${connected}</div><div class="stat-label">Connected</div></div>
-        <div class="card stat-card"><span class="stat-icon">🔄</span><div class="stat-value">${otaPending}</div><div class="stat-label">OTA pending</div></div>
-        <div class="card stat-card"><span class="stat-icon">⚠️</span><div class="stat-value">${attention}</div><div class="stat-label">Need attention</div></div>
+        ${statCard('Total devices', devices.length, `${mods.length} student modules seen`, 'layers')}
+        ${statCard('Online', connected, devices.length ? `<b class="up">${Math.round(100 * connected / devices.length)}%</b> online` : '', 'wifi', 'green')}
+        ${statCard('Need attention', attention, 'degraded or in error', 'alert', 'amber')}
+        ${statCard('Updating', otaPending, 'update offered or in progress', 'refresh', 'blue')}
+        ${statCard('Offline', devices.length - connected, devices.length ? `${Math.round(100 * (devices.length - connected) / devices.length)}%` : '', 'wifiOff', 'red')}
       </div>
 
       <div class="card">
         <div class="card-header">
-          <h2>All devices (C6 nodes + student modules)</h2>
+          <div><h2>Classroom devices</h2><div class="card-sub">Gateways (C6) and hubs (S3): health, firmware and updates</div></div>
         </div>
         ${devices.length === 0 ? '<p class="text-muted" style="padding:1rem">No devices have registered yet. Devices report on first boot via /api/device/register.</p>' : ''}
         <div class="table-responsive">
@@ -2071,7 +1439,7 @@ async function renderAdminModules(app) {
                     <strong>${escHtml(d.device_name || d.mac_address)}</strong><br>
                     <span class="text-muted text-sm">${escHtml(d.mac_address)}</span>
                   </td>
-                  <td><span class="badge badge-outline">${escHtml(d.device_type)}</span></td>
+                  <td><span class="badge">${icon(d.device_type === 'c6' ? 'router' : d.device_type === 's3' ? 'hub' : 'module', 'sm')} ${escHtml({ c6: 'Gateway', s3: 'Hub', student: 'Student module' }[d.device_type] || d.device_type)}</span></td>
                   <td>
                     ${healthBadge(d)}
                     ${d.is_active ? '' : '<span class="badge badge-danger">disabled</span>'}
@@ -2079,20 +1447,20 @@ async function renderAdminModules(app) {
                   </td>
                   <td class="text-sm">
                     v${escHtml(d.firmware_version || '0.0.0')}
-                    ${d.verified_at ? '<br><span class="text-success text-sm">✓ verified</span>' : ''}
+                    ${d.verified_at ? `<br><span class="text-success text-sm">${icon('check', 'sm')} verified</span>` : ''}
                   </td>
                   <td class="text-sm">
-                    ${d.pending_version ? `→ v${escHtml(d.pending_version)} <span class="badge badge-outline">${escHtml(d.ota_status)}</span>` : '<span class="text-muted">up to date</span>'}
+                    ${d.pending_version ? `→ v${escHtml(d.pending_version)} <span class="badge badge-outline">${escHtml(d.ota_status)}</span>` : '<span class="text-muted nowrap">up to date</span>'}
                   </td>
                   <td class="text-sm">${d.class_code ? `${escHtml(d.class_code)} · ${escHtml(d.class_name)}` : '—'}</td>
                   <td class="text-sm text-center">${d.device_type === 'c6' ? (d.student_count || 0) : '—'}</td>
                   <td class="text-sm text-center">${d.free_heap ? formatBytes(d.free_heap) : '—'}</td>
                   <td class="text-sm text-center">${d.total_flash ? formatBytes(d.total_flash) : '—'}</td>
-                  <td class="nowrap">
+                  <td><div class="row-actions" style="justify-content:flex-start">
                     <button class="btn btn-xs btn-outline" onclick="window._showDiagnostics(${d.id})">Diagnostics</button>
-                    <button class="btn btn-xs btn-outline" onclick="window._pushOta(${d.id}, '${escHtml(d.device_name || d.mac_address).replace(/'/g, "\\'")}', '${escHtml(d.device_type)}', '${escHtml(d.firmware_version || '')}')">Push OTA</button>
+                    <button class="btn btn-xs btn-outline" onclick="window._pushOta(${d.id}, ${jsArg(d.device_name || d.mac_address)}, ${jsArg(d.device_type)}, ${jsArg(d.firmware_version || '')})">Push OTA</button>
                     ${d.is_active && !d.verified_at ? `<button class="btn btn-xs btn-outline" onclick="window._verifyModule(${d.id})">Verify</button>` : ''}
-                  </td>
+                  </div></td>
                 </tr>
               `).join('')}
             </tbody>
@@ -2246,7 +1614,7 @@ function signatureBadge(a) {
       : '<span class="badge badge-sm badge-outline" title="No signature">unsigned</span>';
   }
   const key = escHtml(a.signer.slice(0, 16));
-  if (a.signed_by_site_key === true) return `<span class="badge badge-sm badge-success" title="Signed with the site key ${key}…">signed ✓</span>`;
+  if (a.signed_by_site_key === true) return `<span class="badge badge-sm badge-success" title="Signed with the site key ${key}…">signed <svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span>`;
   if (a.signed_by_site_key === false) return `<span class="badge badge-sm badge-danger" title="Signed with key ${key}…, not the site key: never deployed">other key</span>`;
   return `<span class="badge badge-sm badge-outline" title="Signed with key ${key}…">signed</span>`;
 }
@@ -2256,13 +1624,13 @@ function qualificationBadge(a) {
   const q = a.qualification;
   if (!q) return '<span class="badge badge-sm badge-outline" title="Checked when it is first approved or deployed">not checked yet</span>';
   return q.status === 'qualified'
-    ? '<span class="badge badge-sm badge-success" title="Image analysis and the OTA client simulation passed">qualified ✓</span>'
+    ? '<span class="badge badge-sm badge-success" title="Image analysis and the OTA client simulation passed">qualified <svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span>'
     : '<span class="badge badge-sm badge-danger" title="Not offered to any device: open History for the report">not qualified</span>';
 }
 
 function qualificationReport(q) {
   if (!q) return '<p class="text-muted text-sm">Not checked yet.</p>';
-  const mark = (p) => p === true ? '✓' : p === false ? '✗' : '–';
+  const mark = (p) => p === true ? 'passed' : p === false ? 'failed' : 'not run';
   return `<ul class="text-sm">${q.stages.map(s => `<li><strong>${mark(s.passed)} ${escHtml(s.stage)}</strong>:
     ${escHtml(s.proves)}${s.problems.length ? `<ul>${s.problems.map(p => `<li class="text-danger">${escHtml(p)}</li>`).join('')}</ul>` : ''}</li>`).join('')}</ul>`;
 }
@@ -2288,15 +1656,19 @@ async function renderAdminFirmware(app) {
 
   app.innerHTML = `
     ${renderNavbar(user, '#/admin/firmware')}
-    <div class="container mt-2">
-      <div class="page-header">
-        <h1>Firmware</h1>
-        <p class="text-muted">Upload, approve and retire images. Only approved images can be pushed to devices.</p>
+    <div class="container">
+      ${pageHeader('Firmware & OTA', 'Upload, qualify, approve and deploy firmware to your classroom devices. Only qualified, approved images reach a device.',
+        `<button class="btn btn-primary" onclick="document.getElementById('fw-upload').scrollIntoView({behavior:'smooth'})">${icon('plus')} Upload firmware</button>`, todayLabel())}
+      <div class="stats-grid">
+        ${statCard('Registered images', images.length, `${images.filter(a => a.status === 'approved').length} approved · ${images.filter(a => a.status === 'uploaded').length} pending`, 'file')}
+        ${statCard('Active deployments', deployments.filter(d => ['running', 'paused', 'scheduled'].includes(d.status)).length, `${deployments.length} in total`, 'radio', 'blue')}
+        ${statCard('Devices updating', images.reduce((n, a) => n + (a.devices_pending || 0), 0), `${images.reduce((n, a) => n + (a.devices_running || 0), 0)} devices on a registered image`, 'refresh', 'green')}
+        ${statCard('Awaiting approval', images.filter(a => a.status === 'uploaded').length, 'qualified images need a second admin', 'alert', 'amber')}
       </div>
 
       <div class="card" id="fw-upload">
-        <div class="card-header"><h2>Upload an image</h2></div>
-        <div style="padding:1rem">
+        <div class="card-header"><div><h2>${icon('upload')} Upload an image</h2><div class="card-sub">The TrustedInstaller qualifies every upload before it can be approved.</div></div></div>
+        <div>
           <p class="form-hint" style="margin-top:0">
             The app <strong>.bin</strong> from <code>firmware/&lt;project&gt;/build/</code>. Device type, chip and version are read
             from the image itself; anything that isn't a valid, uncorrupted imPress image is refused. To publish a fix,
@@ -2304,7 +1676,7 @@ async function renderAdminFirmware(app) {
           </p>
           <div class="csv-drop" id="fw-drop" role="button" tabindex="0" aria-label="Choose a firmware image">
             <p style="margin:0 0 0.5rem">Drop a firmware .bin here or click to browse</p>
-            <input type="file" id="fw-file" accept=".bin,application/octet-stream" />
+            <input type="file" id="fw-file" class="sr-only" accept=".bin,application/octet-stream" />
             <button type="button" class="btn btn-sm btn-outline" id="fw-browse">Choose File</button>
           </div>
           <progress id="fw-progress" class="hidden" max="100" value="0" style="width:100%;margin-top:0.5rem"></progress>
@@ -2312,9 +1684,9 @@ async function renderAdminFirmware(app) {
         </div>
       </div>
 
-      <div class="flex gap-1 mt-2" role="tablist" aria-label="Device family" id="fw-tabs" style="flex-wrap:wrap">
+      <div class="filter-chips mt-2 mb-1" role="tablist" aria-label="Device family" id="fw-tabs">
         ${[['all', 'All devices'], ...Object.entries({ c6: 'Gateways (C6)', s3: 'Hubs (S3)', student: 'Student modules' })].map(([k, l]) =>
-          `<button class="btn btn-sm ${k === tab ? 'btn-primary' : 'btn-outline'}" role="tab" aria-selected="${k === tab}" data-tab="${k}">
+          `<button class="filter-chip ${k === tab ? 'active' : ''}" role="tab" aria-selected="${k === tab}" data-tab="${k}">
              ${l}${k === 'all' ? '' : ` <span class="text-sm">(${images.filter(a => a.target === k).length})</span>`}</button>`).join('')}
       </div>
 
@@ -2382,7 +1754,7 @@ async function renderAdminFirmware(app) {
   const showTab = (k) => {
     document.querySelectorAll('#fw-tabs [data-tab]').forEach(b => {
       const on = b.dataset.tab === k;
-      b.className = `btn btn-sm ${on ? 'btn-primary' : 'btn-outline'}`;
+      b.className = `filter-chip ${on ? 'active' : ''}`;
       b.setAttribute('aria-selected', String(on));
     });
     document.querySelectorAll('[data-family]').forEach(el => { el.hidden = k !== 'all' && el.dataset.family !== k; });
@@ -2671,64 +2043,6 @@ window._pushOta = async function (deviceId, name, deviceType, current) {
 
 // ── Faculty: Class List ───────────────────────────────────────
 
-async function renderClasses(app) {
-  const user = await authApi.me();
-  const classes = await classesApi.list();
-
-  function _schedChips(schedule) {
-    if (!schedule || schedule.length === 0) return '';
-    return schedule.map(s =>
-      `<span class="badge badge-outline schedule-chip">${escHtml(s.day)} ${escHtml(s.start)}–${escHtml(s.end)}</span>`
-    ).join(' ');
-  }
-
-  app.innerHTML = `
-    ${renderNavbar(user, '#/classes')}
-    <div class="container mt-2">
-      <div class="page-header">
-        <h1>My Classes</h1>
-      </div>
-
-      ${classes.length === 0 ? `
-        <div class="card">
-          <p class="text-muted" style="padding:1.5rem">No classes assigned yet. Contact your admin to get classes assigned to you.</p>
-        </div>
-      ` : `
-        <div class="grid-2">
-          ${classes.map(c => `
-            <a href="#/class?id=${c.id}" class="card card-hover class-card" style="text-decoration:none;color:inherit">
-              <div class="flex-between gap-2">
-                <h2 style="margin:0;min-width:0;overflow-wrap:anywhere">${escHtml(c.course_name || c.name)}</h2>
-                <span class="badge ${c.is_active ? 'badge-success' : 'badge-outline'}">${c.is_active ? 'Active' : 'Inactive'}</span>
-              </div>
-              ${c.course_code ? `<p class="text-muted mt-1">${escHtml(c.course_code)}${c.course_section ? ` — Section ${escHtml(c.course_section)}` : ''}${c.code && c.code !== c.course_code ? ` · Room code ${escHtml(c.code)}` : ''}</p>` : ''}
-              <div class="text-sm text-muted mt-1">
-                🧑‍🏫
-                ${(c.faculty_names && c.faculty_names.length)
-                  ? c.faculty_names.map(f => escHtml(f.full_name)).join(', ')
-                  : escHtml(c.teacher_name || 'Unassigned')}
-              </div>
-              <div class="class-meta">
-                ${c.classroom_code ? `<span class="chip">🏫 ${escHtml(c.classroom_code)}</span>` : ''}
-                ${c.term ? `<span class="chip">🗓 ${escHtml(c.term)} ${c.year || ''}</span>` : ''}
-                ${c.start_date ? `<span class="chip">${escHtml(c.start_date)} → ${escHtml(c.end_date || '?')}</span>` : ''}
-                ${c.exam_start_date ? `<span class="chip">Exams ${escHtml(c.exam_start_date)} → ${escHtml(c.exam_end_date || '?')}</span>` : ''}
-              </div>
-              ${c.location ? `<div class="text-sm text-muted">📍 ${escHtml(c.location)}</div>` : ''}
-              <div class="mt-1">${_schedChips(c.meeting_schedule) || '<span class="text-muted text-sm">No schedule set</span>'}</div>
-              <div class="flex gap-2 mt-1 text-sm text-muted">
-                <span>🎓 ${c.student_count || 0} students</span>
-                <span>📝 ${c.quiz_count || 0} quizzes</span>
-                <span>📊 ${c.poll_count || 0} polls</span>
-              </div>
-            </a>
-          `).join('')}
-        </div>
-      `}
-    </div>
-  `;
-}
-
 // ── Live device presence (poll every 5s + WS push) ─────────────
 
 let liveDevicesTimer = null;
@@ -2753,7 +2067,7 @@ function _liveDeviceTile(d) {
       <div class="text-sm text-muted">${escHtml(d.device_type)} · ${escHtml(d.mac_address)}</div>
       <div class="text-sm ${online ? 'text-good' : 'text-muted'}">${online ? '● Online' : '○ Offline'}</div>
       <div class="text-sm text-muted">Last seen ${lastSeenStr} · ${agoStr}</div>
-      <div class="text-sm text-muted">🔋 ${d.battery_pct != null ? d.battery_pct : '—'}% · 📶 ${d.rssi != null ? d.rssi : '—'} dBm</div>
+      <div class="text-sm text-muted"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="7" width="17" height="10" rx="2"/><path d="M22 11v2"/><path d="M6 11v2"/></svg> ${d.battery_pct != null ? d.battery_pct : '—'}% · <svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.6a10 10 0 0 1 14 0"/><path d="M8.5 16.1a5 5 0 0 1 7 0"/><path d="M2 8.8a15 15 0 0 1 20 0"/><path d="M12 20h.01"/></svg> ${d.rssi != null ? d.rssi : '—'} dBm</div>
     </div>`;
 }
 
@@ -2856,19 +2170,19 @@ async function renderClassDetail(app, params) {
     <div class="container mt-2">
       <div class="page-header flex-between">
         <div>
-          <h1>${escHtml(cls.course_name || cls.name)}</h1>
+          <h1 class="flex gap-1" style="align-items:center;flex-wrap:wrap">${escHtml(cls.course_name || cls.name)} ${cls.is_active ? statusPill('live', 'Live now') : ''}</h1>
           ${cls.course_code ? `<p class="text-muted">${escHtml(cls.course_code)}${cls.course_section ? ` — Section ${escHtml(cls.course_section)}` : ''}</p>` : ''}
-          <div class="class-meta mt-1">
-            ${cls.term ? `<span class="chip">🗓 ${escHtml(cls.term)} ${cls.year || ''}</span>` : ''}
-            ${cls.start_date ? `<span class="chip">📅 ${escHtml(cls.start_date)} → ${escHtml(cls.end_date || '?')}</span>` : ''}
-            ${cls.exam_date ? `<span class="chip">🧾 Exam ${escHtml(cls.exam_date)}${cls.exam_start_time ? ` · ${escHtml(cls.exam_start_time)}${cls.exam_end_time ? `–${escHtml(cls.exam_end_time)}` : ''}` : ''}</span>` : ''}
-            ${cls.location ? `<span class="chip">📍 ${escHtml(cls.location)}</span>` : ''}
-            ${cls.capacity ? `<span class="chip">👥 Capacity: ${cls.capacity}</span>` : ''}
+          <div class="chips wrap mt-1">
+            ${cls.term ? `<span class="chip"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> ${escHtml(cls.term)} ${cls.year || ''}</span>` : ''}
+            ${cls.start_date ? `<span class="chip"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> ${escHtml(cls.start_date)} → ${escHtml(cls.end_date || '?')}</span>` : ''}
+            ${cls.exam_date ? `<span class="chip"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg> Exam ${escHtml(cls.exam_date)}${cls.exam_start_time ? ` · ${escHtml(cls.exam_start_time)}${cls.exam_end_time ? `–${escHtml(cls.exam_end_time)}` : ''}` : ''}</span>` : ''}
+            ${cls.location ? `<span class="chip"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg> ${escHtml(cls.location)}</span>` : ''}
+            ${cls.capacity ? `<span class="chip"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Capacity: ${cls.capacity}</span>` : ''}
           </div>
           <div class="flex gap-2 text-sm text-muted mt-1" style="flex-wrap:wrap">
-            <span>🎓 ${cls.student_count || 0} students</span>
+            <span><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> ${cls.student_count || 0} students</span>
             <span>
-              🧑‍🏫
+              <svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
               ${(cls.faculty_names && cls.faculty_names.length)
                 ? cls.faculty_names.map(f => escHtml(f.full_name)).join(', ')
                 : escHtml(cls.teacher_name || 'Unassigned')}
@@ -2885,8 +2199,8 @@ async function renderClassDetail(app, params) {
         </div>
         <div class="flex gap-1">
           ${cls.is_active
-            ? `<button class="btn btn-danger" onclick="deactivateClass('${classId}')">Deactivate</button>`
-            : `<button class="btn btn-success" onclick="activateClass('${classId}')">Activate</button>`
+            ? `<button class="btn btn-danger-soft" onclick="deactivateClass('${classId}')">${icon('power', 'sm')} End session</button>`
+            : `<button class="btn btn-primary" onclick="activateClass('${classId}')">${icon('play', 'sm')} Start session</button>`
           }
         </div>
       </div>
@@ -2896,7 +2210,7 @@ async function renderClassDetail(app, params) {
         <div class="card">
           <div class="card-header">
             <h2>Quizzes</h2>
-            <a href="#/quiz?class_id=${classId}" class="btn btn-sm btn-primary">+ New Quiz</a>
+            <a href="#/quiz?class_id=${classId}" class="btn btn-sm btn-primary">${icon('plus', 'sm')} New quiz</a>
           </div>
           ${quizzes.length === 0 ? '<p class="text-muted" style="padding:1rem">No quizzes yet.</p>' : ''}
           <div class="list-compact">
@@ -2911,10 +2225,10 @@ async function renderClassDetail(app, params) {
                   </div>
                 </div>
                 <div class="flex gap-1" id="quiz-actions-${q.id}">
-                  ${q.status === 'draft' ? `<button class="btn btn-sm btn-success" onclick="startQuiz(${q.id})">▶ Start</button>` : ''}
+                  ${q.status === 'draft' ? `<button class="btn btn-sm btn-success" onclick="startQuiz(${q.id})"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 4 14 8-14 8Z"/></svg> Start</button>` : ''}
                   ${q.status === 'active' ? `
                     <button class="btn btn-sm btn-primary" onclick="nextQuestion(${q.id})">Next →</button>
-                    <button class="btn btn-sm btn-danger" onclick="stopQuiz(${q.id})">⏹ Stop</button>
+                    <button class="btn btn-sm btn-danger" onclick="stopQuiz(${q.id})"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg> Stop</button>
                   ` : ''}
                   ${q.status === 'completed' ? `<a href="#/quiz-results?id=${q.id}" class="btn btn-sm btn-outline">Results</a>` : ''}
                 </div>
@@ -2927,7 +2241,7 @@ async function renderClassDetail(app, params) {
         <div class="card">
           <div class="card-header">
             <h2>Polls</h2>
-            <a href="#/poll?class_id=${classId}" class="btn btn-sm btn-primary">+ New Poll</a>
+            <a href="#/poll?class_id=${classId}" class="btn btn-sm btn-primary">${icon('plus', 'sm')} New poll</a>
           </div>
           ${polls.length === 0 ? '<p class="text-muted" style="padding:1rem">No polls yet.</p>' : ''}
           <div class="list-compact">
@@ -2942,8 +2256,8 @@ async function renderClassDetail(app, params) {
                   </div>
                 </div>
                 <div class="flex gap-1">
-                  ${p.status === 'draft' ? `<button class="btn btn-sm btn-success" onclick="startPoll(${p.id})">▶ Start</button>` : ''}
-                  ${p.status === 'active' ? `<button class="btn btn-sm btn-danger" onclick="endPoll(${p.id})">⏹ End</button>` : ''}
+                  ${p.status === 'draft' ? `<button class="btn btn-sm btn-success" onclick="startPoll(${p.id})"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 4 14 8-14 8Z"/></svg> Start</button>` : ''}
+                  ${p.status === 'active' ? `<button class="btn btn-sm btn-danger" onclick="endPoll(${p.id})"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg> End</button>` : ''}
                   ${p.status === 'closed' ? `<a href="#/poll-results?id=${p.id}" class="btn btn-sm btn-outline">Results</a>` : ''}
                 </div>
               </div>
@@ -2955,7 +2269,7 @@ async function renderClassDetail(app, params) {
       <!-- Live Devices (teacher dashboard — polling every 5s) -->
       <div class="card mt-2">
         <div class="card-header flex-between">
-          <h2>📡 Live Devices <span id="live-devices-count" class="badge badge-outline">…</span></h2>
+          <h2><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/></svg> Live Devices <span id="live-devices-count" class="badge badge-outline">…</span></h2>
           <span id="live-devices-updated" class="badge badge-outline">polling 5s</span>
         </div>
         <div id="live-devices-grid" class="device-grid">
@@ -2966,10 +2280,10 @@ async function renderClassDetail(app, params) {
       <!-- Students -->
       <div class="card mt-2">
         <div class="card-header">
-          <h2>🎓 Students (${students.length})</h2>
+          <h2><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Students (${students.length})</h2>
           <div class="flex gap-1" style="flex-wrap:wrap">
-            <button class="btn btn-sm btn-outline" onclick="toggleClassCsvImport()">⬆ Import CSV</button>
-            <button class="btn btn-sm btn-primary" onclick="toggleClassStudentForm()">+ Enroll Student</button>
+            <button class="btn btn-sm btn-outline" onclick="toggleClassCsvImport()"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg> Import CSV</button>
+            <button class="btn btn-sm btn-primary" onclick="toggleClassStudentForm()">${icon('plus', 'sm')} Enroll Student</button>
           </div>
         </div>
 
@@ -3024,7 +2338,7 @@ async function renderClassDetail(app, params) {
       ${isAdmin ? `
       <div class="card mt-2">
         <div class="card-header">
-          <h2>📡 Class Devices</h2>
+          <h2><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/></svg> Class Devices</h2>
           <a href="#/admin/modules" class="btn btn-sm btn-outline">Manage modules</a>
         </div>
         <div class="table-responsive">
@@ -3067,7 +2381,7 @@ async function renderClassDetail(app, params) {
       <!-- Live Feed -->
       <div class="card mt-2">
         <div class="card-header">
-          <h2>📡 Live Feed</h2>
+          <h2><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/></svg> Live Feed</h2>
           <span id="ws-status" class="badge badge-outline">Connecting...</span>
         </div>
         <div id="live-feed" class="live-feed"></div>
@@ -3132,7 +2446,7 @@ async function renderClassDetail(app, params) {
               try {
                 await studentsApi.enroll(parseInt(classId), sid);
                 enrolledIds.add(sid);
-                btn.textContent = '✓ Enrolled';
+                btn.textContent = 'Enrolled';
                 btn.className = 'btn btn-xs';
                 showToast('Student enrolled!', 'success');
                 await refreshClassRoster(parseInt(classId));
@@ -3175,7 +2489,7 @@ async function renderClassDetail(app, params) {
       classCsvStatus.textContent = `Importing ${f.name}…`;
       try {
         const result = await adminApi.importClassCsv(parseInt(classId), f);
-        classCsvStatus.innerHTML = `<span style="color:var(--success)">✓ ${result.inserted} imported</span>` +
+        classCsvStatus.innerHTML = `<span style="color:var(--success)"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> ${result.inserted} imported</span>` +
           (result.skipped.length ? ` · <span style="color:var(--warning)">${result.skipped.length} skipped</span>`
             + ` — ${result.skipped.map(e => `row ${e.row} (${escHtml(e.roll_number)}): ${escHtml(e.error)}`).join('; ')}` : '');
         showToast(`${result.inserted} student(s) imported into this class`, 'success');
@@ -3211,7 +2525,7 @@ async function renderClassDetail(app, params) {
     const feed = document.getElementById('live-feed');
     if (feed) {
       const line = document.createElement('p');
-      line.innerHTML = `<span class="text-muted">[${istTime(Date.now())}]</span> 📝 Quiz: <strong>${escHtml(data.title)}</strong> — Q${(data.question_order || 0) + 1}/${data.total_questions}: ${escHtml(data.question_text)}`;
+      line.innerHTML = `<span class="text-muted">[${istTime(Date.now())}]</span> <svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg> Quiz: <strong>${escHtml(data.title)}</strong> — Q${(data.question_order || 0) + 1}/${data.total_questions}: ${escHtml(data.question_text)}`;
       feed.prepend(line);
     }
   });
@@ -3219,7 +2533,17 @@ async function renderClassDetail(app, params) {
     const feed = document.getElementById('live-feed');
     if (feed) {
       const line = document.createElement('p');
-      line.innerHTML = `<span class="text-muted">[${istTime(Date.now())}]</span> ✅ Answer received — total: ${data.total_answers}`;
+      line.innerHTML = `<span class="text-muted">[${istTime(Date.now())}]</span> <svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg> Answer received — total: ${data.total_answers}`;
+      feed.prepend(line);
+    }
+  });
+  classSocket.on('answer_not_counted', (data) => {      // #186: a student who is not in this class
+    const what = data.kind === 'poll_vote' ? 'vote' : 'answer';
+    showToast(`${data.student_name || data.enrollment_number} (${data.enrollment_number}) is not enrolled in this class: their ${what} was not counted. Enrol them on the Students page if they belong here.`, 'error');
+    const feed = document.getElementById('live-feed');
+    if (feed) {
+      const line = document.createElement('p');
+      line.textContent = `[${istTime(Date.now())}] Not counted: ${data.enrollment_number} is not enrolled in this class`;
       feed.prepend(line);
     }
   });
@@ -3230,7 +2554,7 @@ async function renderClassDetail(app, params) {
     const feed = document.getElementById('live-feed');
     if (feed) {
       const line = document.createElement('p');
-      line.innerHTML = `<span class="text-muted">[${istTime(Date.now())}]</span> 🏁 Quiz ended: <strong>${escHtml(data.title)}</strong>`;
+      line.innerHTML = `<span class="text-muted">[${istTime(Date.now())}]</span> <svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg> Quiz ended: <strong>${escHtml(data.title)}</strong>`;
       feed.prepend(line);
     }
   });
@@ -3238,7 +2562,7 @@ async function renderClassDetail(app, params) {
     const feed = document.getElementById('live-feed');
     if (feed) {
       const line = document.createElement('p');
-      line.innerHTML = `<span class="text-muted">[${istTime(Date.now())}]</span> 📊 Poll live: <strong>${escHtml(data.title)}</strong>`;
+      line.innerHTML = `<span class="text-muted">[${istTime(Date.now())}]</span> <svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M8 17V10M13 17V6M18 17v-4"/></svg> Poll live: <strong>${escHtml(data.title)}</strong>`;
       feed.prepend(line);
     }
   });
@@ -3246,7 +2570,7 @@ async function renderClassDetail(app, params) {
     const feed = document.getElementById('live-feed');
     if (feed) {
       const line = document.createElement('p');
-      line.innerHTML = `<span class="text-muted">[${istTime(Date.now())}]</span> 🗳 Vote — total: ${data.total_votes}`;
+      line.innerHTML = `<span class="text-muted">[${istTime(Date.now())}]</span> <svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="5"/><rect x="12" y="8" width="3" height="9"/><rect x="17" y="5" width="3" height="12"/></svg> Vote — total: ${data.total_votes}`;
       feed.prepend(line);
     }
   });
@@ -3254,7 +2578,7 @@ async function renderClassDetail(app, params) {
     const feed = document.getElementById('live-feed');
     if (feed) {
       const line = document.createElement('p');
-      line.innerHTML = `<span class="text-muted">[${istTime(Date.now())}]</span> 📊 Poll ended: <strong>${escHtml(data.title)}</strong> — ${data.total_votes} votes`;
+      line.innerHTML = `<span class="text-muted">[${istTime(Date.now())}]</span> <svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M8 17V10M13 17V6M18 17v-4"/></svg> Poll ended: <strong>${escHtml(data.title)}</strong> — ${data.total_votes} votes`;
       feed.prepend(line);
     }
   });
@@ -3509,7 +2833,7 @@ async function renderQuizCreate(app, params) {
               </div>
             </div>
 
-            <button type="button" class="btn btn-outline mb-2" onclick="addQuizQuestion()">+ Add Question</button>
+            <button type="button" class="btn btn-outline mb-2" onclick="addQuizQuestion()">${icon('plus', 'sm')} Add Question</button>
 
             <div class="flex gap-1">
               <button type="submit" class="btn btn-primary">Create Quiz</button>
@@ -3688,7 +3012,7 @@ window.addQuizQuestion = function () {
   div.innerHTML = `
     <div class="flex-between">
       <h2 style="font-size:1rem">Question ${qi + 1}</h2>
-      <button type="button" class="btn btn-sm btn-danger" onclick="this.closest('[data-qi]').remove()">✕</button>
+      <button type="button" class="btn btn-sm btn-danger" onclick="this.closest('[data-qi]').remove()"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="form-group">
       <label>Question Text</label>
@@ -3784,7 +3108,7 @@ async function renderQuizResults(app, params) {
     <div class="container" style="max-width:800px">
       <a href="javascript:history.back()" class="text-muted" style="font-size:0.9rem">← Back</a>
       <div class="card mt-1">
-        <h1>📊 ${escHtml(results.title)}</h1>
+        <h1><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M8 17V10M13 17V6M18 17v-4"/></svg> ${escHtml(results.title)}</h1>
         <p class="text-muted">${results.status} · ${results.quiz_mode} · ${results.timing_mode}</p>
 
         ${results.results.map((q, i) => `
@@ -3797,7 +3121,7 @@ async function renderQuizResults(app, params) {
                 const pct = q.total_answers > 0 ? Math.round(count / q.total_answers * 100) : 0;
                 return `
                   <div class="result-bar-row">
-                    <span class="text-sm" style="min-width:120px">${j === q.correct_option ? '✅ ' : ''}${escHtml(opt)}</span>
+                    <span class="text-sm" style="min-width:120px">${j === q.correct_option ? '<svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg> ' : ''}${escHtml(opt)}</span>
                     <div class="result-bar-bg">
                       <div class="result-bar-fill" style="width:${pct}%"></div>
                     </div>
@@ -3827,7 +3151,7 @@ async function renderPollResults(app, params) {
     <div class="container" style="max-width:600px">
       <a href="javascript:history.back()" class="text-muted" style="font-size:0.9rem">← Back</a>
       <div class="card mt-1">
-        <h1>📊 ${escHtml(results.title)}</h1>
+        <h1><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M8 17V10M13 17V6M18 17v-4"/></svg> ${escHtml(results.title)}</h1>
         <p class="text-muted">${results.status} · ${results.total_votes} votes · ${results.poll_mode}</p>
 
         <div class="results-bars mt-1">
@@ -3875,20 +3199,20 @@ async function renderStudentDetail(app, params) {
     <div class="container" style="max-width:760px">
       <a href="#/class?id=${classId}" class="text-muted" style="font-size:0.9rem">← Back to Class</a>
       <div class="card mt-1">
-        <h1>🎓 ${escHtml(stu.name)}</h1>
+        <h1><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> ${escHtml(stu.name)}</h1>
         <p class="text-muted">${stu.roll_number ? `Roll #${escHtml(stu.roll_number)} · ` : ''}Student participation summary</p>
 
         <div class="stats-grid mt-1">
           <div class="stat-card">
-            <span class="stat-icon">📝</span>
+            <span class="stat-icon"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg></span>
             <div><div class="stat-value">${data.quizzes_answered}</div><div class="stat-label">Quizzes Attempted</div></div>
           </div>
           <div class="stat-card">
-            <span class="stat-icon">🗳️</span>
+            <span class="stat-icon"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="5"/><rect x="12" y="8" width="3" height="9"/><rect x="17" y="5" width="3" height="12"/></svg></span>
             <div><div class="stat-value">${data.polls_voted}</div><div class="stat-label">Polls Voted</div></div>
           </div>
           <div class="stat-card">
-            <span class="stat-icon">✅</span>
+            <span class="stat-icon"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg></span>
             <div><div class="stat-value">${data.attendance_count}</div><div class="stat-label">Classes Attended</div></div>
           </div>
         </div>
@@ -3924,43 +3248,20 @@ async function renderStudentDetail(app, params) {
   `;
 }
 
-// ── Theme Toggle ──────────────────────────────────────────────
-
-function toggleTheme() {
-  const root = document.documentElement;
-  const current = root.getAttribute('data-theme');
-  let next;
-  if (!current) {
-    // system default — detect current scheme
-    next = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark';
-  } else {
-    next = current === 'dark' ? 'light' : 'dark';
-  }
-  root.setAttribute('data-theme', next);
-  localStorage.setItem('impress_theme', next);
-  // update icon in navbar if present
-  const icon = document.getElementById('theme-icon');
-  if (icon) icon.textContent = next === 'dark' ? '☀️' : '🌙';
-}
-
-// Apply saved theme on load
-(function () {
-  const saved = localStorage.getItem('impress_theme');
-  if (saved) {
-    document.documentElement.setAttribute('data-theme', saved);
-    document.addEventListener('DOMContentLoaded', () => {
-      const icon = document.getElementById('theme-icon');
-      if (icon) icon.textContent = saved === 'dark' ? '☀️' : '🌙';
-    });
-  }
-})();
-
 // ── Helpers ────────────────────────────────────────────────────
 
+// Escapes for HTML text AND attribute values: a name containing a quote must
+// not be able to close an attribute and add its own (stored XSS, v2.2).
 function escHtml(str) {
   const div = document.createElement('div');
-  div.textContent = str || '';
-  return div.innerHTML;
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// A string argument for an inline handler: onclick="f(${jsArg(name)})".
+// JSON gives a valid JS literal; the HTML escaping keeps it inside the attribute.
+function jsArg(v) {
+  return escHtml(JSON.stringify(v == null ? '' : String(v)));
 }
 
 // ── Indian Standard Time (Asia/Kolkata, UTC+05:30) ─────────────────────
