@@ -208,3 +208,40 @@ async def _load(fn):
     from app.database import async_session
     async with async_session() as s:
         return await fn(s)
+
+
+def test_a_background_loop_cancelled_mid_query_stops(client):
+    """A task cancelled while its session is querying or committing must see
+    CancelledError: the gateway's rollback hook used to raise on the
+    invalidated connection instead, the loop's `except Exception` kept it
+    running, and the server's shutdown waited forever (Linux CI)."""
+    import asyncio
+
+    from sqlalchemy import text
+
+    from app.database import async_session
+    from app.models import Quiz
+
+    async def loop_body(commit):
+        while True:
+            try:
+                await asyncio.sleep(0)
+                async with async_session() as db:
+                    await db.execute(select(Quiz).limit(1))
+                    if commit:
+                        await db.execute(text("UPDATE users SET full_name = full_name WHERE 0"))
+                        await db.commit()
+            except asyncio.CancelledError:
+                return
+            except Exception:         # what the real loops do with "transient" errors
+                continue
+
+    async def main():
+        for i in range(120):
+            t = asyncio.create_task(loop_body(i % 2 == 1))
+            await asyncio.sleep(0.0005 * (i % 30))
+            t.cancel()
+            done, _ = await asyncio.wait({t}, timeout=3)
+            assert done, f"loop kept running after cancel (iteration {i})"
+
+    client.portal.call(main)

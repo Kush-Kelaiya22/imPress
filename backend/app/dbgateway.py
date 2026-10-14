@@ -43,7 +43,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-from sqlalchemy import event, select, text
+from sqlalchemy import event, exc, select, text
 
 logger = logging.getLogger(__name__)
 
@@ -437,7 +437,14 @@ def install(engine, metadata, session_class) -> None:
 
     @event.listens_for(sync_engine, "rollback")
     def _on_rollback(conn):
-        conn.info.pop("gw_touched", None)
+        # A task cancelled mid-query leaves an invalidated connection: reading
+        # its info raises, and that error would replace the CancelledError
+        # being handled (a background loop then never stops). Nothing to
+        # clear then: temp.gw_changes rolled back with the transaction.
+        try:
+            conn.info.pop("gw_touched", None)
+        except exc.SQLAlchemyError:
+            pass
 
     @event.listens_for(session_class, "before_flush")
     def _before_flush(session, flush_context, instances):
