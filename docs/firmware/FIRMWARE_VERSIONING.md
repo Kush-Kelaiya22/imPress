@@ -12,6 +12,18 @@ How a firmware version is set, carried, checked and compared, from the build to 
 
 There is one source per image, and the device never hard-codes its version. Before #33 the hub reported a constant `0.1.0`, whatever it was running.
 
+
+```mermaid
+flowchart LR
+    V["firmware/&lt;project&gt;/version.txt"] -- "idf.py build" --> A["esp_app_desc_t.version<br/>inside the .bin"]
+    A -- "upload" --> R["Registry: target, chip, version<br/>read from the image (422 if not X.Y.Z)"]
+    A -- "boot" --> D["Device reports FIRMWARE_VERSION<br/>in register and heartbeat"]
+    R -- "deployment: semver compare" --> E{"device version<br/>vs target"}
+    E -- "older" --> O["offered"]
+    E -- "same" --> X["excluded"]
+    E -- "newer" --> Y["excluded unless allow_downgrade"]
+```
+
 ## Rules
 
 1. **Semantic versions only.** `MAJOR.MINOR.PATCH` with digits only. The registry refuses an image whose embedded version isn't `X.Y.Z` (422).

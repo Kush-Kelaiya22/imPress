@@ -4,6 +4,18 @@ How imPress is tested, what each layer can and can't catch, and the rules every 
 
 ## Layers
 
+```mermaid
+flowchart BT
+    H["Hardware in the loop<br/>(issues for real boards)"]
+    E["CPU emulation: QEMU boot of hub and module builds"]
+    S["Protocol simulation: classroom_sim, gateway_sim, OTA client model"]
+    C["Host-compiled firmware C (ASan, UBSan)"]
+    B["Backend API, contract, fault injection, browser UI"]
+    A["Static: image analysis, structural guards, lint"]
+    A --> B --> C --> S --> E --> H
+```
+
+
 | Layer | Where | Runs on | Catches | Can't catch |
 |---|---|---|---|---|
 | Host C tests | `firmware/*/test_host` | gcc/clang with ASan + UBSan | logic bugs in pure firmware code (SPI slot codec, FIFO, mesh dedup, config overlay, OTA offer parsing, student set), memory errors, undefined behaviour | anything needing ESP-IDF drivers, radios or timing |

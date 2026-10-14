@@ -46,7 +46,7 @@ Fixed internal timings (code constants): presence sweep 15 s, offline after 30 s
 | `WIFI_SSID` | `impress-hotspot` | `wifi_ssid` (≤ 32) | 2.4 GHz, WPA2-PSK or better |
 | `WIFI_PASSWORD` | `impress123` | `wifi_pass` (≤ 64) | |
 | `WIFI_MAX_RETRY` | 10 | – | |
-| `BACKEND_HOST` | `192.168.137.1` | `backend_h` (≤ 127) | IP or hostname |
+| `BACKEND_HOST` | the Windows Mobile Hotspot host address ([placeholders](../reference/placeholders.md)) | `backend_h` (≤ 127) | set it to `<SERVER_IP>` or `<SERVER_NAME>` |
 | `BACKEND_PORT` | 8000 | `backend_p` (u16, 0 ignored) | |
 | `DEVICE_API_KEY` | `impress-device-key-2024` | `api_key` (≤ 127) | the shared provisioning key: sent as `X-API-Key` until the device is issued its own |
 | `BACKEND_TLS` | off | — | `https://` and `wss://` to the backend (#66); with `BACKEND_TLS_CRT_BUNDLE` (public CAs, default) or `BACKEND_TLS_CA_FILE` (`certs/backend_ca.pem` embedded). Same options on the S3 |
@@ -67,7 +67,7 @@ Kconfig menu **imPress S3 Class Module Configuration** → NVS namespace **`s3_c
 |---|---|---|---|
 | `WIFI_SSID` / `WIFI_PASSWORD` | `impress-hotspot` / `impress123` | `wifi_ssid` / `wifi_pass` | used only for the OTA hop |
 | `WIFI_MAX_RETRY` | 5 | – | |
-| `BACKEND_HOST` / `BACKEND_PORT` | `192.168.1.100` / 8000 | `backend_host` / `backend_port` | OTA hop target; **set to the same server as the C6** |
+| `BACKEND_HOST` / `BACKEND_PORT` | same default as the gateway / 8000 | `backend_host` / `backend_port` | OTA hop target; **set to the same server as the C6** |
 | `DEVICE_API_KEY` | `impress-device-key-2024` | `api_key` | shared provisioning key |
 | — | — | `dev_key` | the hub's own key, issued when it registers during its OTA hop (#66) |
 | `HEARTBEAT_INTERVAL_MS` | 5000 | – | S3 → C6 heartbeat + student sweep |
@@ -95,6 +95,15 @@ Compile-time constants (no menuconfig menu):
 NVS namespace **`impress`**: `enroll` (identity), `s_name`, `s_program`, `s_email` (local profile cache, never transmitted), `init_done`.
 
 ## Changing configuration on a deployed device
+
+```mermaid
+flowchart LR
+    K["Kconfig defaults<br/>(menuconfig, sdkconfig)"] -- "first boot only:<br/>written to NVS" --> N["NVS namespace<br/>impress (C6) / s3_cfg (S3)"]
+    N -- "every boot: NVS wins<br/>(empty or oversized values ignored, #18)" --> G["g_cfg in RAM"]
+    P["Settings partition<br/>(nvs_partition_gen.py)"] -- "flash" --> N
+    B["Backend: register reply"] -- "class_id, device key" --> N
+```
+
 
 | Option | How |
 |---|---|
