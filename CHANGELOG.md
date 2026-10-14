@@ -17,6 +17,10 @@ All notable changes to imPress, for the people who install and use it. Each pull
 - A gateway can be built with its classroom code (`CLASSROOM_CODE` in menuconfig) so the server links it to the class held in that room when it first registers. Empty by default: gateways are linked in the admin page as before.
 - `firmware/activate_idf.ps1` finds and activates an ESP-IDF installation in PowerShell on Windows. ([#114](https://github.com/Kush-Kelaiya22/imPress/issues/114))
 
+### Changed
+
+- A class with a roster now counts only its enrolled students' answers and votes. An answer from anyone else is not counted, and the teacher sees who it was on the live page, to enrol them if they belong there. A class with no enrolled students at all counts everyone, as before. ([#186](https://github.com/Kush-Kelaiya22/imPress/issues/186))
+
 ### Fixed
 
 - An unconfigured hub now looks for its updates on the same server as its gateway: the hub's built-in default server address differed from the gateway's. `firmware/activate_idf.ps1` no longer searches one developer's own drive.

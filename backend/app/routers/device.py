@@ -469,6 +469,20 @@ def _ints(*values) -> bool:
 _ANY_CLASS = None   # shared site key: not bound to one room
 
 
+async def _not_in_class(db: AsyncSession, class_id: int, student_id: int, kind: str) -> dict | None:
+    """#186: a class with a roster counts only its enrolled students. A class
+    with no enrolments at all (never set up) counts everyone, as before.
+    Returns the teacher notice for a student who is not in the class."""
+    enrolled = select(StudentEnrollment.id).where(StudentEnrollment.class_session_id == class_id)
+    if await db.scalar(enrolled.limit(1)) is None:
+        return None
+    if await db.scalar(enrolled.where(StudentEnrollment.student_id == student_id).limit(1)) is not None:
+        return None
+    student = await db.get(Student, student_id)
+    return {"class_id": class_id, "type": "answer_not_counted", "kind": kind,
+            "enrollment_number": student.roll_number, "student_name": student.student_name}
+
+
 async def _record_quiz_answer(db: AsyncSession, msg: dict, class_scope: int | None = _ANY_CLASS) -> dict | None:
     """Validate + de-duplicate one mesh quiz answer.
 
@@ -492,6 +506,9 @@ async def _record_quiz_answer(db: AsyncSession, msg: dict, class_scope: int | No
         return None
     if quiz_timer.answer_closed(quiz, order, istnow()):       # #73: pressed after the time ran out
         return None
+    notice = await _not_in_class(db, quiz.class_session_id, student_id, "quiz_answer")
+    if notice:
+        return notice
     dup = await db.execute(select(QuizAnswer.id).where(
         QuizAnswer.quiz_id == quiz_id, QuizAnswer.question_order == order,
         QuizAnswer.student_id == student_id))
@@ -517,6 +534,9 @@ async def _record_poll_vote(db: AsyncSession, msg: dict, class_scope: int | None
         return None
     if not 0 <= option < len(poll.options):
         return None
+    notice = await _not_in_class(db, poll.class_session_id, student_id, "poll_vote")
+    if notice:
+        return notice
     dup = await db.execute(select(PollVote.id).where(
         PollVote.poll_id == poll_id, PollVote.student_id == student_id))
     if dup.first() is not None:
@@ -591,6 +611,7 @@ async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db
     skipped = 0
     touched_device_ids: list[int] = []
     participation: list[dict] = []
+    not_counted: list[dict] = []                     # #186: answers from students not in the class
     denied: dict[str, str | None] = {}
     # A gateway with its own key reports for the class it is linked to, and
     # only that one (as its WebSocket, #121): answers, votes and room links
@@ -730,6 +751,10 @@ async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db
             event = await record(db, msg, scope)
             if event is None:
                 skipped += 1
+            elif event["type"] == "answer_not_counted":
+                skipped += 1
+                if all(n["enrollment_number"] != event["enrollment_number"] for n in not_counted):
+                    not_counted.append(event)                 # one notice per student per batch
             else:
                 participation.append(event)
                 processed += 1
@@ -740,6 +765,8 @@ async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db
     await commit_or_conflict(db, "Concurrent duplicate submission; retry", status=503)
     for event in participation:
         await _broadcast_participation(db, event)
+    for notice in not_counted:                       # names a student: teacher sockets only, never the gateway
+        await manager.broadcast_to_role(notice.pop("class_id"), notice, role="teacher")
     # Push the refreshed presence to any connected teachers.
     for dev_id in set(touched_device_ids):
         asyncio.create_task(_push_after_commit(dev_id))
