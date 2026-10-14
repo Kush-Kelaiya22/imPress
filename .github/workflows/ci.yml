@@ -450,7 +450,7 @@ jobs:
           docker run -d --name impress -p 8000:8000 -e IMPRESS_REQUIRE_HTTPS=false -e IMPRESS_INITIAL_ADMIN_PASSWORD impress-backend:ci
           for _ in $(seq 60); do curl -sf http://127.0.0.1:8000/health && break; sleep 1; done
           key=$(docker exec impress sed -n 's/^IMPRESS_DEVICE_API_KEY=\([^ #]*\).*/\1/p' /data/.env)
-          python scripts/smoke_test.py --password "$IMPRESS_INITIAL_ADMIN_PASSWORD" --device-key "$key"
+          python scripts/smoke_test.py --password "$IMPRESS_INITIAL_ADMIN_PASSWORD" --device-key="$key"
           test "$(docker exec impress uname -m)" = "$([ ${{ matrix.arch }} = arm64 ] && echo aarch64 || echo x86_64)"
           docker exec -w /app/backend impress python -m app.manage --help > /dev/null   # the recovery command (#120)
       - name: Push and annotate like the release (local registry)

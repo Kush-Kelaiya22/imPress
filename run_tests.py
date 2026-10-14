@@ -194,6 +194,21 @@ def _missing(suite: Suite) -> str:
     return ", ".join(exe for exe in suite.requires if not shutil.which(exe))
 
 
+def _marker_applies(line: str) -> bool:
+    """False for a requirement whose environment marker excludes this
+    interpreter (`tzdata; sys_platform == "win32"` on Linux)."""
+    if ";" not in line:
+        return True
+    try:
+        from packaging.markers import Marker
+    except ImportError:
+        try:
+            from pip._vendor.packaging.markers import Marker
+        except ImportError:
+            return True
+    return Marker(line.split(";", 1)[1].strip()).evaluate()
+
+
 def _requirements(path: Path) -> list[str]:
     """Distribution names from a requirements file, following -r includes."""
     names = []
@@ -201,7 +216,7 @@ def _requirements(path: Path) -> list[str]:
         line = line.split("#", 1)[0].strip()
         if line.startswith("-r"):
             names += _requirements(path.parent / line[2:].strip())
-        elif line and not line.startswith("-"):
+        elif line and not line.startswith("-") and _marker_applies(line):
             names.append(re.split(r"[\[<>=!~;\s]", line, maxsplit=1)[0])
     return names
 

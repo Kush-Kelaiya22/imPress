@@ -24,6 +24,7 @@ import logging
 import os
 import sqlite3
 import tempfile
+from contextlib import closing
 from pathlib import Path
 
 from ..config import settings
@@ -90,7 +91,8 @@ def status() -> dict:
 def _copy_db(src: Path, dst: Path) -> None:
     """Consistent copy with SQLite's backup API (safe while the app writes)."""
     tmp = dst.with_suffix(".partial")
-    with sqlite3.connect(str(src)) as s, sqlite3.connect(str(tmp)) as d:
+    # closing(): `with connect()` only commits; Windows can't rename an open file
+    with closing(sqlite3.connect(str(src))) as s, closing(sqlite3.connect(str(tmp))) as d:
         s.backup(d)
     os.replace(tmp, dst)
     try:
@@ -123,7 +125,7 @@ async def restore_from(src: Path) -> None:
     def go():
         for attempt in range(50):
             try:
-                with sqlite3.connect(str(src)) as s, sqlite3.connect(str(db), timeout=5) as d:
+                with closing(sqlite3.connect(str(src))) as s, closing(sqlite3.connect(str(db), timeout=5)) as d:
                     s.backup(d)
                 return
             except sqlite3.OperationalError:

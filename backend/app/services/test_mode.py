@@ -30,6 +30,7 @@ import io
 import json
 import re
 import sqlite3
+from contextlib import closing
 import zipfile
 from pathlib import Path
 
@@ -88,7 +89,7 @@ async def _carry_session(source: Path, token_hash: str | None, user_id: int) -> 
     from ..dbgateway import SYSTEM, act_as
     from ..models import User, UserSession
     act_as(SYSTEM)
-    with sqlite3.connect(str(source)) as s:
+    with closing(sqlite3.connect(str(source))) as s:
         s.row_factory = sqlite3.Row
         srow = s.execute("SELECT * FROM user_sessions WHERE token_hash = ?", (token_hash,)).fetchone()
         urow = s.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -220,7 +221,7 @@ def file_for(kind: str, ident: str) -> Path:
 
 
 def counts_in(path: Path) -> dict:
-    with sqlite3.connect(str(path)) as c:
+    with closing(sqlite3.connect(str(path))) as c:
         q = lambda sql: c.execute(sql).fetchone()[0]  # noqa: E731
         return {"teachers": q("SELECT COUNT(*) FROM users WHERE role = 'teacher'"), "courses": q("SELECT COUNT(*) FROM courses"),
                 "students": q("SELECT COUNT(*) FROM students"), "classes": q("SELECT COUNT(*) FROM class_sessions"),
@@ -233,7 +234,7 @@ def export_zip(path: Path) -> bytes:
     from .sandbox import SHEETS
     cols = {s["name"]: [c["name"] for c in s["columns"]] for s in SHEETS}
     out = io.BytesIO()
-    with sqlite3.connect(str(path)) as c, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    with closing(sqlite3.connect(str(path))) as c, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         c.row_factory = sqlite3.Row
         users = {r["id"]: r["username"] for r in c.execute("SELECT id, username FROM users")}
         courses = {r["id"]: r["code"] for r in c.execute("SELECT id, code FROM courses")}
