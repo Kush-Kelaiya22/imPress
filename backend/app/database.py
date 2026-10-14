@@ -27,6 +27,12 @@ class Base(DeclarativeBase):
     pass
 
 
+# Every write passes the database gateway (v2.2, dbgateway.py).
+from sqlalchemy.orm import Session as _Session  # noqa: E402
+from . import dbgateway  # noqa: E402
+dbgateway.install(engine, Base.metadata, _Session)
+
+
 async def get_db():
     """Dependency that yields an async DB session."""
     async with async_session() as session:
@@ -76,6 +82,9 @@ async def init_db():
     from .migrations import migrate  # late import: migrations needs Base's metadata loaded
     from . import models  # noqa: F401  register every table on Base.metadata
     await migrate(engine, Base.metadata.create_all)
+    async with engine.begin() as conn:      # the gateway's seal tables exist before any write
+        await conn.run_sync(dbgateway.ensure_tables)
+    await engine.dispose()                  # new connections carry the gateway's triggers for every table
     scrubbed = await _scrub_raw_session_tokens()
     if scrubbed:
         logging.getLogger(__name__).warning(

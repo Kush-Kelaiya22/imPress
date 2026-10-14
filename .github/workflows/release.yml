@@ -241,6 +241,30 @@ jobs:
           cp "$src/partition_table/partition-table.bin" "$out/partition_table/"
           cp "$src/${{ matrix.project }}-full.bin" "$out/"
           (cd "$out" && find . -name '*.bin' -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+          # What was built, from what, with which tools; flash commands use the
+          # build's own offsets (flash_args), never typed-in ones.
+          . "$IDF_PATH/export.sh" >/dev/null
+          IDF="$(idf.py --version)" COMMIT="${{ needs.plan.outputs.sha }}" VERSION="${{ needs.plan.outputs.version }}" \
+            PROJECT="${{ matrix.project }}" python3 - "$out" <<'PY'
+          import hashlib, json, os, pathlib, sys
+          out = pathlib.Path(sys.argv[1]); fa = json.loads((out / "flasher_args.json").read_text())
+          chip, project = fa["extra_esptool_args"]["chip"], os.environ["PROJECT"]
+          app = fa["app"]["file"]
+          info = {"project": project, "chip": chip, "version": os.environ["VERSION"], "commit": os.environ["COMMIT"],
+                  "esp_idf": os.environ["IDF"], "flash_settings": fa["flash_settings"], "flash_files": fa["flash_files"],
+                  "app_sha256": hashlib.sha256((out / pathlib.Path(app).name).read_bytes()).hexdigest(),
+                  "status": "release build: compiled and packaged by CI. Not approved for over-the-air updates: "
+                            "upload the app image to the server, where the TrustedInstaller qualifies it and an "
+                            "administrator approves it."}
+          (out / "BUILD_INFO.json").write_text(json.dumps(info, indent=2) + "\n")
+          (out / "FLASHING.txt").write_text(
+              f"{project} ({chip}) {info['version']}, commit {info['commit']}\n\n"
+              f"New board, everything at once (erases saved settings):\n"
+              f"  esptool --chip {chip} -b 460800 write-flash 0x0 {project}-full.bin\n\n"
+              f"Same, as separate files at the offsets this build uses (from flash_args):\n"
+              f"  esptool --chip {chip} -b 460800 --before default-reset --after hard-reset write-flash @flash_args\n\n"
+              + "".join(f"  {o}  {f}\n" for o, f in sorted(fa["flash_files"].items(), key=lambda x: int(x[0], 16))))
+          PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-firmware-${{ matrix.project }}
@@ -257,6 +281,8 @@ jobs:
     permissions:
       contents: write
       issues: write          # creates the line's milestone on its first release
+      id-token: write        # build provenance: sign the attestation with the workflow's identity
+      attestations: write
     env:
       GH_TOKEN: ${{ github.token }}
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -312,6 +338,14 @@ jobs:
             cp "firmware-images/${p%%:*}/${p%%:*}-full.bin" "dist/$NAME-${p#*:}-full.bin"
           done
           (cd dist && sha256sum ./*.zip ./*.bin > SHA256SUMS.txt && cat SHA256SUMS.txt)
+      - name: Build provenance for the release files
+        # Anyone can check a download came from this workflow at this commit:
+        #   gh attestation verify <file> -R Kush-Kelaiya22/imPress
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.zip
+            dist/*.bin
       - name: Milestone for the line
         run: |
           # Test issues for every release of the line (and of lines built on it) go here.

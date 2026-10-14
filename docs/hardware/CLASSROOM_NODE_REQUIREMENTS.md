@@ -13,6 +13,18 @@ Every value below is labelled with where it came from:
 
 Nothing on this page has been measured on a running board. The runtime figures (heap in use, CPU load, latency, radio range, power) need the bench procedure [below](#runtime-figures-pending-hardware).
 
+
+```mermaid
+flowchart LR
+    subgraph Enclosure["Classroom node (one enclosure)"]
+        S3["ESP32-S3 hub<br/>mesh root, SPI master<br/>32 MB octal flash, PSRAM"]
+        C6["ESP32-C6 gateway<br/>Wi-Fi client, SPI slave<br/>8 MB flash"]
+        S3 -- "SPI: 4096-byte slots, CRC16<br/>+ two ready lines" --- C6
+    end
+    M["Up to 300 student modules<br/>ESP32, 4 MB flash"] -- "ESP-NOW, channel 1" --- S3
+    C6 -- "Wi-Fi" --- W["Classroom network → server"]
+```
+
 ## Static footprint (measured)
 
 These were measured on 2026-10-08. The build used ESP-IDF v6.1 in Docker (`espressif/idf:v6.1@sha256:81893c71…`), on `varun/v2.1` at `d472e06` plus this change, with `idf.py size`.

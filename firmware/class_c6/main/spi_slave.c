@@ -19,11 +19,13 @@
 #include "spi_slave.h"
 #include "config.h"
 #include "protocol.h"
+#include "spi_link.h"
 
 #include <string.h>
 #include "esp_log.h"
 #include "driver/spi_slave.h"
 #include "driver/gpio.h"
+#include "esp_random.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -43,6 +45,32 @@ static SemaphoreHandle_t s_tx_mutex;
 static SemaphoreHandle_t s_rx_sem;
 static volatile bool s_has_data = false;
 static uint32_t s_rx_errors = 0;
+
+/* Acknowledged slots (#182): trailers only once the hub has sent one. */
+static spi_link_t s_link;
+static uint8_t s_head_slot[SPI_SLOT_BYTES];          /* FIFO head, encoded */
+static uint8_t s_head[SPI_SLOT_PAYLOAD_MAX];         /* ... decoded */
+static uint8_t s_out[SPI_SLOT_PAYLOAD_MAX];          /* head + trailer */
+
+/* Build the next slot to clock out: the FIFO head (kept until the hub
+ * acknowledges it) and, once the hub uses them, the link trailer.
+ * Caller holds s_tx_mutex. @return true if it carries the FIFO head. */
+static bool load_tx(void)
+{
+    bool head = spi_slot_fifo_peek(&s_txq, s_head_slot);
+    int head_len = head ? spi_slot_decode(s_head_slot, s_head, sizeof s_head) : 0;
+    if (head_len < 0) {                               /* our own queue: cannot happen */
+        head = false;
+        head_len = 0;
+    }
+    int n = spi_link_tx(&s_link, head ? s_head : NULL, (size_t)head_len, s_out, sizeof s_out);
+    if (n < 0) {                                      /* refused at send time; never too large */
+        n = 0;
+        head = false;
+    }
+    spi_slot_encode(s_slot_tx, s_out, (size_t)n);
+    return head;
+}
 
 static void ready_update(void)
 {
@@ -89,6 +117,7 @@ int spi_slave_init(void)
     memset(s_slot_tx, 0, sizeof(s_slot_tx));
     spi_slot_fifo_init(&s_txq);
     s_tx_loaded = false;
+    spi_link_init(&s_link, (uint8_t)(1 + esp_random() % 255), false);
 
     gpio_config_t in_cfg = {
         .pin_bit_mask = BIT(PIN_READY_S3_TO_C6),
@@ -155,18 +184,23 @@ int spi_slave_read(uint8_t *buf, size_t buf_size)
     s_has_data = false;
 
     int n = spi_slot_decode(s_slot_rx, buf, buf_size);
+    bool acked = false;
     if (n < 0) {
         s_rx_errors++;
-        ESP_LOGW(TAG, "Dropped S3 slot (error %d, %lu total)", n, (unsigned long)s_rx_errors);
+        ESP_LOGW(TAG, "Dropped S3 slot (error %d, %lu total)%s", n, (unsigned long)s_rx_errors,
+                 s_link.peer ? ": the hub resends it" : "");
         n = 0;
+    } else {
+        n = (int)spi_link_rx(&s_link, buf, (size_t)n, &acked);   /* strips the trailer, drops repeats */
     }
 
-    /* The slot just clocked carried the FIFO head: it is delivered. */
+    /* Retire the slot just clocked: once the hub acknowledged it (#182),
+     * or, with a hub that doesn't acknowledge, once it was clocked. */
     xSemaphoreTake(s_tx_mutex, portMAX_DELAY);
-    if (s_tx_loaded) {
+    if (spi_link_drop_head(&s_link, s_tx_loaded, acked)) {
         spi_slot_fifo_drop(&s_txq);
     }
-    s_tx_loaded = spi_slot_fifo_peek(&s_txq, s_slot_tx);
+    s_tx_loaded = load_tx();
     ready_update();
     xSemaphoreGive(s_tx_mutex);
 
@@ -178,6 +212,10 @@ int spi_slave_read(uint8_t *buf, size_t buf_size)
 
 int spi_slave_send(const uint8_t *data, size_t len)
 {
+    if (len > SPI_SLOT_PAYLOAD_MAX - SPI_LINK_TRAILER) {   /* room for the link trailer (#182) */
+        ESP_LOGE(TAG, "Send too large: %d bytes (max %d)", (int)len, (int)(SPI_SLOT_PAYLOAD_MAX - SPI_LINK_TRAILER));
+        return SPI_SLOT_ERR_LEN;
+    }
     xSemaphoreTake(s_tx_mutex, portMAX_DELAY);
     int rc = spi_slot_fifo_push(&s_txq, data, len);
     ready_update();

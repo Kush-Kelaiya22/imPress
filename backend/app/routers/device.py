@@ -343,6 +343,8 @@ async def check_attendance(body: DeviceAttendance, db: AsyncSession = Depends(ge
         raise HTTPException(404, "Class not found")
     if not cls.is_active:
         raise HTTPException(400, "Class is not active")
+    if caller.device is not None and await class_id_for_device(db, caller.device) != cls.id:
+        raise HTTPException(403, "this gateway is not linked to that class")
 
     # Resolve student by enrollment number (primary identity)
     roll = (body.enrollment_number or "").strip().upper()
@@ -464,7 +466,24 @@ def _ints(*values) -> bool:
     return all(isinstance(v, int) and not isinstance(v, bool) for v in values)
 
 
-async def _record_quiz_answer(db: AsyncSession, msg: dict) -> dict | None:
+_ANY_CLASS = None   # shared site key: not bound to one room
+
+
+async def _not_in_class(db: AsyncSession, class_id: int, student_id: int, kind: str) -> dict | None:
+    """#186: a class with a roster counts only its enrolled students. A class
+    with no enrolments at all (never set up) counts everyone, as before.
+    Returns the teacher notice for a student who is not in the class."""
+    enrolled = select(StudentEnrollment.id).where(StudentEnrollment.class_session_id == class_id)
+    if await db.scalar(enrolled.limit(1)) is None:
+        return None
+    if await db.scalar(enrolled.where(StudentEnrollment.student_id == student_id).limit(1)) is not None:
+        return None
+    student = await db.get(Student, student_id)
+    return {"class_id": class_id, "type": "answer_not_counted", "kind": kind,
+            "enrollment_number": student.roll_number, "student_name": student.student_name}
+
+
+async def _record_quiz_answer(db: AsyncSession, msg: dict, class_scope: int | None = _ANY_CLASS) -> dict | None:
     """Validate + de-duplicate one mesh quiz answer.
 
     Mesh relays can deliver the same press several times, so (quiz, question,
@@ -480,11 +499,16 @@ async def _record_quiz_answer(db: AsyncSession, msg: dict) -> dict | None:
     quiz = await db.get(Quiz, quiz_id)
     if student_id is None or quiz is None or quiz.status != "active":
         return None
+    if class_scope is not _ANY_CLASS and quiz.class_session_id != class_scope:
+        return None                                   # another room's quiz: not this gateway's to report
     question = next((q for q in quiz.questions if q.order_num == order), None)
     if question is None or not 0 <= option < len(question.options):
         return None
     if quiz_timer.answer_closed(quiz, order, istnow()):       # #73: pressed after the time ran out
         return None
+    notice = await _not_in_class(db, quiz.class_session_id, student_id, "quiz_answer")
+    if notice:
+        return notice
     dup = await db.execute(select(QuizAnswer.id).where(
         QuizAnswer.quiz_id == quiz_id, QuizAnswer.question_order == order,
         QuizAnswer.student_id == student_id))
@@ -497,7 +521,7 @@ async def _record_quiz_answer(db: AsyncSession, msg: dict) -> dict | None:
             "quiz_id": quiz_id, "question_order": order}
 
 
-async def _record_poll_vote(db: AsyncSession, msg: dict) -> dict | None:
+async def _record_poll_vote(db: AsyncSession, msg: dict, class_scope: int | None = _ANY_CLASS) -> dict | None:
     """Validate + de-duplicate one mesh poll vote ((poll, student) is unique)."""
     poll_id, option = msg.get("poll_id"), msg.get("selected_option")
     if not _ints(poll_id, option):
@@ -506,8 +530,13 @@ async def _record_poll_vote(db: AsyncSession, msg: dict) -> dict | None:
     poll = await db.get(Poll, poll_id)
     if student_id is None or poll is None or poll.status != "active":
         return None
+    if class_scope is not _ANY_CLASS and poll.class_session_id != class_scope:
+        return None
     if not 0 <= option < len(poll.options):
         return None
+    notice = await _not_in_class(db, poll.class_session_id, student_id, "poll_vote")
+    if notice:
+        return notice
     dup = await db.execute(select(PollVote.id).where(
         PollVote.poll_id == poll_id, PollVote.student_id == student_id))
     if dup.first() is not None:
@@ -582,7 +611,14 @@ async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db
     skipped = 0
     touched_device_ids: list[int] = []
     participation: list[dict] = []
+    not_counted: list[dict] = []                     # #186: answers from students not in the class
     denied: dict[str, str | None] = {}
+    # A gateway with its own key reports for the class it is linked to, and
+    # only that one (as its WebSocket, #121): answers, votes and room links
+    # for another class are skipped. -1 = linked to no class: nothing matches.
+    scope = _ANY_CLASS
+    if caller.device is not None:
+        scope = await class_id_for_device(db, caller.device) or -1
     for msg in body.messages:
         msg_type = msg.get("type", "")
         # #66: a relayed message is accepted only for a gateway the caller may
@@ -653,6 +689,8 @@ async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db
             else:
                 cls = None
 
+            if cls and scope is not _ANY_CLASS and cls.id != scope:
+                cls = None                            # a room code that is not this gateway's class
             if cls:
                 # Identity is the enrollment number — we deliberately do NOT bind
                 # student device MACs here (no physical tracking).
@@ -710,9 +748,13 @@ async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db
 
         elif msg_type in ("quiz_answer", "poll_vote"):
             record = _record_quiz_answer if msg_type == "quiz_answer" else _record_poll_vote
-            event = await record(db, msg)
+            event = await record(db, msg, scope)
             if event is None:
                 skipped += 1
+            elif event["type"] == "answer_not_counted":
+                skipped += 1
+                if all(n["enrollment_number"] != event["enrollment_number"] for n in not_counted):
+                    not_counted.append(event)                 # one notice per student per batch
             else:
                 participation.append(event)
                 processed += 1
@@ -723,6 +765,8 @@ async def receive_batch(body: DeviceDataBatch, db: AsyncSession = Depends(get_db
     await commit_or_conflict(db, "Concurrent duplicate submission; retry", status=503)
     for event in participation:
         await _broadcast_participation(db, event)
+    for notice in not_counted:                       # names a student: teacher sockets only, never the gateway
+        await manager.broadcast_to_role(notice.pop("class_id"), notice, role="teacher")
     # Push the refreshed presence to any connected teachers.
     for dev_id in set(touched_device_ids):
         asyncio.create_task(_push_after_commit(dev_id))

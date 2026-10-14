@@ -76,11 +76,25 @@ def test_upload_stores_the_report_and_shows_it(client, h):
     assert a["qualification"]["status"] == "qualified"
 
 
+FAILED = {"status": "failed", "stages": [{"stage": "analysis", "passed": False,
+                                           "problems": ["forced by test"], "proves": ""}]}
+
+
+def _set_report(db, make):
+    """Store make(artifact) as the qualification report of every artifact."""
+    async def put(s):
+        from sqlalchemy import select
+        from app.models import FirmwareArtifact
+        for a in (await s.execute(select(FirmwareArtifact))).scalars():
+            a.qualification = make(a)
+        await s.commit()
+    db(put)
+
+
 def _fail_report(db):
-    async def fail(s):
-        await s.execute(text("""UPDATE firmware_artifacts SET qualification = '{"status": "failed", "stages":
-            [{"stage": "analysis", "passed": false, "problems": ["forced by test"], "proves": ""}]}'"""))
-    db(fail)
+    """As if the TrustedInstaller had run and failed the image."""
+    from app.services.qualification import attest
+    _set_report(db, lambda a: attest(FAILED, a))
 
 
 def test_approval_needs_a_passing_report(client, h, db):
@@ -111,3 +125,69 @@ def test_images_from_before_qualification_are_checked_on_demand(client, h, db):
     r = client.post("/api/admin/deployments?dry_run=true", headers=h,
                     json={"artifact_id": _artifact(client, h)["id"], "device_ids": [dev]}).json()
     assert r["excluded"] == []
+
+
+# ── Attestation (v2.2): a stored report is trusted only for its own image ──
+
+def _register_c6(client):
+    return client.post("/api/device/register", headers=DEVICE, json={
+        "mac_address": "48:F6:EE:00:00:01", "device_type": "c6", "firmware_version": "2.1.0"}).json()["device_id"]
+
+
+def _excluded(client, h, dev):
+    return client.post("/api/admin/deployments?dry_run=true", headers=h,
+                       json={"artifact_id": _artifact(client, h)["id"], "device_ids": [dev]}).json()["excluded"]
+
+
+def test_upload_stores_an_attested_report_for_these_bytes(client, h):
+    upload_firmware(client, h, "impress_class_c6", "2.2.0", approve=False)
+    r = _artifact(client, h)["qualification"]
+    assert r["subject"]["sha256"] == _artifact(client, h)["sha256"] and len(r["attestation"]) == 64
+
+
+def test_a_forged_passing_report_is_not_trusted(client, h, db, monkeypatch):
+    """Someone with database access marks an image qualified. The report is
+    not attested, so the TrustedInstaller recomputes it from the bytes; here
+    the bytes fail (qualify is replaced to stand for a bad image)."""
+    upload_firmware(client, h, "impress_class_c6", "2.2.0")
+    dev = _register_c6(client)
+    _set_report(db, lambda a: {"status": "qualified", "stages": []})
+    from app.services import trusted_installer
+    monkeypatch.setattr(trusted_installer, "qualify", lambda *a: FAILED)
+    assert "not qualified (analysis: forced by test)" in _excluded(client, h, dev)[0]["reason"]
+
+
+def test_an_edited_attested_report_is_not_trusted(client, h, db, monkeypatch):
+    upload_firmware(client, h, "impress_class_c6", "2.2.0")
+    dev = _register_c6(client)
+    from app.services.qualification import attest
+    _set_report(db, lambda a: {**attest(FAILED, a), "status": "qualified"})       # seal kept, content changed
+    from app.services import trusted_installer
+    monkeypatch.setattr(trusted_installer, "qualify", lambda *a: FAILED)
+    assert _excluded(client, h, dev)[0]["reason"].startswith("not qualified")
+
+
+def test_a_report_copied_from_another_image_is_not_trusted():
+    from types import SimpleNamespace
+    from app.services.qualification import SUBJECT_FIELDS, attest, attested
+    a = SimpleNamespace(**{f: f"a-{f}" for f in SUBJECT_FIELDS})
+    b = SimpleNamespace(**{**vars(a), "sha256": "b-sha256"})
+    r = attest({"status": "qualified", "stages": []}, a)
+    assert attested(r, a) and not attested(r, b)
+
+
+def test_rotating_the_server_secret_invalidates_reports(monkeypatch):
+    from types import SimpleNamespace
+    from app.config import settings
+    from app.services.qualification import SUBJECT_FIELDS, attest, attested
+    a = SimpleNamespace(**{f: f"a-{f}" for f in SUBJECT_FIELDS})
+    r = attest({"status": "qualified", "stages": []}, a)
+    monkeypatch.setattr(settings, "JWT_SECRET", "a-new-secret-after-rotation")
+    assert not attested(r, a)
+
+
+def test_an_unattested_report_is_recomputed_from_the_bytes(client, h, db):
+    upload_firmware(client, h, "impress_class_c6", "2.2.0")
+    dev = _register_c6(client)
+    _set_report(db, lambda a: {"status": "failed", "stages": []})   # untrusted either way
+    assert _excluded(client, h, dev) == []                          # the real bytes qualify

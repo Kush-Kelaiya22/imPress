@@ -27,6 +27,17 @@ imPress does not try to replace AURIS: it keeps only what participation and devi
 
 ## Occupancy
 
+```mermaid
+flowchart TD
+    Q["Is room R booked between A and B?"] --> F{"Room code set and<br/>authoritative data fresh?"}
+    F -- no --> U["unknown: treated as busy<br/>(fail closed)"]
+    F -- yes --> W["Weekly slots of every class in R,<br/>on each date within the class's dates"]
+    W --> C["minus occurrences cancelled<br/>or moved away that date"]
+    C --> X["plus occurrences moved into R<br/>and extra sessions in R"]
+    X --> B["busy intervals overlapping A..B"]
+```
+
+
 `schedule.occupancy(db, classroom_code, start, end)` returns the booked intervals overlapping `[start, end)`:
 
 1. every regular slot of every class in that room, on each date within the class's dates;
@@ -37,6 +48,23 @@ imPress does not try to replace AURIS: it keeps only what participation and devi
 Callers treat unknown as busy (fail closed). Room codes are compared without case and surrounding spaces.
 
 ## Using it
+
+```mermaid
+sequenceDiagram
+    participant E as Deployment engine
+    participant S as schedule.occupancy()
+    participant D as Hub or gateway
+    E->>S: room of the device, now .. now + 20 min + buffers
+    alt busy or unknown
+        S-->>E: booked / unknown
+        E->>E: target deferred, next check at the next free window
+    else free, class not activated, no live quiz or poll
+        S-->>E: free
+        E->>D: offer (after the TrustedInstaller's checks)
+    end
+    Note over E,S: asked again before every device, so a class added<br/>after the deployment was created still blocks it
+```
+
 
 | Who | How |
 |---|---|

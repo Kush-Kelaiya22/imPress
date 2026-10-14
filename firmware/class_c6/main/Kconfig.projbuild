@@ -27,7 +27,10 @@ menu "imPress C6 Gateway Configuration"
             string "Backend IP or hostname"
             default "192.168.137.1"
             help
-                IP or hostname of the FastAPI backend.
+                IP or hostname of the FastAPI backend. The default is the
+                address Windows gives a computer sharing a Mobile Hotspot;
+                set your server's address (<SERVER_IP>) for any other setup.
+                The hub's BACKEND_HOST must name the same server.
 
         config BACKEND_PORT
             int "Backend port (HTTP, or HTTPS with BACKEND_TLS)"
@@ -49,6 +52,14 @@ menu "imPress C6 Gateway Configuration"
             help
                 Set to 0 to have the backend assign the class on first connect.
                 Set a positive integer to pin this gateway to a specific class.
+
+        config CLASSROOM_CODE
+            string "Classroom code (empty = link the gateway in the admin page)"
+            default ""
+            help
+                The physical room label (for example RM-201), sent at
+                registration so the backend links this gateway to the class
+                held in that room. Leave empty to link it by hand.
 
         config BACKEND_TLS
             bool "Use HTTPS / WSS to reach the backend"

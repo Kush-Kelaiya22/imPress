@@ -30,7 +30,8 @@ async def _cleanup_once() -> int:
     from ..models import UserSession
 
     now = istnow()
-    idle_cutoff = now - timedelta(minutes=settings.SESSION_IDLE_MINUTES)
+    # the longest idle limit anyone can have (faculty in class); validate_session applies the exact one
+    idle_cutoff = now - timedelta(minutes=max(settings.SESSION_IDLE_MINUTES, settings.SESSION_CLASS_IDLE_MINUTES))
 
     async with async_session() as db:
         result = await db.execute(

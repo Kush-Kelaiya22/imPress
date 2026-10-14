@@ -478,7 +478,9 @@ def test_publishing_needs_a_green_ci_push_on_an_integration_line(wf):
 def test_least_privilege_and_no_cancelled_releases(wf):
     assert wf["permissions"] == {"contents": "read"}
     assert wf["concurrency"]["cancel-in-progress"] is False
-    assert wf["jobs"]["release"]["permissions"] == {"contents": "write", "issues": "write"}
+    # id-token + attestations: only to sign the build-provenance attestation (v2.2)
+    assert wf["jobs"]["release"]["permissions"] == {"contents": "write", "issues": "write",
+                                                    "id-token": "write", "attestations": "write"}
     assert wf["jobs"]["status"]["steps"][0]["with"]["fetch-depth"] == 0              # ancestry needs every tag
     assert wf["jobs"]["image"]["permissions"] == {"contents": "read", "packages": "write"}
     assert wf["jobs"]["image-build"]["permissions"] == {"contents": "read", "packages": "write"}

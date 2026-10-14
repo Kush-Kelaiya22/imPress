@@ -108,6 +108,16 @@ async def _ws_user_from_token(token: str):
     return user if error is None else None
 
 
+def _same_origin(websocket: WebSocket) -> bool:
+    """A browser sends Origin on every WebSocket handshake; it must name this
+    server. Non-browser clients (scripts, tests) send none."""
+    origin = websocket.headers.get("origin")
+    if origin is None:
+        return True
+    from urllib.parse import urlsplit
+    return urlsplit(origin).netloc.lower() == (websocket.headers.get("host") or "").lower()
+
+
 async def _refuse(websocket: WebSocket, role: str, code: int, reason: str) -> None:
     """Refuse a socket so that its client can tell why (#160).
 
@@ -126,10 +136,10 @@ async def class_websocket(websocket: WebSocket, class_id: int):
     """
     WebSocket endpoint for real-time class communication.
 
-    Connect with: ws://host/ws/class/{class_id}?role=teacher|device&api_key=...&token=...
+    Connect with: wss://host/ws/class/{class_id}?role=teacher|device
 
     Roles:
-      - teacher   (browser): must present ?token=<login session token> of a user with
+      - teacher   (browser): the login session (HttpOnly cookie, or a bearer header) of a user with
                              access to this class (primary teacher, co-faculty, admin)
       - device    (C6):      must present the device key as an X-API-Key header
                              (or ?api_key= for older firmware); a per-device key
@@ -166,8 +176,14 @@ async def class_websocket(websocket: WebSocket, class_id: int):
                 await _refuse(websocket, role, refusal[0], refusal[1])
                 return
         elif role == "teacher":
-            token = websocket.query_params.get("token", "")
-            user = await _ws_user_from_token(token)
+            # The browser's session cookie (or a bearer header from a script),
+            # never a URL parameter. Browsers send cookies on cross-site
+            # WebSocket handshakes too, so the page must be one of ours.
+            if not _same_origin(websocket):
+                await _refuse(websocket, role, 4403, "cross-site WebSocket refused")
+                return
+            from ..auth import session_token_from
+            user = await _ws_user_from_token(session_token_from(websocket))
             if not is_staff(user):
                 await _refuse(websocket, role, 4401, "unauthorized teacher token")
                 return
@@ -182,6 +198,8 @@ async def class_websocket(websocket: WebSocket, class_id: int):
         await _refuse(websocket, role, 4400, "invalid role")
         return
 
+    from ..dbgateway import ANONYMOUS, act_as, as_device, as_user
+    act_as(as_user(user) if user is not None else as_device(None) if role == "device" else ANONYMOUS)
     await manager.connect(websocket, class_id, role, user_id=user.id if user is not None else None)
     logger.info(f"WS connected: class={class_id}, role={role}")
 
