@@ -93,7 +93,7 @@ cd firmware/class_c6
 idf.py menuconfig        # "imPress C6 Gateway Configuration": Wi-Fi, backend host/port, API key, classroom code
 idf.py -p /dev/ttyUSB0 flash monitor
 ```
-Windows (PowerShell): `firmware/activate_idf.ps1` finds an ESP-IDF install (`IDF_PATH`, the Espressif installer's profiles, `C:\esp`, `K:\esp`) and activates it in the current shell. Pass `-IdfRoot <folder>` if yours is elsewhere.
+Windows (PowerShell): `firmware/activate_idf.ps1` finds an ESP-IDF install (`IDF_PATH`, the Espressif installer's profiles, `C:\esp`) and activates it in the current shell. Pass `-IdfRoot <folder>` if yours is elsewhere.
 ```powershell
 . .\firmware\activate_idf.ps1
 cd firmware\class_c6
