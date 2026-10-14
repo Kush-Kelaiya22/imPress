@@ -350,7 +350,7 @@ function classCard(c, canManage) {
         ? `<button class="btn btn-danger-soft btn-sm" style="flex:1" onclick="classSession(${c.id}, false)">${icon('stop', 'sm')} End session</button>`
         : `<button class="btn btn-primary btn-sm" onclick="classSession(${c.id}, true)">${icon('play', 'sm')} Start session</button>`}
       ${canManage ? `<a href="#/admin/classes/new?id=${c.id}" class="btn btn-outline btn-sm btn-icon" title="Edit" aria-label="Edit ${escHtml(c.name)}">${icon('edit', 'sm')}</a>
-        <button class="btn btn-outline btn-sm btn-icon text-danger" title="Delete" aria-label="Delete ${escHtml(c.name)}" onclick="deleteClass(${c.id}, '${escHtml(c.name).replace(/'/g, "\\'")}')">${icon('trash', 'sm')}</button>` : ''}
+        <button class="btn btn-outline btn-sm btn-icon text-danger" title="Delete" aria-label="Delete ${escHtml(c.name)}" onclick="deleteClass(${c.id}, ${jsArg(c.name)})">${icon('trash', 'sm')}</button>` : ''}
     </div></article>`;
 }
 
@@ -508,15 +508,15 @@ function usersPanel(users, me) {
 
 function userRow(u, me) {
   const a = new Set(u.allowed_actions || []);
-  const name = escHtml(u.username).replace(/'/g, "\\'");
+  const name = jsArg(u.username);
   const roleIcon = { super_admin: 'crown', admin: 'shield', teacher: 'users' }[u.role] || 'user';
   const btns = [
     a.has('edit') && `<button class="btn btn-sm btn-outline btn-icon" title="Edit" aria-label="Edit ${escHtml(u.username)}" onclick="editUser(${u.id})">${icon('edit', 'sm')}</button>`,
-    u.signed_in && a.has('deactivate') && `<button class="btn btn-sm btn-outline btn-icon" title="End sessions" onclick="endUserSessions(${u.id}, '${name}')">${icon('logout', 'sm')}<span class="sr-only">End sessions</span></button>`,
-    a.has('deactivate') && `<button class="btn btn-sm btn-outline" onclick="setUserActive(${u.id}, '${name}', false)">Deactivate</button>`,
-    a.has('reactivate') && `<button class="btn btn-sm btn-outline" onclick="setUserActive(${u.id}, '${name}', true)">Reactivate</button>`,
-    a.has('reset_password') && `<button class="btn btn-sm btn-outline btn-icon" title="Reset password" onclick="resetUserPassword(${u.id}, '${name}')">${icon('key', 'sm')}<span class="sr-only">Reset pwd</span></button>`,
-    a.has('delete') && `<button class="btn btn-sm btn-danger-ghost btn-icon" title="Delete permanently" onclick="deleteUser(${u.id}, '${name}')">${icon('trash', 'sm')}<span class="sr-only">Delete permanently</span></button>`,
+    u.signed_in && a.has('deactivate') && `<button class="btn btn-sm btn-outline btn-icon" title="End sessions" onclick="endUserSessions(${u.id}, ${name})">${icon('logout', 'sm')}<span class="sr-only">End sessions</span></button>`,
+    a.has('deactivate') && `<button class="btn btn-sm btn-outline" onclick="setUserActive(${u.id}, ${name}, false)">Deactivate</button>`,
+    a.has('reactivate') && `<button class="btn btn-sm btn-outline" onclick="setUserActive(${u.id}, ${name}, true)">Reactivate</button>`,
+    a.has('reset_password') && `<button class="btn btn-sm btn-outline btn-icon" title="Reset password" onclick="resetUserPassword(${u.id}, ${name})">${icon('key', 'sm')}<span class="sr-only">Reset pwd</span></button>`,
+    a.has('delete') && `<button class="btn btn-sm btn-danger-ghost btn-icon" title="Delete permanently" onclick="deleteUser(${u.id}, ${name})">${icon('trash', 'sm')}<span class="sr-only">Delete permanently</span></button>`,
   ].filter(Boolean).join('');
   return `<tr data-user="${u.id}">
     <td><div class="cell-person">${avatar(u.full_name || u.username)}<div><b>${escHtml(u.full_name || u.username)}</b><span>${escHtml(u.email)} · @${escHtml(u.username)}</span></div></div></td>
@@ -785,7 +785,7 @@ function _renderStudentTable(students) {
         <button class="btn btn-sm btn-ghost btn-icon" title="Edit" aria-label="Edit" onclick="window._editStudent(${s.id})">${icon('edit', 'sm')}</button>
         ${s.is_active ? `<button class="btn btn-sm btn-ghost btn-icon" title="Deactivate" aria-label="Deactivate" onclick="window._deactivateStudent(${s.id})">${icon('pause', 'sm')}</button>`
           : `<button class="btn btn-sm btn-ghost btn-icon" title="Reactivate" aria-label="Reactivate" onclick="window._reactivateStudent(${s.id})">${icon('play', 'sm')}</button>`}
-        <button class="btn btn-sm btn-ghost btn-icon text-danger" title="Delete permanently" aria-label="Delete permanently" onclick="window._hardDeleteStudent(${s.id}, '${escHtml(s.student_name).replace(/'/g, "\\'")}')">${icon('trash', 'sm')}</button></div></td>
+        <button class="btn btn-sm btn-ghost btn-icon text-danger" title="Delete permanently" aria-label="Delete permanently" onclick="window._hardDeleteStudent(${s.id}, ${jsArg(s.student_name)})">${icon('trash', 'sm')}</button></div></td>
     </tr>`; }).join('')}</tbody></table></div>`;
 }
 

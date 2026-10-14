@@ -372,7 +372,7 @@ See [data integrity](../design/data-integrity.md).
 
 | Method & path | Permission | Notes |
 |---|---|---|
-| `GET /api/system/status` | public | `{version, db: "ok"\|"degraded", test_mode, test_mode_since}`; what every page needs for its banners |
+| `GET /api/system/status` | public | `{version, test_mode, test_mode_since}`; what every page needs for its banner. The database's integrity state is not public: administrators get it in the `status` events of `/api/events` (`{"type": "status", "db": "ok"\|"degraded"}`, to administrators only) |
 | `GET /api/events` | session (no activity refresh) | Server-Sent Events, one stream per signed-in browser. Events (`data:` JSON): `{"type": "status", "db", "test_mode"}` on connect and on change; `{"type": "changed", "topics": [table names]}` (coalesced, at most one per 300 ms), so open pages refetch; `{"type": "alert", "message", "level"}` (toasts; most go to administrators only); `{"type": "session_ended", "reason"}` then the stream closes. A comment line every 15 s keeps proxies from closing it |
 | `GET /api/admin/system/integrity` | audit.read | `{db, degraded: {since, message, restored_from}, last check {verified_at, ok, summary, rows}, test_mode, backups: [{name, size, modified}], backup_dir, interval_s}` |
 | `POST /api/admin/system/integrity/verify` | users.manage | verify now; refreshes the rolling backup if it verifies, restores and flags Degraded if not |

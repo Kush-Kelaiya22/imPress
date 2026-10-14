@@ -7,7 +7,8 @@ from conftest import auth, login, make_class, make_student, make_user
 
 def test_status_is_public(client):
     s = client.get("/api/system/status").json()
-    assert s["db"] == "ok" and s["test_mode"] is False and s["version"]
+    assert s["test_mode"] is False and s["version"]
+    assert "db" not in s                      # the integrity state is for administrators only
 
 
 def test_event_stream_starts_with_the_status_and_needs_a_session(client):
@@ -88,3 +89,16 @@ def test_reset_everything_keeps_only_the_acting_super_admin(client):
     r = client.post("/api/admin/system/clear", headers=su, json={"scope": "everything", "confirm": "RESET EVERYTHING"})
     assert r.status_code == 200
     assert [u["username"] for u in client.get("/api/admin/users", headers=su).json()] == ["admin"]
+
+
+def test_the_database_state_is_for_administrators_only(client):
+    from app.services import events
+    admin_sub, teacher_sub = events.subscribe(True, 1), events.subscribe(False, 2)
+    try:
+        events.status({"db": "degraded"}, "admins")
+        events.status({"test_mode": True})
+        got = lambda sub: [json.loads(sub.queue.get_nowait()) for _ in range(sub.queue.qsize())]
+        assert [e.get("db") for e in got(admin_sub)] == ["degraded", None]
+        assert got(teacher_sub) == [{"type": "status", "test_mode": True}]
+    finally:
+        events.unsubscribe(admin_sub), events.unsubscribe(teacher_sub)

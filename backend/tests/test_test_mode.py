@@ -90,3 +90,18 @@ def test_generated_data_is_unique_consistent_and_repeatable():
             key = (cl["teacher_username"], d, cl["start"])
             assert key not in slots, key
             slots[key] = cl["code"]
+
+
+def test_generated_teachers_get_a_password_that_is_random_per_session(client):
+    h = _super(client)
+    client.post("/api/admin/test-mode/enable", headers=h, json={})
+    pw1 = client.get("/api/admin/test-mode", headers=h).json()["test_password"]
+    assert pw1 and pw1 != "TestMode-Pass-2026" and len(pw1) >= 10
+    sheets = client.post("/api/admin/test-data/generate", headers=h, json={"seed": 3, "counts": {"teachers": 1, "students": 4, "classes": 1, "courses": 1}}).json()["sheets"]
+    assert client.post("/api/admin/test-data/import", headers=h, json={"sheets": sheets, "simulate_activity": False}).status_code == 200
+    teacher = sheets["teachers"][0]["username"]
+    assert client.post("/api/auth/login", json={"username": teacher, "password": pw1}).status_code == 200
+    client.post("/api/admin/test-mode/disable", headers=h)
+    assert client.get("/api/admin/test-mode", headers=h).json()["test_password"] is None
+    client.post("/api/admin/test-mode/enable", headers=h, json={})
+    assert client.get("/api/admin/test-mode", headers=h).json()["test_password"] != pw1

@@ -75,6 +75,10 @@ def write_state(**changes) -> dict:
     path = state_file()
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(state, indent=2, default=str))
+    try:
+        os.chmod(tmp, 0o600)              # it holds the test-mode password
+    except OSError:
+        pass
     os.replace(tmp, path)
     return state
 
@@ -210,14 +214,14 @@ async def _flag(message: str, restored: str | None) -> None:
         await log_activity(db, "system.db_degraded", None, "system", None, {"flag": True, "message": message})
         await db.commit()
     events.alert(message, "error")
-    events.status({"db": "degraded"})
+    events.status({"db": "degraded"}, "admins")
     logger.error(message)
 
 
 async def acknowledge() -> None:
     from . import events
     write_state(degraded=None)
-    events.status({"db": "ok"})
+    events.status({"db": "ok"}, "admins")
 
 
 async def check_and_backup() -> None:

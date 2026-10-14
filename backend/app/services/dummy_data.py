@@ -138,7 +138,6 @@ PATTERNS = [("Monday", "Wednesday", "Friday"), ("Tuesday", "Thursday"), ("Monday
             ("Tuesday", "Friday")]
 BUILDINGS = ["A", "B", "C", "L"]
 DOMAIN = "example.edu"            # a reserved domain: no real mailbox
-TEST_PASSWORD = "TestMode-Pass-2026"
 
 
 @dataclass

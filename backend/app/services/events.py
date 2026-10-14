@@ -98,5 +98,8 @@ def alert(message: str, level: str = "warning", audience: str = "admins") -> Non
     _deliver({"type": "alert", "level": level, "message": message}, audience)
 
 
-def status(payload: dict) -> None:
-    _deliver({"type": "status", **payload})
+def status(payload: dict, audience: str = "all") -> None:
+    """A state change for open pages. The database's integrity state is for
+    administrators only (audience="admins"): it tells an attacker when it
+    was tampered with."""
+    _deliver({"type": "status", **payload}, audience)

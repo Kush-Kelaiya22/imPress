@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import random
 import re
+import secrets
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 
@@ -24,7 +25,7 @@ from ..models import (Attendance, ClassSession, Course, Poll, PollVote, Quiz, Qu
                       StudentEnrollment, User)
 from ..schedule import WEEKDAYS
 from ..schemas import SEMESTERS
-from .dummy_data import TEST_PASSWORD, Taken
+from .dummy_data import Taken
 
 _HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 _ROLL = re.compile(r"^[A-Za-z0-9]{10}$")
@@ -244,7 +245,9 @@ async def import_sheets(db: AsyncSession, sheets: dict, actor: User, simulate: b
         return [{k: _s(v) for k, v in (r or {}).items()} for r in (sheets.get(name) or [])
                 if any(_s(v) for v in (r or {}).values())]
 
-    pw = hash_password(TEST_PASSWORD) if rows("teachers") else None     # one hash: same test password for all
+    from . import test_mode
+    password = test_mode.test_password() or secrets.token_urlsafe(9)     # this debug-mode session's password
+    pw = hash_password(password) if rows("teachers") else None             # one hash: same test password for all
     users = {u.username.lower(): u for u in (await db.execute(select(User))).scalars()}
     for r in rows("teachers"):
         u = User(username=r["username"].lower(), email=r["email"], full_name=r["full_name"], role="teacher",

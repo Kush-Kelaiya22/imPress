@@ -29,6 +29,7 @@ import csv
 import io
 import json
 import re
+import secrets
 import sqlite3
 from contextlib import closing
 import zipfile
@@ -52,6 +53,14 @@ def _root() -> Path:
     for sub in ("snapshots", "pending", "datasets"):
         (d / sub).mkdir(parents=True, exist_ok=True)
     return d
+
+
+def test_password() -> str | None:
+    """The password generated teachers get while debug mode is on: random for
+    each debug-mode session, so a published default can't open the accounts
+    of a server that is being tested."""
+    tm = integrity.read_state().get("test_mode") or {}
+    return tm.get("password") if tm.get("on") else None
 
 
 def state() -> dict:
@@ -145,7 +154,8 @@ async def enable(user, session, dataset: str | None = None) -> dict:
             if not (await integrity.verify_now()).ok:
                 await integrity.reseal_everything(f"dataset {dataset} loaded")
         integrity.write_state(test_mode={"on": True, "since": istnow().isoformat(), "by": user.username,
-                                         "snapshot": snap.name, "sha256": sha, "dataset": dataset})
+                                         "snapshot": snap.name, "sha256": sha, "dataset": dataset,
+                                         "password": secrets.token_urlsafe(9)})
         await _refresh_backups()
     events.status({"test_mode": True})
     events.alert("Debug mode is on: imPress is running on test data. Changes are not kept in the real database.",

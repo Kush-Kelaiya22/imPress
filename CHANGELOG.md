@@ -39,6 +39,8 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Security
 
+- Names with quotes can no longer break out of the web app's HTML (a teacher could create a class, or a device could register with a name, that ran script in an administrator's browser). Quotes are escaped everywhere, and inline handlers receive names as JSON.
+- The database's integrity state (*Degraded*) is no longer public: it is sent to administrators only. Debug mode's generated teacher accounts get a random password for each debug-mode session instead of a fixed one.
 - **One device per account:** while an account is signed in on one device, signing in from another device (another address, browser or system) is refused, written to the activity log as flagged, and shown to administrators as a notification. `IMPRESS_SINGLE_SESSION=false` turns it off.
 - Passwords are hashed with SHA-256 and then salted bcrypt (no length limit on passphrases). Existing passwords keep working and are upgraded at the next sign-in.
 - Every database write now passes a **database gateway** that checks the account's permission for that table; a refused write is flagged in the activity log and administrators are notified. Every row is sealed (HMAC-SHA256): a change made outside imPress (for example with an `sqlite3` command) is detected within 5 minutes, the last good temporary backup is restored automatically, the database is marked **Degraded**, and administrators get a notification. Temporary backups are kept in `IMPRESS_TEMP_BACKUP_DIR` (default: the system temporary folder). See [data integrity](docs/design/data-integrity.md).

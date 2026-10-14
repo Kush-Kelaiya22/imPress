@@ -41,8 +41,8 @@ RECHECK_S = 30
 async def system_status():
     st = integrity.status()
     tm = st.get("test_mode") or {}
-    return {"version": APP_VERSION, "db": st["db"], "test_mode": bool(tm.get("on")),
-            "test_mode_since": tm.get("since")}
+    # no database state here: the integrity state is for administrators (/api/events, System page)
+    return {"version": APP_VERSION, "test_mode": bool(tm.get("on")), "test_mode_since": tm.get("since")}
 
 
 @router.get("/api/events")
@@ -58,10 +58,14 @@ async def event_stream(request: Request, token: str = Depends(oauth2_scheme)):
 
 
 async def stream_events(token: str, user: User, is_disconnected):
-    sub = events.subscribe(admin=allowed(user, "users.manage"), user_id=user.id)
+    is_admin = allowed(user, "users.manage")
+    sub = events.subscribe(admin=is_admin, user_id=user.id)
     try:
         st = integrity.status()
-        yield _sse({"type": "status", "db": st["db"], "test_mode": bool((st.get("test_mode") or {}).get("on"))})
+        first = {"type": "status", "test_mode": bool((st.get("test_mode") or {}).get("on"))}
+        if is_admin:
+            first["db"] = st["db"]
+        yield _sse(first)
         last_check = asyncio.get_running_loop().time()
         while True:
             if await is_disconnected():

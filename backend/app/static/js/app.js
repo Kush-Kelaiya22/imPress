@@ -1458,7 +1458,7 @@ async function renderAdminModules(app) {
                   <td class="text-sm text-center">${d.total_flash ? formatBytes(d.total_flash) : '—'}</td>
                   <td><div class="row-actions" style="justify-content:flex-start">
                     <button class="btn btn-xs btn-outline" onclick="window._showDiagnostics(${d.id})">Diagnostics</button>
-                    <button class="btn btn-xs btn-outline" onclick="window._pushOta(${d.id}, '${escHtml(d.device_name || d.mac_address).replace(/'/g, "\\'")}', '${escHtml(d.device_type)}', '${escHtml(d.firmware_version || '')}')">Push OTA</button>
+                    <button class="btn btn-xs btn-outline" onclick="window._pushOta(${d.id}, ${jsArg(d.device_name || d.mac_address)}, ${jsArg(d.device_type)}, ${jsArg(d.firmware_version || '')})">Push OTA</button>
                     ${d.is_active && !d.verified_at ? `<button class="btn btn-xs btn-outline" onclick="window._verifyModule(${d.id})">Verify</button>` : ''}
                   </div></td>
                 </tr>
@@ -3250,10 +3250,18 @@ async function renderStudentDetail(app, params) {
 
 // ── Helpers ────────────────────────────────────────────────────
 
+// Escapes for HTML text AND attribute values: a name containing a quote must
+// not be able to close an attribute and add its own (stored XSS, v2.2).
 function escHtml(str) {
   const div = document.createElement('div');
-  div.textContent = str || '';
-  return div.innerHTML;
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// A string argument for an inline handler: onclick="f(${jsArg(name)})".
+// JSON gives a valid JS literal; the HTML escaping keeps it inside the attribute.
+function jsArg(v) {
+  return escHtml(JSON.stringify(v == null ? '' : String(v)));
 }
 
 // ── Indian Standard Time (Asia/Kolkata, UTC+05:30) ─────────────────────

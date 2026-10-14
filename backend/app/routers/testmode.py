@@ -37,7 +37,7 @@ def _err(e: TestModeError):
 
 @router.get("/test-mode")
 async def get_state(user: User = Depends(SUPER)):
-    return {**test_mode.state(), "test_password": dummy_data.TEST_PASSWORD}
+    return {**test_mode.state(), "test_password": test_mode.test_password()}
 
 
 class Enable(BaseModel):

@@ -91,7 +91,7 @@ flowchart LR
 - **Consistent:** generated in dependency order (teachers → courses → students → classes → enrolments → quizzes → polls), so every enrolment names a student and class that exist. Teachers have a home department; students take their own programme's courses first; a timetable never double-books a room or a teacher (Mon/Wed/Fri or Tue/Thu slots in teaching hours).
 - **Natural:** names come from regional and international pools; each department has its own course catalogue and question bank; roll numbers follow the institution's format (intake year + programme + serial); e-mails derive from names.
 
-Generated teachers sign in with the password shown on the page (`TestMode-Pass-2026`). It exists only in test data.
+Generated teachers sign in with the password shown on the page. It is random, new for each debug-mode session (it is not a published default), kept in the state file next to the database (readable by the server's user only), and it exists only in test data.
 
 ## Notes
 
