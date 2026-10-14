@@ -95,7 +95,7 @@ flowchart LR
 | Hub firmware | [`firmware/class_s3/`](firmware/class_s3/) | ESP-NOW mesh root, de-duplication, SPI master, over-the-air updates |
 | Student firmware | [`firmware/student/`](firmware/student/) | Buttons and optional OLED, mesh node and relay, enrollment-number identity |
 | Shared protocol | [`firmware/protocol/`](firmware/protocol/) | The single implementation of every on-wire format, used by all boards |
-| Web UI (dev) | [`frontend/`](frontend/) | Optional React + Vite dashboard |
+| React reference UI (non-product) | [`frontend/`](frontend/) | Optional development dashboard; not shipped and not required to match product features |
 
 <details>
 <summary><strong>How a single answer travels through the system</strong></summary>
@@ -150,7 +150,7 @@ Up to 300 student modules per room. Measured footprints, configurations and what
 | Python | 3.12 or newer | backend and tests |
 | C compiler (`cc`) | any recent clang or gcc | firmware host tests |
 | ESP-IDF or Docker | IDF v6.1 / any Docker | building and flashing firmware |
-| Node.js | 20 | optional React UI |
+| Node.js | 20 | optional React reference-UI build |
 
 ### Installation
 
@@ -246,7 +246,7 @@ Deploy an approved image to chosen devices, a class, a type or every compatible 
 2. Change the code and its tests together; run `python run_tests.py`.
 3. Open a pull request into `varun/v2.1`. It merges only when the **CI result** check is green.
 
-Local setup for each part (backend with reload, React UI, firmware): [development setup](docs/guides/development-setup.md).
+Local setup for each part (backend with reload, optional React reference UI, firmware): [development setup](docs/guides/development-setup.md).
 
 ## Testing
 
@@ -268,7 +268,7 @@ python run_tests.py --with-ui --with-idf --with-frontend
 | `host:*` | firmware C compiled on the host with AddressSanitizer and UBSan |
 | `repo` | CI workflow, repository hygiene, documentation consistency, install scripts, the runner itself |
 | `ui` (optional) | Playwright browser checks with screenshots |
-| `idf:*`, `frontend` (optional) | ESP-IDF v6.1 builds of the three firmware projects; the React build |
+| `idf:*`, `frontend` (optional) | ESP-IDF v6.1 builds of the three firmware projects; a build smoke test for the non-product React reference UI |
 
 CI runs every suite, the three firmware builds and a clean install on a fresh runner, behind one **CI result** check. GitHub's badges are per workflow, not per job, so the jobs are listed here:
 
@@ -328,7 +328,7 @@ imPress/
 │   ├── test_support/       shared host-test fakes (in-memory NVS)
 │   ├── tests/              structural firmware checks
 │   └── run_host_tests.sh   runs every host C suite
-├── frontend/               React and Vite development UI
+├── frontend/               optional React/Vite reference UI (not shipped)
 ├── docs/                   architecture, design, API, guides, reference, engineering, hardware, firmware, testing
 ├── scripts/                install.sh, start.sh, init_env.py, smoke_test.py
 ├── tests/                  repository, CI and documentation checks

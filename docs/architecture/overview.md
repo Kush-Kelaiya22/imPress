@@ -40,7 +40,7 @@ flowchart LR
 | Shared protocol | `firmware/protocol` | all three boards | Frame codec, SPI batch records, mesh de-duplication: one implementation used by every board. |
 | Backend | `backend/app` | Python 3.12+ | REST API, per-class WebSocket rooms, auth/sessions/RBAC, SQLite persistence, presence tracking, firmware store for OTA, and the admin/teacher single-page app. |
 | Teacher UI | `backend/app/static`, `templates` | browser | The production SPA served by the backend at `/`. |
-| React UI | `frontend/` | browser | A development dashboard (Vite). Optional. |
+| React reference UI | `frontend/` | browser | Optional development/reference dashboard (Vite), not shipped. The backend-served SPA is the sole product UI; feature parity is not required and product changes belong there unless a separate React use is explicitly approved. CI builds this directory only as a smoke test. |
 
 ## Why the system is split this way
 
