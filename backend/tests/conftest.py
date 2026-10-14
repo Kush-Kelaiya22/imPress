@@ -27,6 +27,7 @@ os.environ.update({
     # The in-process test client is neither HTTPS nor loopback; test_transport.py
     # checks the HTTPS rule itself (#152).
     "IMPRESS_REQUIRE_HTTPS": "false",
+    "IMPRESS_TEMP_BACKUP_DIR": str(_TMP / "backups"),
 })
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 

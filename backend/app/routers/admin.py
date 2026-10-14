@@ -350,6 +350,21 @@ async def reset_user_password(
     return {"status": "ok", "message": "Password reset"}
 
 
+@router.post("/users/{user_id}/end-sessions")
+async def end_user_sessions(
+    user_id: int,
+    user: User = Depends(require("users.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Sign a user out everywhere (v2.2): e.g. to free an account whose
+    other device still holds the only allowed session."""
+    target = await _target(db, user_id)
+    await accounts.revoke(db, target)
+    await log_activity(db, "user.end_sessions", user.id, "user", user_id)
+    await accounts.commit(db, revoked=target)
+    return {"status": "ok"}
+
+
 @router.delete("/users/{user_id}", status_code=204)
 async def delete_user(
     user_id: int,

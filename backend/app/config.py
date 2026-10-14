@@ -26,7 +26,11 @@ class Settings(BaseSettings):
     JWT_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
     # ── Session Auth (server-side) ──
-    SESSION_IDLE_MINUTES: int = 60       # 1 hour inactivity timeout
+    SESSION_IDLE_MINUTES: int = 5        # inactivity timeout (v2.2: 5 minutes)
+    SESSION_CLASS_IDLE_MINUTES: int = 30 # ... for faculty while one of their classes is in session
+    SINGLE_SESSION: bool = True          # refuse a second sign-in of one account from another device
+    TEMP_BACKUP_DIR: str = ""            # temporary integrity backups; "" = <system temp>/impress-backups
+    INTEGRITY_INTERVAL_S: int = 300      # verify the database and refresh the rolling backup this often
     SESSION_HARD_MINUTES: int = 360      # 6 hours hard limit
     SESSION_WARNING_MINUTES: int = 5     # warn when less than this many minutes remain before the hard limit
 
