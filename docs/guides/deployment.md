@@ -21,6 +21,20 @@ flowchart TB
 
 
 ### Host and process
+
+**Quick start on one computer (macOS, Linux, Windows): the launcher.** `./launcher.sh` or `launcher.bat` in the repository root installs what is missing (Python 3.12+ with Homebrew, apt, dnf or winget; the virtualenv; the dependencies; `backend/.env` with generated secrets), stops whatever listens on `IMPRESS_PORT` (default 8000) and starts the server in the foreground. Use it for a lab PC, a demo or a first try. For a server that must survive reboots, use the steps below with systemd.
+
+```mermaid
+flowchart LR
+    A[Python 3.12+?] -->|missing| B["install it<br/>brew · apt · dnf · winget"] --> C
+    A -->|found| C[backend/.venv]
+    C --> D[pip install<br/>skips what is there]
+    D --> E["backend/.env<br/>(secrets generated once)"]
+    E --> F{port in use?}
+    F -->|yes| G[stop that process] --> H
+    F -->|no| H[uvicorn, 1 worker]
+```
+
 ```bash
 git clone … imPress && cd imPress
 scripts/install.sh      # Python >= 3.12: backend/.venv, dependencies, backend/.env with generated secrets
@@ -119,6 +133,8 @@ Gateways and hubs speak plain `http://` and `ws://` unless they are built with *
 The device checks the server's certificate against the chosen trust and the host name; a mismatch is a connection error (logged, retried), never a fallback to HTTP.
 
 ### Backups
+imPress keeps two **temporary** copies for self-repair (start-up and a rolling copy every 5 minutes, in `IMPRESS_TEMP_BACKUP_DIR`, by default under the system temporary folder; see [data integrity](../design/data-integrity.md)). They are not backups: they live on the same machine and are replaced constantly. Point `IMPRESS_TEMP_BACKUP_DIR` at a folder only the service account can read (for example `/temp/backups`), and keep real backups as well:
+
 - `impress.db` is a single SQLite file: back it up with `sqlite3 impress.db ".backup '/backups/impress-$(date +%F).db'"` (safe while running).
 - Also back up `firmware_bins/` and `.env` (store `.env` separately, it holds secrets).
 
@@ -183,12 +199,13 @@ flowchart TD
     F --> G["Student modules: flash 2.2 over USB<br/>(answer acknowledgement needs 2.2 on hub and module)"]
 ```
 
-1. **Back up** as in step 1 above. 2.2 adds no database migration, but the backup is your way back.
+1. **Back up** as in step 1 above. 2.2 adds no schema migration (only its own integrity tables, created at start-up), but the backup is your way back.
 2. **Install and start** 2.2. Check `GET /health` from the server: `"version": "2.2.<n>"`.
 3. **Link every gateway** (*Admin → Modules*). A gateway with its own device key now records answers, votes and attendance **only for the class it is linked to**; an unlinked gateway's answers are skipped. A gateway built with `CLASSROOM_CODE` links itself when it registers.
-4. **Sign in again.** The web app keeps the session in an `HttpOnly` cookie instead of page storage, so each browser signs in once after the upgrade. Scripts that call the API keep using `Authorization: Bearer <token>`; cookie-authenticated changes from your own tools must send the header `X-Impress-Request: 1`.
-5. **Firmware.** Upload the 2.2 hub and gateway images on the *Firmware* page. The TrustedInstaller re-qualifies images registered under 2.1 automatically the first time they are needed (their reports were not sealed). Deploy as usual; hubs and gateways update in their rooms' free time.
-6. **Student modules** keep working on 2.1 firmware. To get answer acknowledgement (#181), flash 2.2 over USB once; a module only waits for confirmations from a hub that sends them.
+4. **Sign in again**, on one device per account (v2.2 refuses a second sign-in from another device; an administrator can end a stuck session under *User access → End sessions*). Sessions now end after 5 minutes without activity (30 minutes for a teacher during their class). At the first start, 2.2 seals the existing database (log: *Database re-sealed (first start with the database gateway)*); passwords are upgraded to the new hash as people sign in.
+5. **Browsers.** The web app keeps the session in an `HttpOnly` cookie instead of page storage, so each browser signs in once after the upgrade. Scripts that call the API keep using `Authorization: Bearer <token>`; cookie-authenticated changes from your own tools must send the header `X-Impress-Request: 1`.
+6. **Firmware.** Upload the 2.2 hub and gateway images on the *Firmware* page. The TrustedInstaller re-qualifies images registered under 2.1 automatically the first time they are needed (their reports were not sealed). Deploy as usual; hubs and gateways update in their rooms' free time.
+7. **Student modules** keep working on 2.1 firmware. To get answer acknowledgement (#181), flash 2.2 over USB once; a module only waits for confirmations from a hub that sends them.
 
 To go back, follow [recovery §6](../firmware/RECOVERY_PROCEDURE.md#6-undo-a-backend-upgrade); 2.1 ignores everything 2.2 added.
 

@@ -114,7 +114,11 @@ If resets persist on `v2`, log `esp_reset_reason()` at boot and run a soak with 
 | Symptom | Check |
 |---|---|
 | a gateway linked to the wrong class / presence shows the wrong root | fixed by #17 for new registrations; repair existing rows by re-registering the C6 with its `classroom_code` or admin re-link |
-| sessions expire unexpectedly | 60 min idle / 6 h hard by default; polling doesn't count as activity (by design) |
+| sessions expire unexpectedly | 5 min idle (30 min for staff during their class) / 6 h hard by default; live refresh and polling don't count as activity (by design). `IMPRESS_SESSION_IDLE_MINUTES` / `IMPRESS_SESSION_CLASS_IDLE_MINUTES` |
+| sign-in refused: *already signed in on another device* (409) | one device per account: sign out on the other device, or an administrator uses **End sessions** on the user (User access page). Behind a proxy that hides client addresses, set `IMPRESS_SINGLE_SESSION=false` |
+| red **Degraded** badge next to *System* | the database changed outside imPress and was restored from a backup; read the activity-log entry, then acknowledge it on the System page. See [data integrity](../design/data-integrity.md) |
+| `403 DB_WRITE_REFUSED` | the database gateway refused a write the account may not make; the activity log has the table and the reason |
+| `launcher.sh` / `launcher.bat` stopped another program | the launcher frees its port (`IMPRESS_PORT`, default 8000) by stopping what listens there; run imPress on another port with `IMPRESS_PORT=…` |
 | `database is locked` | multiple workers or external writers; run **one** uvicorn worker |
 | nobody can manage users (all super admins disabled or deleted) | run `python -m app.manage restore-super-admin --username <name>` on the server: [deployment → recovering administrator access](deployment.md#recovering-administrator-access) |
 | "This is the last active super admin" (409) | promote or reactivate another super admin first; the last one can't be deactivated, demoted or deleted (#116) |

@@ -38,9 +38,13 @@ Base URL: `http(s)://<host>:<port>`. All bodies are JSON unless marked *multipar
 // 200
 {"access_token": "impress_Q3h…", "token_type": "bearer",
  "expires_at": "2026-10-08T03:35:16", "created_at": "2026-10-07T21:35:16",
- "idle_timeout_s": 3600, "hard_timeout_s": 21600, "server_time": "2026-10-07T21:35:16"}
+ "idle_timeout_s": 300, "hard_timeout_s": 21600, "server_time": "2026-10-07T21:35:16"}
 ```
-Errors: `401` wrong username/password · `403` account disabled. Each login creates an independent session.
+Errors: `401` wrong username/password · `403` account disabled · `409 ALREADY_SIGNED_IN` the account is signed in on another device (v2.2, below).
+
+**One device per account (v2.2).** While the account has a live session from another device (a different client address, or a different browser or operating system), the sign-in is refused with `409 {"code": "ALREADY_SIGNED_IN", "message"}`, written to the activity log as a flagged `auth.second_sign_in_blocked` entry, and administrators get a toast. Signing in again from the **same** device is allowed and creates another session. The other device must sign out, or its session must expire, or an administrator ends it (`POST /api/admin/users/{id}/end-sessions`). `IMPRESS_SINGLE_SESSION=false` turns the rule off.
+
+**Idle limit (v2.2).** `idle_timeout_s` is 300 (5 minutes, `IMPRESS_SESSION_IDLE_MINUTES`). For a teacher or administrator while one of their classes is in session (activated, or inside a timetable slot, as primary teacher or co-faculty) it is 1800 (30 minutes, `IMPRESS_SESSION_CLASS_IDLE_MINUTES`). The session endpoints report the limit that applies now. Requests with `X-Impress-Background: 1` (the web app's live refresh) do not count as activity.
 
 ### `GET /api/auth/me`: session
 Returns `UserResponse`: `{id, username, email, full_name, role, is_active, created_at}`.
@@ -213,6 +217,7 @@ Conflicts reported as errors:
 | `POST /api/admin/classes/{id}/enroll-bulk` | teacher+ | `{student_ids: [...]}` |
 | `DELETE /api/admin/classes/{id}/unenroll/{student_id}` | teacher+ | |
 | `GET /api/admin/students/class/{id}` | teacher+ | roster |
+| `GET /api/admin/students/summary` | students.read | one row per visible student for the Students page: `[{id, classes, module_linked, attendance_pct, participation_pct}]` (percentages over the classes and quizzes of that student's classes; `null` when there is nothing to count) |
 | `GET /api/admin/students/{id}/participation` | teacher+ | `{student, quizzes_answered, total_quiz_answers, polls_voted, total_poll_votes, attendance_count, total_classes, quiz_details, poll_details}` |
 
 **Student CSV:** exactly these 7 columns, all required:
@@ -246,6 +251,7 @@ stateDiagram-v2
 |---|---|---|
 | `POST /api/quizzes/` | class access | `{class_session_id, title, questions: [{question_text, options (2-4), correct_option}], quiz_mode: planned|impromptu, timing_mode: per_question|total|manual, question_time_limit, total_time_limit}`; ≥ 1 question; `correct_option` must be `< len(options)` (422, #22). At most **4 options** (student modules have four buttons, #49). The response has `warnings`: text longer than a module can show (question 139, option 14 bytes of UTF-8) is accepted but truncated on the device. |
 | `GET /api/quizzes/class/{class_id}` | class access | newest first |
+| `GET /api/quizzes/overview` | participation.read | quizzes and polls of every class the caller can see, newest first, with `class_name`, `class_code` and the number of `answers` / `votes` (the Quizzes & polls page) |
 | `GET /api/quizzes/{id}` | class access (#20) | `QuizResponse {id, class_session_id, title, status, quiz_mode, timing_mode, question_time_limit, total_time_limit, current_question, is_live, question_count, created_at, started_at}` |
 | `POST /api/quizzes/{id}/start` | class access | draft only: already active → 400, completed → 409 (its answers are kept; create a new quiz, #76); broadcasts `quiz_question` (q 0) |
 | `POST /api/quizzes/{id}/next` | class access | any timing mode; not active → 400; broadcasts the next `quiz_question`, or completes. If the timer advanced the same question a moment earlier, returns the current state without advancing again |
@@ -359,6 +365,41 @@ Images are stored as `<FIRMWARE_DIR>/<sha256>.bin`, a name derived from the cont
 `strategy`: `{canary: 1, batch_size: 5, max_concurrent: 5, max_failures: 0, max_attempts: 2, timeout_s: 900}`. States and rules are in the [OTA architecture](../firmware/OTA_ARCHITECTURE.md).
 
 `POST /api/admin/modules/{id}/ota {version, allow_downgrade?}` is a one-device deployment, with the same exclusions: `409` with the reason.
+
+## System and data integrity (v2.2)
+
+See [data integrity](../design/data-integrity.md).
+
+| Method & path | Permission | Notes |
+|---|---|---|
+| `GET /api/system/status` | public | `{version, db: "ok"\|"degraded", test_mode, test_mode_since}`; what every page needs for its banners |
+| `GET /api/events` | session (no activity refresh) | Server-Sent Events, one stream per signed-in browser. Events (`data:` JSON): `{"type": "status", "db", "test_mode"}` on connect and on change; `{"type": "changed", "topics": [table names]}` (coalesced, at most one per 300 ms), so open pages refetch; `{"type": "alert", "message", "level"}` (toasts; most go to administrators only); `{"type": "session_ended", "reason"}` then the stream closes. A comment line every 15 s keeps proxies from closing it |
+| `GET /api/admin/system/integrity` | audit.read | `{db, degraded: {since, message, restored_from}, last check {verified_at, ok, summary, rows}, test_mode, backups: [{name, size, modified}], backup_dir, interval_s}` |
+| `POST /api/admin/system/integrity/verify` | users.manage | verify now; refreshes the rolling backup if it verifies, restores and flags Degraded if not |
+| `POST /api/admin/system/integrity/acknowledge` | users.manage | `{accept_current: false}`: clear the Degraded flag. `accept_current: true` (super admin only) also reseals the database as it is now |
+| `GET /api/admin/system/clear` | users.assign_role | the scopes with their description and confirmation phrase |
+| `POST /api/admin/system/clear` | users.assign_role | `{scope: "class_data"\|"everything", confirm: "DELETE CLASS DATA"\|"RESET EVERYTHING"}`; a backup is taken first; `{status, backup}`. Wrong phrase: `422 CONFIRM` |
+
+A write the database gateway refuses answers `403 {"code": "DB_WRITE_REFUSED", "message"}` on any route.
+
+## Debug mode and test data (v2.2)
+
+Super admins only (`users.assign_role`). See [debug mode and test data](../guides/test-mode.md).
+
+| Method & path | Notes |
+|---|---|
+| `GET /api/admin/test-mode` | `{on, since, by, pending: [{id, size}], datasets: [{name, size, saved_at, by, counts}], test_password}` |
+| `POST /api/admin/test-mode/enable` | `{dataset: null\|"<name>"}`. Verifies and snapshots the real database first (`409 DB_NOT_VERIFIED`, `409 ALREADY_ON`, `404 NO_DATASET`) |
+| `POST /api/admin/test-mode/disable` | back to the real database (its SHA-256 is checked first); the test database waits for a decision: `{…state, pending_id}` |
+| `POST /api/admin/test-mode/pending/{id}` | `{action: "save", name}` (1–48 letters, digits, spaces, `. _ -`; `409 NAME_TAKEN`) or `{action: "delete"}` |
+| `GET /api/admin/test-mode/{kind}/{id}/export.zip` | `kind` is `pending` or `dataset`; a zip with one CSV per table |
+| `DELETE /api/admin/test-mode/datasets/{name}` | |
+| `GET /api/admin/test-data/schema` | the sheets and their columns, generator defaults and limits, current table counts |
+| `POST /api/admin/test-data/generate` | `{seed, counts}` → `{seed, sheets}`; stores nothing |
+| `POST /api/admin/test-data/validate` | `{sheets}` → `{ok, errors: [{sheet, row, column, message}]}` |
+| `POST /api/admin/test-data/import` | `{sheets, simulate_activity, seed}` → `{ok, imported, activity}`; all or nothing (`422 INVALID_ROWS` with `errors`) |
+
+The `test-data` routes answer `409 TEST_MODE_OFF` while debug mode is off.
 
 ## Misc
 
