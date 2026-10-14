@@ -8,6 +8,13 @@ imPress is a classroom-response system with a FastAPI service, web clients and E
 
 README
 graph/index
+install/platforms
+install/flashing
+user-guide/README
+user-guide/administrator
+user-guide/teacher
+user-guide/glossary
+user-guide/faq
 architecture/overview
 guides/development-setup
 guides/deployment

@@ -70,6 +70,9 @@ The portal is deliberately served by imPress rather than embedded from GitHub: i
 
 ## Conventions used in these docs
 
+- **New reader path:** [install by platform](install/platforms.md) → [first 30 minutes](user-guide/README.md) → [administrator](user-guide/administrator.md) or [teacher](user-guide/teacher.md); use the [glossary](user-guide/glossary.md) and [FAQ](user-guide/faq.md) when needed.
+- **Hardware builders:** [build, configure and flash](install/flashing.md), then [device configuration](guides/configuration.md) and [hardware validation](testing/HARDWARE_VALIDATION.md).
+
 - **Paths** are relative to the repository root (`backend/app/routers/device.py`).
 - **"Gateway"** = the ESP32-C6 (`firmware/class_c6`); **"hub"/"root"** = the ESP32-S3 (`firmware/class_s3`); **"student module"/"node"** = `firmware/student`.
 - **Enrollment number** = the student's 10-character alphanumeric identity, called `roll_number` in the database and `enrollment` in firmware structs.
