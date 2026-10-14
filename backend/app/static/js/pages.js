@@ -66,10 +66,10 @@ function pagerHtml(state, total, size, onPage) {
     else if (nums[nums.length - 1] !== '…') nums.push('…');
   }
   return `<div class="pager">
-    <button ${state.page <= 1 ? 'disabled' : ''} onclick="${onPage}(${state.page - 1})" aria-label="Previous page">${icon('chevronLeft', 'sm')}</button>
+    <button ${state.page <= 1 ? 'disabled' : ''} ${callAttr(onPage, state.page - 1)} aria-label="Previous page">${icon('chevronLeft', 'sm')}</button>
     ${nums.map(n => n === '…' ? '<button disabled>…</button>'
-      : `<button class="${n === state.page ? 'active' : ''}" onclick="${onPage}(${n})">${n}</button>`).join('')}
-    <button ${state.page >= pages ? 'disabled' : ''} onclick="${onPage}(${state.page + 1})" aria-label="Next page">${icon('chevronRight', 'sm')}</button></div>`;
+      : `<button class="${n === state.page ? 'active' : ''}" ${callAttr(onPage, n)}>${n}</button>`).join('')}
+    <button ${state.page >= pages ? 'disabled' : ''} ${callAttr(onPage, state.page + 1)} aria-label="Next page">${icon('chevronRight', 'sm')}</button></div>`;
 }
 
 function downloadCsv(name, header, rows) {
@@ -165,11 +165,11 @@ async function renderAdminDashboard(app) {
           <div class="card">
             <div class="card-header"><div><h2>Classrooms today</h2><div class="card-sub">Activated now, or with a slot today</div></div>
               <a href="#/admin/classes" class="btn btn-sm btn-outline">All classrooms</a></div>
-            ${todays.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Classroom</th><th>Room</th><th>Time</th><th>Status</th><th>Students</th><th>Faculty</th><th></th></tr></thead><tbody>
+            ${todays.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Classroom</th><th class="col-wide">Room</th><th>Time</th><th>Status</th><th class="col-wide">Students</th><th class="col-wide">Faculty</th><th></th></tr></thead><tbody>
               ${todays.map(c => { const [k, t] = classStatus(c); const s = (c.meeting_schedule || []).find(x => x.day === day);
-                return `<tr><td><div class="cell-person">${classGlyph(c)}<div><b>${escHtml(c.course_name || c.name)}</b><span>${escHtml(c.code)}</span></div></div></td>
-                <td class="nowrap">${escHtml(c.classroom_code || '—')}</td><td class="nowrap">${s ? `${s.start}–${s.end}` : '—'}</td><td>${statusPill(k, t)}</td>
-                <td>${c.student_count || 0}</td><td class="text-sm">${escHtml(facultyText(c))}</td>
+                return `<tr><td><div class="cell-person">${classGlyph(c)}<div><b>${escHtml(c.course_name || c.name)}</b><span>${escHtml(c.code)}${c.classroom_code ? ` · ${escHtml(c.classroom_code)}` : ''}</span></div></div></td>
+                <td class="nowrap col-wide">${escHtml(c.classroom_code || '—')}</td><td class="nowrap">${s ? `${s.start}–${s.end}` : '—'}</td><td>${statusPill(k, t)}</td>
+                <td class="col-wide">${c.student_count || 0}</td><td class="col-wide text-sm">${escHtml(facultyText(c))}</td>
                 <td><a href="#/class?id=${c.id}" class="btn btn-sm btn-outline">Open</a></td></tr>`; }).join('')}
               </tbody></table></div>` : emptyState('No classes today', 'Timetabled and activated classrooms appear here.', 'calendar')}
           </div>
@@ -347,10 +347,10 @@ function classCard(c, canManage) {
     <div class="actions">
       <a href="#/class?id=${c.id}" class="btn btn-outline btn-sm">${icon('external', 'sm')} Open</a>
       ${c.is_active
-        ? `<button class="btn btn-danger-soft btn-sm" style="flex:1" onclick="classSession(${c.id}, false)">${icon('stop', 'sm')} End session</button>`
-        : `<button class="btn btn-primary btn-sm" onclick="classSession(${c.id}, true)">${icon('play', 'sm')} Start session</button>`}
+        ? `<button class="btn btn-danger-soft btn-sm" style="flex:1" ${callAttr('classSession', c.id, false)}>${icon('stop', 'sm')} End session</button>`
+        : `<button class="btn btn-primary btn-sm" ${callAttr('classSession', c.id, true)}>${icon('play', 'sm')} Start session</button>`}
       ${canManage ? `<a href="#/admin/classes/new?id=${c.id}" class="btn btn-outline btn-sm btn-icon" title="Edit" aria-label="Edit ${escHtml(c.name)}">${icon('edit', 'sm')}</a>
-        <button class="btn btn-outline btn-sm btn-icon text-danger" title="Delete" aria-label="Delete ${escHtml(c.name)}" onclick="deleteClass(${c.id}, ${jsArg(c.name)})">${icon('trash', 'sm')}</button>` : ''}
+        <button class="btn btn-outline btn-sm btn-icon text-danger" title="Delete" aria-label="Delete ${escHtml(c.name)}" ${callAttr('deleteClass', c.id, c.name)}>${icon('trash', 'sm')}</button>` : ''}
     </div></article>`;
 }
 
@@ -395,7 +395,7 @@ async function renderSessions(app) {
     ${renderNavbar(user, '#/sessions')}
     <div class="container">
       ${pageHeader('Quizzes & polls', 'Every quiz and poll of your classrooms: run them from the classroom, read the results here.',
-        `<button class="btn btn-primary" onclick="newSession()">${icon('plus')} Create session</button>`)}
+        `<button class="btn btn-primary" ${callAttr('newSession')}>${icon('plus')} Create session</button>`)}
       <div class="stats-grid">
         ${statCard('Quizzes', data.quizzes.length, `${data.quizzes.filter(q => q.status === 'completed').length} completed`, 'clipboard')}
         ${statCard('Live now', liveQ + livePolls, `${liveQ} quiz${liveQ === 1 ? '' : 'zes'} · ${livePolls} poll${livePolls === 1 ? '' : 's'}`, 'zap', liveQ + livePolls ? 'green' : '')}
@@ -414,13 +414,13 @@ async function renderSessions(app) {
         <div id="ses-table"></div>
       </div>
     </div>
-    <div id="new-session-modal" class="modal hidden"><div class="modal-backdrop" onclick="this.parentElement.classList.add('hidden')"></div>
+    <div id="new-session-modal" class="modal hidden"><div class="modal-backdrop" data-action="hide-parent"></div>
       <div class="modal-content card"><h2>Create a session</h2>
         <div class="form-group"><label for="ns-class">Classroom</label><select id="ns-class">${classes.map(c => `<option value="${c.id}">${escHtml(c.course_name || c.name)} · ${escHtml(c.code)}</option>`).join('')}</select></div>
         <div class="choice-grid"><label class="choice"><input type="radio" name="ns-type" value="quiz" checked><div><b>Quiz</b><span>Graded questions</span></div></label>
           <label class="choice"><input type="radio" name="ns-type" value="poll"><div><b>Poll</b><span>Live opinions</span></div></label></div>
-        <div class="modal-actions"><button class="btn btn-outline" onclick="document.getElementById('new-session-modal').classList.add('hidden')">Cancel</button>
-          <button class="btn btn-primary" onclick="goNewSession()">${icon('arrowRight', 'sm')} Continue</button></div></div></div>`;
+        <div class="modal-actions"><button class="btn btn-outline" data-action="hide" data-target="#new-session-modal">Cancel</button>
+          <button class="btn btn-primary" ${callAttr('goNewSession')}>${icon('arrowRight', 'sm')} Continue</button></div></div></div>`;
   const draw = () => {
     const q = SessionView.q.toLowerCase();
     const rows = (SessionView.tab === 'quizzes' ? data.quizzes : data.polls).filter(r =>
@@ -472,8 +472,8 @@ async function renderUserAccess(app, hash) {
     <div class="container">
       ${pageHeader('User access & activity log', 'Manage who can use imPress and review everything that happens in the workspace.', '', 'Administration')}
       <div class="tabs" role="tablist">
-        <button class="tab ${UserView.tab === 'users' ? 'active' : ''}" onclick="location.hash='#/admin/users'" role="tab">${icon('user', 'sm')} Users</button>
-        <button class="tab ${UserView.tab === 'activity' ? 'active' : ''}" onclick="location.hash='#/admin/activity'" role="tab">${icon('history', 'sm')} Activity log</button>
+        <button class="tab ${UserView.tab === 'users' ? 'active' : ''}" data-action="goto" data-href="#/admin/users" role="tab">${icon('user', 'sm')} Users</button>
+        <button class="tab ${UserView.tab === 'activity' ? 'active' : ''}" data-action="goto" data-href="#/admin/activity" role="tab">${icon('history', 'sm')} Activity log</button>
       </div>
       ${UserView.tab === 'users' ? usersPanel(users, user) : ''}
       ${activityPanel(activity, users, UserView.tab === 'users')}
@@ -492,10 +492,10 @@ function usersPanel(users, me) {
           ${[['all', 'All roles'], ['super_admin', 'Super admins'], ['admin', 'Admins'], ['teacher', 'Teachers'], ['inactive', 'Inactive']].map(([k, t]) => `<option value="${k}" ${UserView.role === k ? 'selected' : ''}>${t}</option>`).join('')}
         </select>
         <button class="btn btn-outline" id="btn-import-users-csv">${icon('upload', 'sm')} Import CSV</button>
-        <button class="btn btn-primary" onclick="document.getElementById('create-user-modal').classList.remove('hidden')">${icon('plus')} Invite user</button>
+        <button class="btn btn-primary" data-action="show" data-target="#create-user-modal">${icon('plus')} Invite user</button>
       </div></div>
     <div class="card hidden" id="users-csv-card" style="box-shadow:none;background:var(--surface-2)">
-      <div class="card-header"><h2>Import users from CSV</h2><button class="btn btn-sm btn-ghost btn-icon" aria-label="Close" onclick="document.getElementById('users-csv-card').classList.add('hidden')">${icon('x', 'sm')}</button></div>
+      <div class="card-header"><h2>Import users from CSV</h2><button class="btn btn-sm btn-ghost btn-icon" aria-label="Close" data-action="hide" data-target="#users-csv-card">${icon('x', 'sm')}</button></div>
       <p class="form-hint">Every row needs all five columns: <b>username</b> (3–64 letters, digits, _ .), <b>email</b>, <b>password</b> (at least 10 characters, not common, not the username), <b>full_name</b>, <b>role</b> (teacher or admin; admin needs a super admin).</p>
       <div class="csv-drop" id="users-csv-drop">${icon('upload', 'lg')}<p style="margin:6px 0">Drop a CSV file here or click to browse</p>
         <input type="file" id="users-csv-file" accept=".csv" style="display:none" /><button class="btn btn-sm btn-outline" id="users-csv-browse">Choose file</button></div>
@@ -508,15 +508,15 @@ function usersPanel(users, me) {
 
 function userRow(u, me) {
   const a = new Set(u.allowed_actions || []);
-  const name = jsArg(u.username);
+  const name = u.username;
   const roleIcon = { super_admin: 'crown', admin: 'shield', teacher: 'users' }[u.role] || 'user';
   const btns = [
-    a.has('edit') && `<button class="btn btn-sm btn-outline btn-icon" title="Edit" aria-label="Edit ${escHtml(u.username)}" onclick="editUser(${u.id})">${icon('edit', 'sm')}</button>`,
-    u.signed_in && a.has('deactivate') && `<button class="btn btn-sm btn-outline btn-icon" title="End sessions" onclick="endUserSessions(${u.id}, ${name})">${icon('logout', 'sm')}<span class="sr-only">End sessions</span></button>`,
-    a.has('deactivate') && `<button class="btn btn-sm btn-outline" onclick="setUserActive(${u.id}, ${name}, false)">Deactivate</button>`,
-    a.has('reactivate') && `<button class="btn btn-sm btn-outline" onclick="setUserActive(${u.id}, ${name}, true)">Reactivate</button>`,
-    a.has('reset_password') && `<button class="btn btn-sm btn-outline btn-icon" title="Reset password" onclick="resetUserPassword(${u.id}, ${name})">${icon('key', 'sm')}<span class="sr-only">Reset pwd</span></button>`,
-    a.has('delete') && `<button class="btn btn-sm btn-danger-ghost btn-icon" title="Delete permanently" onclick="deleteUser(${u.id}, ${name})">${icon('trash', 'sm')}<span class="sr-only">Delete permanently</span></button>`,
+    a.has('edit') && `<button class="btn btn-sm btn-outline btn-icon" title="Edit" aria-label="Edit ${escHtml(u.username)}" ${callAttr('editUser', u.id)}>${icon('edit', 'sm')}</button>`,
+    u.signed_in && a.has('deactivate') && `<button class="btn btn-sm btn-outline btn-icon" title="End sessions" ${callAttr('endUserSessions', u.id, name)}>${icon('logout', 'sm')}<span class="sr-only">End sessions</span></button>`,
+    a.has('deactivate') && `<button class="btn btn-sm btn-outline" ${callAttr('setUserActive', u.id, name, false)}>Deactivate</button>`,
+    a.has('reactivate') && `<button class="btn btn-sm btn-outline" ${callAttr('setUserActive', u.id, name, true)}>Reactivate</button>`,
+    a.has('reset_password') && `<button class="btn btn-sm btn-outline btn-icon" title="Reset password" ${callAttr('resetUserPassword', u.id, name)}>${icon('key', 'sm')}<span class="sr-only">Reset pwd</span></button>`,
+    a.has('delete') && `<button class="btn btn-sm btn-danger-ghost btn-icon" title="Delete permanently" ${callAttr('deleteUser', u.id, name)}>${icon('trash', 'sm')}<span class="sr-only">Delete permanently</span></button>`,
   ].filter(Boolean).join('');
   return `<tr data-user="${u.id}">
     <td><div class="cell-person">${avatar(u.full_name || u.username)}<div><b>${escHtml(u.full_name || u.username)}</b><span>${escHtml(u.email)} · @${escHtml(u.username)}</span></div></div></td>
@@ -558,7 +558,7 @@ window.endUserSessions = async function (id, name) {
 
 function userModals(isSuper) {
   return `
-    <div id="create-user-modal" class="modal hidden"><div class="modal-backdrop" onclick="this.parentElement.classList.add('hidden')"></div>
+    <div id="create-user-modal" class="modal hidden"><div class="modal-backdrop" data-action="hide-parent"></div>
       <div class="modal-content card"><h2>Invite a user</h2>
         <form id="create-user-form">
           <div class="form-grid-2">
@@ -569,10 +569,10 @@ function userModals(isSuper) {
           <div class="form-group"><label for="new-password">First password</label><input type="password" id="new-password" required minlength="10" autocomplete="new-password" />
             <span class="form-hint">At least 10 characters, not a common password, not the username. Hand it over in person.</span></div>
           <div class="form-group"><label for="new-role">Role</label><select id="new-role"><option value="teacher">Teacher</option>${isSuper ? '<option value="admin">Admin</option>' : ''}</select></div>
-          <div class="modal-actions"><button type="button" class="btn btn-outline" onclick="document.getElementById('create-user-modal').classList.add('hidden')">Cancel</button>
+          <div class="modal-actions"><button type="button" class="btn btn-outline" data-action="hide" data-target="#create-user-modal">Cancel</button>
             <button type="submit" class="btn btn-primary">Create</button></div>
         </form></div></div>
-    <div id="edit-user-modal" class="modal hidden"><div class="modal-backdrop" onclick="this.parentElement.classList.add('hidden')"></div>
+    <div id="edit-user-modal" class="modal hidden"><div class="modal-backdrop" data-action="hide-parent"></div>
       <div class="modal-content card"><h2>Edit user</h2>
         <form id="edit-user-form"><input type="hidden" id="edit-user-id" />
           <div class="form-group"><label for="edit-username">Username</label><input type="text" id="edit-username" disabled /></div>
@@ -581,7 +581,7 @@ function userModals(isSuper) {
           <div class="form-group" id="edit-role-group"><label for="edit-role">Role</label>
             <select id="edit-role"><option value="teacher">Teacher</option><option value="admin">Admin</option><option value="super_admin">Super admin</option></select>
             <span class="form-hint">Changing the role signs the user out.</span></div>
-          <div class="modal-actions"><button type="button" class="btn btn-outline" onclick="document.getElementById('edit-user-modal').classList.add('hidden')">Cancel</button>
+          <div class="modal-actions"><button type="button" class="btn btn-outline" data-action="hide" data-target="#edit-user-modal">Cancel</button>
             <button type="submit" class="btn btn-primary">Save</button></div>
         </form></div></div>`;
 }
@@ -861,10 +861,10 @@ function _renderStudentTable(students) {
       <td style="min-width:130px">${bar(m.attendance_pct)}</td><td style="min-width:130px">${bar(m.participation_pct)}</td>
       <td>${s.is_active ? statusPill('active', 'Active') : statusPill('inactive', 'Inactive')}</td>
       <td><div class="row-actions"><a class="btn btn-sm btn-ghost btn-icon" href="#/student?id=${s.id}" title="View" aria-label="View ${escHtml(s.student_name)}">${icon('eye', 'sm')}</a>
-        <button class="btn btn-sm btn-ghost btn-icon" title="Edit" aria-label="Edit" onclick="window._editStudent(${s.id})">${icon('edit', 'sm')}</button>
-        ${s.is_active ? `<button class="btn btn-sm btn-ghost btn-icon" title="Deactivate" aria-label="Deactivate" onclick="window._deactivateStudent(${s.id})">${icon('pause', 'sm')}</button>`
-          : `<button class="btn btn-sm btn-ghost btn-icon" title="Reactivate" aria-label="Reactivate" onclick="window._reactivateStudent(${s.id})">${icon('play', 'sm')}</button>`}
-        <button class="btn btn-sm btn-ghost btn-icon text-danger" title="Delete permanently" aria-label="Delete permanently" onclick="window._hardDeleteStudent(${s.id}, ${jsArg(s.student_name)})">${icon('trash', 'sm')}</button></div></td>
+        <button class="btn btn-sm btn-ghost btn-icon" title="Edit" aria-label="Edit" ${callAttr('_editStudent', s.id)}>${icon('edit', 'sm')}</button>
+        ${s.is_active ? `<button class="btn btn-sm btn-ghost btn-icon" title="Deactivate" aria-label="Deactivate" ${callAttr('_deactivateStudent', s.id)}>${icon('pause', 'sm')}</button>`
+          : `<button class="btn btn-sm btn-ghost btn-icon" title="Reactivate" aria-label="Reactivate" ${callAttr('_reactivateStudent', s.id)}>${icon('play', 'sm')}</button>`}
+        <button class="btn btn-sm btn-ghost btn-icon text-danger" title="Delete permanently" aria-label="Delete permanently" ${callAttr('_hardDeleteStudent', s.id, s.student_name)}>${icon('trash', 'sm')}</button></div></td>
     </tr>`; }).join('')}</tbody></table></div>`;
 }
 

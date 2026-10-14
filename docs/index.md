@@ -37,6 +37,7 @@ design/mesh-authentication
 design/security-model
 design/data-integrity
 design/gpc
+design/ui-design
 design/authorization
 design/scheduling
 design/student-ota
@@ -99,6 +100,7 @@ testing/HARDWARE_VALIDATION
 engineering/DATABASE_MIGRATIONS
 engineering/SECURITY_REVIEW
 engineering/SYSTEM_AUDIT
+engineering/PERMISSIONS_AND_OTA_REVIEW
 engineering/V2.1_ENGINEERING_REPORT
 engineering/V2_V3_COMPARISON
 engineering/REFACTOR_ROADMAP

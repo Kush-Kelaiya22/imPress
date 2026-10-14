@@ -118,7 +118,8 @@ def browser():
 @pytest.fixture
 def page(browser, request):
     """A page that fails the test on any uncaught JS error; screenshot at the end."""
-    ctx = browser.new_context(viewport={"width": 1200, "height": 900}, accept_downloads=True)
+    ctx = browser.new_context(viewport={"width": 1200, "height": 900}, accept_downloads=True,
+                                reduced_motion=getattr(request, "param", None) or "reduce")
     # hermetic: only the local test server. The SPA loads web fonts from the
     # internet; on a slow network the page's load event then times out.
     ctx.route("**/*", lambda route: route.continue_() if route.request.url.startswith("http://127.0.0.1")

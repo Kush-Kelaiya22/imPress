@@ -10,8 +10,8 @@ from fastapi import HTTPException
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import (ActivityLog, 
-    Attendance, ClassOccurrenceException, ClassSession, EspDevice, StudentModule, Poll, PollVote, Quiz, QuizAnswer,
+from ..models import (
+    ActivityLog, Attendance, ClassOccurrenceException, ClassSession, EspDevice, StudentModule, Poll, PollVote, Quiz, QuizAnswer,
     QuizQuestion, Student,
     StudentEnrollment, class_faculty,
 )
@@ -55,6 +55,26 @@ async def delete_class_records(db: AsyncSession, class_id: int) -> None:
     await db.execute(update(StudentModule).where(StudentModule.class_session_id == class_id)
                      .values(class_session_id=None))
     await db.execute(delete(ClassSession).where(ClassSession.id == class_id))
+
+
+async def student_scope(db: AsyncSession, user) -> set[int] | None:
+    """The students `user` may edit, deactivate and see contact details of: everyone for an
+    administrator; for faculty, the students they registered and those enrolled in a class they
+    teach (primary or co-faculty). None means all. Any teacher can still *find* a student by
+    name or number to enrol them, but sees no e-mail or phone of students outside this set."""
+    from sqlalchemy import or_
+
+    from ..models import Student, class_faculty
+    from ..policy import allowed
+    if allowed(user, "classes.manage_all"):
+        return None
+    mine = select(ClassSession.id).where(or_(
+        ClassSession.teacher_id == user.id,
+        ClassSession.id.in_(select(class_faculty.c.class_session_id).where(class_faculty.c.user_id == user.id))))
+    registered = (await db.execute(select(Student.id).where(Student.registered_by == user.id))).scalars().all()
+    enrolled = (await db.execute(select(StudentEnrollment.student_id)
+                                 .where(StudentEnrollment.class_session_id.in_(mine)))).scalars().all()
+    return set(registered) | set(enrolled)
 
 
 def student_ref(roll_number: str) -> str:

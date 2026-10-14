@@ -205,9 +205,10 @@ Conflicts reported as errors:
 |---|---|---|
 | `POST /api/students/` | teacher+ | `{roll_number, student_name, email, phone, program, enrollment_year, graduation_year, device_mac}`; `roll_number` = exactly 10 alphanumerics, stored **upper-case**; duplicate → 400 |
 | `POST /api/students/bulk` | teacher+ | `{students: [StudentCreate…], class_session_id?}`; optionally enrolls into the class |
-| `GET /api/students/` | teacher+ | `?search=` matches roll number or name (case-insensitive substring) |
-| `GET /api/students/{id}` · `PUT` | teacher+ | partial update (`StudentUpdate`) |
-| `DELETE /api/students/{id}` | teacher+ | **soft** delete (`is_active=false`) |
+| `GET /api/students/` | teacher+ | `?search=` matches roll number or name (case-insensitive substring). Any teacher can find a student to enrol them, but `email`, `phone` and `device_mac` come back **empty** for students outside the caller's scope (below) |
+| `GET /api/students/{id}` | teacher+ | the same redaction |
+| `PUT /api/students/{id}` | teacher+, **in scope** | partial update (`StudentUpdate`); outside the caller's scope `403 STUDENT_OUT_OF_SCOPE` |
+| `DELETE /api/students/{id}` | teacher+, **in scope** | **soft** delete (`is_active=false`); `403 STUDENT_OUT_OF_SCOPE` outside scope |
 | `DELETE /api/students/{id}/hard-delete` | admin only (403 for teachers) | permanently removes the student, their enrollments and attendance rows; their quiz answers and poll votes are kept **anonymised** so results keep their totals |
 | `GET /api/students/{id}/classes` | teacher+ | `[{enrollment_id, class_id, course_code, course_name, subject, course_section, term, year, meeting_schedule, location, teacher_name, is_active}]` |
 | `POST /api/students/import` | teacher+ | *multipart* CSV, below |
@@ -380,6 +381,7 @@ See [data integrity](../design/data-integrity.md).
 | `GET /api/admin/system/clear` | users.assign_role | `{scopes: {scope: {description, confirm}}, dual_control, delay_minutes, retained_audit_days}`; the `everything` scope is left out when policy switches it off |
 | `POST /api/admin/system/clear` | users.assign_role | `{scope: "class_data"\|"everything", confirm: "DELETE CLASS DATA"\|"RESET EVERYTHING", approval_id}`; needs an approved `system.clear.<scope>` request; a backup is taken first; `{status, backup}`. Wrong phrase: `422 CONFIRM`; no approval: `403 APPROVAL_REQUIRED`; full reset switched off by policy: `403 POLICY_DISABLED`. Activity-log entries younger than `audit.min_retention_days` survive a reset |
 | `GET /api/admin/system/policy` | audit.read | the effective **global policy**: `{profile, file: {serial, issued_at, key_id}\|null, problems, flags: [{name, value, source: default\|file\|inline, standard, hardened, description}], audit: {file, url, webhook_failures}, code_manifest: {present, problems}}`. Read-only: no route changes the policy (root does, [global policy control](../design/gpc.md)) |
+| `POST /api/system/csp-report` | public | where browsers report content the page's Content-Security-Policy blocked (`application/csp-report`). Public because browsers send it without credentials, so: body capped at 4 KB, at most 30 reports a minute for the whole server, **no database write** (log and external audit trail only). `204` |
 | `GET /api/system/signing-key` | public | `{alg: "ed25519", public_key (base64), key_id}`: verifies the `SIGNATURE.json` in exports (`scripts/verify_export.py`). Only the public half |
 
 ### Dual control: `/api/admin/approvals` (super admin)

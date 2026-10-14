@@ -172,7 +172,7 @@ window.toggleNotices = function (ev) {
 };
 document.addEventListener('click', (e) => {
   const box = document.getElementById('notice-pop');
-  if (box && !box.contains(e.target)) box.classList.add('hidden');
+  if (box && !box.contains(e.target) && !e.target.closest('[data-action="toggle-notices"]')) box.classList.add('hidden');
   const sr = document.getElementById('search-results');
   if (sr && !e.target.closest('.searchbox')) sr.classList.add('hidden');
 });
@@ -277,7 +277,7 @@ function renderNavbar(user, currentHash) {
   document.body.classList.add('shell');          // #app sits beside the sidebar (CSS)
   setTimeout(afterShell, 0);
   return `
-    <div class="app-scrim" onclick="document.body.classList.remove('nav-open')"></div>
+    <div class="app-scrim" data-action="nav-close"></div>
     <aside class="app-sidebar" aria-label="Main navigation">
       <a href="#/dashboard" class="brand"><span class="brand-mark">${icon('layers')}</span><span class="brand-name">imPress</span></a>
       <nav>${items}</nav>
@@ -287,24 +287,24 @@ function renderNavbar(user, currentHash) {
         <a href="/graph" target="_blank" rel="noopener" class="nav-item">${icon('help')}<span>Help &amp; documentation</span></a>
         <div class="user-card">${avatar(user.full_name || user.username, 'sm')}
           <div class="who"><b>${escHtml(user.full_name || user.username)}</b><span>${escHtml(roleLabel)}</span></div>
-          <button class="btn btn-ghost btn-icon btn-sm" onclick="handleLogout()" title="Sign out" aria-label="Sign out">${icon('logout')}</button>
+          <button class="btn btn-ghost btn-icon btn-sm" ${callAttr('handleLogout')} title="Sign out" aria-label="Sign out">${icon('logout')}</button>
         </div>
       </div>
     </aside>
     <div class="app-topbar-host">
       <header class="app-topbar">
-        <button class="icon-btn menu-toggle" onclick="document.body.classList.toggle('nav-open')" aria-label="Menu">${icon('menu')}</button>
+        <button class="icon-btn menu-toggle" data-action="nav-toggle" aria-label="Menu">${icon('menu')}</button>
         <nav class="crumbs" aria-label="Breadcrumb">${crumbs.map((c, i) => i === crumbs.length - 1
           ? `<b>${escHtml(c)}</b>` : `<span>${escHtml(c)}</span><span class="sep">/</span>`).join('')}</nav>
         <div class="topbar-right">
           <label class="searchbox">${icon('search', 'sm')}<span class="sr-only">Search</span>
-            <input id="global-search" type="search" placeholder="Search classes, students…" autocomplete="off" oninput="globalSearch(this.value)" onkeydown="globalSearchKey(event)">
+            <input id="global-search" type="search" placeholder="Search classes, students…" autocomplete="off" data-input="global-search" data-keydown="global-search-key">
             <div id="search-results" class="search-results hidden"></div></label>
           <div style="position:relative">
-            <button class="icon-btn" onclick="toggleNotices(event)" aria-label="Notifications">${icon('bell')}<span id="bell-dot" class="dot ${_notices.length ? '' : 'hidden'}"></span></button>
+            <button class="icon-btn" data-action="toggle-notices" aria-label="Notifications">${icon('bell')}<span id="bell-dot" class="dot ${_notices.length ? '' : 'hidden'}"></span></button>
             <div id="notice-pop" class="popover hidden"><div class="popover-head"><b>Notifications</b></div><div class="popover-body"></div></div>
           </div>
-          <button class="icon-btn" onclick="toggleTheme()" aria-label="Toggle dark mode" data-theme-icon>${themeIcon()}</button>
+          <button class="icon-btn" data-action="toggle-theme" aria-label="Toggle dark mode" data-theme-icon>${themeIcon()}</button>
           <a href="#/settings" title="${escHtml(user.full_name || user.username)}">${avatar(user.full_name || user.username)}</a>
         </div>
       </header>
@@ -352,7 +352,7 @@ window.globalSearch = async function (q) {
       .slice(0, 4).map(u => ({ href: '#/admin/users', label: u.full_name || u.username, sub: '@' + u.username, kind: 'Account', ic: 'userCog' })),
   ];
   _searchSel = -1;
-  box.innerHTML = hits.length ? hits.map(h => `<a href="${h.href}" onclick="document.getElementById('search-results').classList.add('hidden')">${icon(h.ic, 'sm')}<span>${escHtml(h.label)} <span class="text-muted text-sm">${escHtml(h.sub)}</span></span><span class="kind">${h.kind}</span></a>`).join('')
+  box.innerHTML = hits.length ? hits.map(h => `<a href="${h.href}" data-action="hide" data-target="#search-results">${icon(h.ic, 'sm')}<span>${escHtml(h.label)} <span class="text-muted text-sm">${escHtml(h.sub)}</span></span><span class="kind">${h.kind}</span></a>`).join('')
     : `<div class="empty" style="padding:16px">No matches</div>`;
   box.classList.remove('hidden');
 };
@@ -452,10 +452,29 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && Li
 
 
 // ── Delegated events (v2.2) ──────────────────────────────────────────────
-// Markup carries data-action="name" (also data-change, data-input, data-submit,
-// data-keydown) and Actions[name](element, event) runs it. No inline handlers:
-// the page's Content-Security-Policy can then forbid them.
+// The page has no inline handlers, so its Content-Security-Policy can forbid them
+// (script-src 'self', no 'unsafe-inline'). Markup says what a click or key should do:
+//
+//   data-action="name"        Actions[name](element, event)        (also data-change, data-input, data-submit, data-keydown)
+//   ${callAttr('fn', a, b)}   calls the named page function with JSON arguments; only names in CALLABLE
+//
+// A name is never looked up on window from the page's markup unless it is on the list below,
+// and arguments are JSON, never code.
 const Actions = {};
+const CALLABLE = new Set([
+  '_deactivateStudent', '_deleteCourse', '_editCourse', '_editStudent', '_hardDeleteStudent', '_pushOta',
+  '_reactivateStudent', '_showDiagnostics', '_verifyModule', 'activateClass', 'addQuizQuestion', 'classSession',
+  'deactivateClass', 'deleteClass', 'deleteUser', 'editUser', 'endPoll', 'endUserSessions', 'goNewSession', 'handleLogout',
+  'newSession', 'nextQuestion', 'openManageFaculty', 'removeClassException', 'resetUserPassword', 'saveClassFaculty',
+  'setUserActive', 'startPoll', 'startQuiz', 'stopQuiz', 'tdDeleteDataset', 'tdPending', 'toggleClassCsvImport',
+  'toggleClassStudentForm', 'unenrollStudent', 'usersPage',
+]);
+
+function callAttr(name, ...args) {
+  if (!CALLABLE.has(name)) console.error('callAttr: not on the CALLABLE list:', name);
+  return `data-call="${escHtml(name)}" data-args="${escHtml(JSON.stringify(args))}"`;
+}
+
 (function wireDelegatedEvents() {
   const route = (type, attr) => document.addEventListener(type, (e) => {
     const el = e.target && e.target.closest ? e.target.closest(`[${attr}]`) : null;
@@ -464,7 +483,38 @@ const Actions = {};
   });
   [['click', 'data-action'], ['change', 'data-change'], ['input', 'data-input'], ['submit', 'data-submit'],
    ['keydown', 'data-keydown']].forEach(([t, a]) => route(t, a));
+  document.addEventListener('click', (e) => {
+    const el = e.target && e.target.closest ? e.target.closest('[data-call]') : null;
+    if (!el || el.disabled) return;
+    const name = el.getAttribute('data-call');
+    const fn = CALLABLE.has(name) ? window[name] : null;
+    if (typeof fn !== 'function') { console.error('data-call: no such function', name); return; }
+    let args = [];
+    try { args = JSON.parse(el.getAttribute('data-args') || '[]'); } catch { return; }
+    fn(...args);
+  });
 })();
+
+const _target = (el) => document.querySelector(el.dataset.target);
+Object.assign(Actions, {
+  'hide': (el) => _target(el)?.classList.add('hidden'),
+  'show': (el) => _target(el)?.classList.remove('hidden'),
+  'hide-parent': (el) => el.parentElement?.classList.add('hidden'),
+  'hide-closest': (el) => el.closest(el.dataset.closest)?.classList.add('hidden'),
+  'remove-closest': (el) => el.closest(el.dataset.closest)?.remove(),
+  'nav-close': () => document.body.classList.remove('nav-open'),
+  'nav-toggle': () => document.body.classList.toggle('nav-open'),
+  'goto': (el) => { location.hash = el.dataset.href; },
+  'back': (el, e) => { e.preventDefault(); history.back(); },
+  'scroll-to': (el) => _target(el)?.scrollIntoView({ behavior: 'smooth' }),
+  'toggle-theme': () => toggleTheme(),
+  'toggle-notices': (el, e) => toggleNotices(e),
+  'global-search': (el) => globalSearch(el.value),
+  'global-search-key': (el, e) => globalSearchKey(e),
+  'slot-remove': (el) => { window.formScheduleSlots.splice(Number(el.dataset.i), 1); window.formRenderScheduleRows(); },
+  'slot-field': (el) => { window.formScheduleSlots[Number(el.dataset.i)][el.dataset.field] = el.value; },
+  'td-export': (el) => testModeApi.download('dataset', el.dataset.name).catch(e => showToast(e.message, 'error')),
+});
 
 // A small modal that asks for text (a password, a typed confirmation) and
 // resolves with the values, or null when cancelled. Built with the DOM, no inline script.

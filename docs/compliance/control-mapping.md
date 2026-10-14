@@ -6,7 +6,7 @@ How the software's controls support three common frameworks. "Supports" means th
 
 | ASVS chapter | Supported by | Evidence | Gaps / your part |
 |---|---|---|---|
-| Encoding and sanitization; Web frontend security | quote-escaping of every shown name, JSON-quoted handler arguments, `X-Frame-Options`, `nosniff`, referrer policy, `HttpOnly` + `SameSite=Strict` cookie, CSRF header | `ui_tests/test_xss.py`, [security model](../design/security-model.md) | CSP still allows inline script handlers ([#197](https://github.com/Kush-Kelaiya22/imPress/issues/197)) |
+| Encoding and sanitization; Web frontend security | strict CSP (`script-src 'self'`, no inline handlers), quote-escaping of every shown name, `X-Frame-Options`, `nosniff`, referrer policy, `HttpOnly` + `SameSite=Strict` cookie, CSRF header | `ui_tests/test_xss.py`, `ui_tests/test_csp.py`, [security model](../design/security-model.md) | style attributes still need `style-src 'unsafe-inline'` |
 | Validation and business logic | typed request models, all-or-nothing imports with row errors, quiz and roster rules | `backend/tests` | |
 | API and web service | one permission per route, matrix snapshot reviewed by hand, public routes listed | `test_route_matrix.py`, `test_route_guards.py` | |
 | Authentication | salted bcrypt over SHA-256, throttling, one device per account, step-up password for dangerous actions | `test_sessions_v22.py`, `test_hardening.py` | no multi-factor authentication yet (tracked) |

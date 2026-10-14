@@ -84,7 +84,7 @@ Security and integrity switches are **root's**, set outside the application ([gl
 | Signed code manifest | the server checks its own files against root's signature at start-up | [GPC](gpc.md#the-signed-code-manifest) |
 | Signed exports | exports carry a signature a receiver can verify offline | [test data](../guides/test-mode.md#signed-exports) |
 | Hardened floor | the server refuses to start with debug on, default secrets, HTTP, unsigned firmware, shared device keys, or no external audit sink | [production hardening](../guides/production-hardening.md) |
-| Content-Security-Policy | **not yet strict:** `script-src` still allows `'unsafe-inline'` until the web app's remaining inline handlers are replaced ([#197](https://github.com/Kush-Kelaiya22/imPress/issues/197)). Quote-escaping of every name shown in the app is in place and tested | `transport.py` |
+| Content-Security-Policy | `script-src 'self'` with `script-src-attr 'none'`: no inline script, no inline event handlers, no `eval`; `object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'none'`. Styles keep `'unsafe-inline'` for `style=` attributes. Violations are reported to `POST /api/system/csp-report` (rate limited, audited). The web app's handlers are delegated (`data-action`, `data-call` against a fixed allowlist) | `transport.py`, `ui.js` |
 | Erasure | erasing a student removes their name and number from the activity log; the erase entry holds only a keyed reference | [data rights](../compliance/dsar-runbook.md) |
 
 Device messages are **not** signed or authenticated by this layer: the radio and the gateway protocols are unchanged. Authenticating the ESP-NOW frames is a separate proposal ([mesh authentication](mesh-authentication.md)).

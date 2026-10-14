@@ -178,8 +178,11 @@ def test_real_build_output_parses(project, target, chip):
     path = FIRMWARE_SRC / project / "build" / f"impress_{project}.bin"
     if not path.exists():
         pytest.skip(f"no local build of {project}")
+    version_file = FIRMWARE_SRC / project / "version.txt"
+    if path.stat().st_mtime < version_file.stat().st_mtime:
+        pytest.skip(f"the local build of {project} is older than its version.txt: rebuild it")
     info = parse_image(path.read_bytes())
-    version = (FIRMWARE_SRC / project / "version.txt").read_text().strip()
+    version = version_file.read_text().strip()
     assert (info.target, info.chip, info.version) == (target, chip, version)
 
 

@@ -10,6 +10,8 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Added
 
+- **Motion and materials** for the web app, following Apple's Human Interface Guidelines for layout, type and translucent materials and Material 3 Expressive for movement: springy button presses whose corners tighten, dialogs that spring in (a bottom sheet on a phone), cards and rows that rise in with a stagger, figures that count up, a visible keyboard focus ring and 44 pt touch targets. Entry plays only when you change page, never when data refreshes under you; with *reduce motion* set nothing moves. [Design notes](docs/design/ui-design.md). ([#206](https://github.com/Kush-Kelaiya22/imPress/issues/206))
+- **README redesigned**: a short front page with screenshots, a start-here table per role, the security and privacy story, and a map of the documentation. ([#208](https://github.com/Kush-Kelaiya22/imPress/issues/208))
 - **Global policy control (GPC):** the security and integrity switches belong to root. Typed flags with safe defaults for a *standard* and a *hardened* profile, an optional **root-signed policy file** (Ed25519, with a serial that only goes up) and inline overrides on the start command (in the hardened profile they may only tighten). The System page shows the effective policy and where each value came from; nothing in the web app or the API can change it. The hardened profile **refuses to start** below its floor (debug off, real secrets, HTTPS, per-device keys, signed firmware, an external audit sink). Root's tool: `scripts/gpc.py`. See [global policy control](docs/design/gpc.md) and [production hardening](docs/guides/production-hardening.md). ([#204](https://github.com/Kush-Kelaiya22/imPress/issues/204), [#198](https://github.com/Kush-Kelaiya22/imPress/issues/198), [#199](https://github.com/Kush-Kelaiya22/imPress/issues/199))
 - **Dual control** for accepting a changed database and for clearing or resetting data: one super admin requests, a different one approves, each re-entering their password, then a delay, an expiry and a single use. Every step is logged and alerted. ([#196](https://github.com/Kush-Kelaiya22/imPress/issues/196))
 - **External audit trail:** every activity entry is also written to a hash-chained file and/or a signed webhook that the application cannot rewrite; `python -m app.manage audit-verify FILE` checks the chain. Students' personal data is never written to it. ([#196](https://github.com/Kush-Kelaiya22/imPress/issues/196), [#202](https://github.com/Kush-Kelaiya22/imPress/issues/202))
@@ -39,6 +41,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Fixed
 
+- The Overview's *Classrooms today* table no longer cuts off its right-hand columns on a laptop-sized window: secondary columns step aside first.
 - The server now starts on Windows: it needs the `tzdata` package there for the India time zone, which is now installed with the other dependencies.
 - An unconfigured hub now looks for its updates on the same server as its gateway: the hub's built-in default server address differed from the gateway's. `firmware/activate_idf.ps1` no longer searches one developer's own drive.
 - A transfer error between the hub and the gateway no longer loses the answers it carried: each side keeps what it sent until the other confirms it, and sends it again otherwise. Works with older hubs and gateways (they keep the old behaviour). ([#182](https://github.com/Kush-Kelaiya22/imPress/issues/182))
@@ -46,6 +49,8 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Security
 
+- A teacher can now edit or deactivate only the students they registered or who are enrolled in a class they teach, and sees their e-mail and phone only for those students; before, any teacher could change any student and read every student's contact details. A teacher can still find any student by name or number to enrol them. ([#207](https://github.com/Kush-Kelaiya22/imPress/issues/207))
+- The web app's Content-Security-Policy no longer allows inline scripts or inline event handlers (`script-src 'self'`, `script-src-attr 'none'`): every button, field and link now uses delegated events, and a browser blocks, and reports, any injected script. ([#197](https://github.com/Kush-Kelaiya22/imPress/issues/197))
 - Erasing a student now also removes their name and enrollment number from the activity log (they were left in some entries), and the erase entry keeps only a keyed reference. ([#200](https://github.com/Kush-Kelaiya22/imPress/issues/200))
 - The integrity state, the policy and the audit trail are controlled by root, not by an application super admin; accepting a changed database or clearing data needs a second super admin. See *Added*.
 - Names with quotes can no longer break out of the web app's HTML (a teacher could create a class, or a device could register with a name, that ran script in an administrator's browser). Quotes are escaped everywhere, and inline handlers receive names as JSON.

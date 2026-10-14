@@ -16,10 +16,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import timedelta
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -209,6 +211,32 @@ async def policy_view(user: User = Depends(require("audit.read"))):
     """Read-only: nothing in the web app or the API changes the policy."""
     problems = signing.verify_manifest_if_present()
     return {**gpc.describe(), "audit": auditsink.status(), "code_manifest": problems}
+
+
+_csp_window = {"t": 0.0, "n": 0}
+
+
+@router.post("/api/system/csp-report", status_code=204)
+async def csp_report(request: Request):
+    """Browsers post here when the Content-Security-Policy blocks something. Public (the browser
+    sends it without credentials), so: a small body, at most 30 reports a minute for the whole
+    server, and no database write: the report goes to the log and the external audit trail."""
+    now = time.monotonic()
+    if now - _csp_window["t"] > 60:
+        _csp_window.update(t=now, n=0)
+    _csp_window["n"] += 1
+    if _csp_window["n"] <= 30:
+        try:
+            body = json.loads((await request.body())[:4000] or b"{}")
+        except ValueError:
+            body = {}
+        rep = body.get("csp-report", {}) if isinstance(body, dict) else {}
+        details = {"flag": True, "directive": str(rep.get("violated-directive", ""))[:80],
+                   "blocked": str(rep.get("blocked-uri", ""))[:120],
+                   "page": urlparse(str(rep.get("document-uri", ""))).path[:120]}
+        logger.warning("CSP violation: %s", details)
+        auditsink.emit("ui.csp_violation", None, "system", None, details)
+    return Response(status_code=204)
 
 
 @router.get("/api/system/signing-key")
