@@ -205,9 +205,10 @@ Conflicts reported as errors:
 |---|---|---|
 | `POST /api/students/` | teacher+ | `{roll_number, student_name, email, phone, program, enrollment_year, graduation_year, device_mac}`; `roll_number` = exactly 10 alphanumerics, stored **upper-case**; duplicate → 400 |
 | `POST /api/students/bulk` | teacher+ | `{students: [StudentCreate…], class_session_id?}`; optionally enrolls into the class |
-| `GET /api/students/` | teacher+ | `?search=` matches roll number or name (case-insensitive substring) |
-| `GET /api/students/{id}` · `PUT` | teacher+ | partial update (`StudentUpdate`) |
-| `DELETE /api/students/{id}` | teacher+ | **soft** delete (`is_active=false`) |
+| `GET /api/students/` | teacher+ | `?search=` matches roll number or name (case-insensitive substring). Any teacher can find a student to enrol them, but `email`, `phone` and `device_mac` come back **empty** for students outside the caller's scope (below) |
+| `GET /api/students/{id}` | teacher+ | the same redaction |
+| `PUT /api/students/{id}` | teacher+, **in scope** | partial update (`StudentUpdate`); outside the caller's scope `403 STUDENT_OUT_OF_SCOPE` |
+| `DELETE /api/students/{id}` | teacher+, **in scope** | **soft** delete (`is_active=false`); `403 STUDENT_OUT_OF_SCOPE` outside scope |
 | `DELETE /api/students/{id}/hard-delete` | admin only (403 for teachers) | permanently removes the student, their enrollments and attendance rows; their quiz answers and poll votes are kept **anonymised** so results keep their totals |
 | `GET /api/students/{id}/classes` | teacher+ | `[{enrollment_id, class_id, course_code, course_name, subject, course_section, term, year, meeting_schedule, location, teacher_name, is_active}]` |
 | `POST /api/students/import` | teacher+ | *multipart* CSV, below |

@@ -49,6 +49,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Security
 
+- A teacher can now edit or deactivate only the students they registered or who are enrolled in a class they teach, and sees their e-mail and phone only for those students; before, any teacher could change any student and read every student's contact details. A teacher can still find any student by name or number to enrol them. ([#207](https://github.com/Kush-Kelaiya22/imPress/issues/207))
 - The web app's Content-Security-Policy no longer allows inline scripts or inline event handlers (`script-src 'self'`, `script-src-attr 'none'`): every button, field and link now uses delegated events, and a browser blocks, and reports, any injected script. ([#197](https://github.com/Kush-Kelaiya22/imPress/issues/197))
 - Erasing a student now also removes their name and enrollment number from the activity log (they were left in some entries), and the erase entry keeps only a keyed reference. ([#200](https://github.com/Kush-Kelaiya22/imPress/issues/200))
 - The integrity state, the policy and the audit trail are controlled by root, not by an application super admin; accepting a changed database or clearing data needs a second super admin. See *Added*.

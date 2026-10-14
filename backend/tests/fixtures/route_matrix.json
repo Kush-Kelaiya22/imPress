@@ -440,7 +440,7 @@
   "DELETE /api/classes/{class_id}": 403,
   "DELETE /api/classes/{class_id}/exceptions/{exception_id}": 403,
   "DELETE /api/courses/{course_id}": 403,
-  "DELETE /api/students/{student_id}": 200,
+  "DELETE /api/students/{student_id}": 403,
   "DELETE /api/students/{student_id}/hard-delete": 403,
   "GET /api/admin/activity": 403,
   "GET /api/admin/approvals": 403,
@@ -573,7 +573,7 @@
   "PUT /api/admin/users/{user_id}": 403,
   "PUT /api/auth/me": 422,
   "PUT /api/courses/{course_id}": 403,
-  "PUT /api/students/{student_id}": 200
+  "PUT /api/students/{student_id}": 403
  },
  "teacher_owner": {
   "DELETE /api/admin/classes/{class_id}": 403,

@@ -15,26 +15,35 @@ from ..schemas import (
     CsvImportResult, CsvImportError,
 )
 
-from ..services.records import erase_student, student_ref
+from ..policy import forbidden
+from ..services.records import erase_student, student_ref, student_scope
 from ..activity import log_activity
 
 router = APIRouter(prefix="/api/students", tags=["students"])
 
 
-def _to_response(s: Student) -> StudentResponse:
+def _to_response(s: Student, scope: set[int] | None = None) -> StudentResponse:
+    """`scope` is student_scope(): contact details outside it are left out."""
+    hide = scope is not None and s.id not in scope
     return StudentResponse(
         id=s.id,
         roll_number=s.roll_number,
         student_name=s.student_name,
-        email=s.email,
-        phone=s.phone,
+        email="" if hide else s.email,
+        phone="" if hide else s.phone,
         program=s.program,
         enrollment_year=s.enrollment_year,
         graduation_year=s.graduation_year,
-        device_mac=s.device_mac,
+        device_mac=None if hide else s.device_mac,
         is_active=s.is_active,
         registered_at=s.registered_at,
     )
+
+
+async def _out_of_scope(db: AsyncSession, user: User, student_id: int) -> None:
+    scope = await student_scope(db, user)
+    if scope is not None and student_id not in scope:
+        raise forbidden("STUDENT_OUT_OF_SCOPE", "You can change only students you registered or who are enrolled in your classes")
 
 
 async def _create_one(
@@ -135,7 +144,8 @@ async def list_students(
             Student.student_name.ilike(like),
         ))
     result = await db.execute(q)
-    return [_to_response(s) for s in result.scalars().all()]
+    scope = await student_scope(db, user)
+    return [_to_response(s, scope) for s in result.scalars().all()]
 
 
 @router.get("/{student_id}", response_model=StudentResponse)
@@ -148,7 +158,7 @@ async def get_student(
     student = result.scalar_one_or_none()
     if not student:
         raise HTTPException(404, "Student not found")
-    return _to_response(student)
+    return _to_response(student, await student_scope(db, user))
 
 
 @router.put("/{student_id}", response_model=StudentResponse)
@@ -162,6 +172,7 @@ async def update_student(
     student = result.scalar_one_or_none()
     if not student:
         raise HTTPException(404, "Student not found")
+    await _out_of_scope(db, user, student_id)
 
     changed = {}
     for field in ("student_name", "email", "phone", "program", "enrollment_year",
@@ -191,6 +202,7 @@ async def deactivate_student(
     student = result.scalar_one_or_none()
     if not student:
         raise HTTPException(404, "Student not found")
+    await _out_of_scope(db, user, student_id)
     student.is_active = False
     await log_activity(db, "student.deactivate", user.id, "student", student_id)
     await db.commit()
