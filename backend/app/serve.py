@@ -6,6 +6,8 @@ Launch flags are root's: they are decided where the server is started, and nothi
                      then signs in with a fixed password; the hardened profile refuses it)
   --no-test-mode     the test-data menu and routes are gone and can't be switched on
   --no-ota           over-the-air updates are off: no uploads, deployments or pushes, and devices are offered nothing
+  --rehash           accept the program's files as they are now as the reference for the integrity check (IIPS)
+  --bypass-iips      start although the integrity check failed; every page shows a warning (not in the hardened profile)
   --feature N=V      any policy flag (see `python -m app.console`, `policy show`, or docs/design/gpc.md)
   --profile P        standard (default) or hardened
   --host H --port N  where to listen (IMPRESS_HOST / IMPRESS_PORT, default 127.0.0.1:8000)
@@ -29,6 +31,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--test-mode", action="store_true", help="force test mode on; nobody can turn it off")
     ap.add_argument("--no-test-mode", action="store_true", help="remove test mode; nobody can turn it on")
     ap.add_argument("--no-ota", action="store_true", help="switch over-the-air updates off")
+    ap.add_argument("--rehash", action="store_true", help="make the current files the integrity reference")
+    ap.add_argument("--bypass-iips", action="store_true", help="start without the integrity check (a warning shows on every page)")
+    ap.add_argument("--plain", action="store_true", help="no root screen: print the log only")
     ap.add_argument("--feature", action="append", default=[], metavar="NAME=VALUE", help="set any policy flag")
     ap.add_argument("--profile", choices=("standard", "hardened"))
     return ap
@@ -42,14 +47,23 @@ def overrides(args: argparse.Namespace) -> list[str]:
         out.append("test_mode.allowed=false")
     if args.no_ota:
         out.append("ota.enabled=false")
+    if args.bypass_iips:
+        out.append("iips.enabled=false")
     out.extend(args.feature)
     return out
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
     args = build_parser().parse_args(argv)
+    if not args.plain and not os.environ.get("IMPRESS_PLAIN") and sys.stdin.isatty() and sys.stdout.isatty():
+        from . import rootscreen          # a terminal: the root screen (logo, live log, prompt); no terminal: plain log
+        return rootscreen.run(argv)
     if args.test_mode and args.no_test_mode:
         print("error: --test-mode and --no-test-mode contradict each other", file=sys.stderr)
+        return 2
+    if args.rehash and args.bypass_iips:
+        print("error: --rehash and --bypass-iips contradict each other", file=sys.stderr)
         return 2
     flags = overrides(args)
     # The environment must be set before the application (and its settings) is imported.
@@ -64,6 +78,25 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:                                         # noqa: BLE001
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    from . import banner, gpc
+    from .config import settings
+    from .services import iips
+    try:
+        gpc.load(settings)
+    except gpc.PolicyError as exc:
+        print(f"error: global policy: {exc}", file=sys.stderr)
+        return 2
+    if not os.environ.get("IMPRESS_ROOT_SCREEN"):
+        banner.show()
+    verdict = iips.check(enabled=bool(gpc.get("iips.enabled")), rehash=args.rehash)
+    if iips.locked():
+        print("  " + iips.violation_message() + "\n", file=sys.stderr)
+        return 3
+    note = {"baseline_created": "Integrity protection: first start, the program's files were recorded as the reference.",
+            "rehashed": "Integrity protection: the current files are now the reference.",
+            "bypassed": "Integrity protection is DISABLED (--bypass-iips): every page shows a warning."}.get(verdict["status"])
+    if note:
+        print("  " + note + "\n", flush=True)
     import uvicorn
     kwargs = dict(host=args.host, port=args.port, workers=1, proxy_headers=True,
                   forwarded_allow_ips=os.environ.get("IMPRESS_FORWARDED_ALLOW_IPS", "127.0.0.1"))

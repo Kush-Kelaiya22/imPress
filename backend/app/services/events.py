@@ -53,10 +53,17 @@ def subscriber_count() -> int:
     return len(_subscribers)
 
 
-def _deliver(event: dict, audience: str = "all") -> None:
+def to_user(user_id: int, event: dict) -> None:
+    """One person's open pages only (e.g. their account was disabled)."""
+    _deliver(event, only_user=user_id)
+
+
+def _deliver(event: dict, audience: str = "all", only_user: int | None = None) -> None:
     data = json.dumps(event, default=str)
     for sub in list(_subscribers):
         if audience == "admins" and not sub.admin:
+            continue
+        if only_user is not None and sub.user_id != only_user:
             continue
         try:
             sub.queue.put_nowait(data)

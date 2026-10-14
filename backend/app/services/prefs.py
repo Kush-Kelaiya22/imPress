@@ -15,6 +15,11 @@ CONTRAST = ("normal", "high")
 SCALES = ("small", "default", "large", "xlarge")
 VISION = ("none", "protanopia", "deuteranopia", "tritanopia", "monochrome")
 DENSITY = ("comfortable", "compact")
+DATE_FORMATS = ("dmy", "mdy", "ymd", "long", "iso")          # 31/12/2026, 12/31/2026, 2026/12/31, 31 Dec 2026, 2026-12-31
+TIME_FORMATS = ("24h", "12h")
+WEEK_STARTS = ("monday", "sunday", "saturday")
+NUMBER_FORMATS = ("1,234.5", "1.234,5", "1 234,5")
+LANDING = ("overview", "classrooms", "students")
 WIDGET_SIZES = ("sm", "md", "lg", "xl")
 MAX_WIDGETS = 24
 _ID = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
@@ -24,6 +29,8 @@ DEFAULTS = {
     "theme": "system", "accent": "indigo", "accent_custom": "", "motion": "system", "contrast": "normal",
     "scale": "default", "vision": "none", "density": "comfortable", "sidebar_collapsed": False,
     "advanced": False, "tutorial_done": False, "dashboard": [],
+    "date_format": "dmy", "time_format": "24h", "show_seconds": False, "week_start": "monday", "number_format": "1,234.5",
+    "relative_times": True, "landing": "overview",
 }
 
 
@@ -74,7 +81,17 @@ def validate(changes: dict, role: str) -> dict:
             clean[key] = _choice(key, value, VISION)
         elif key == "density":
             clean[key] = _choice(key, value, DENSITY)
-        elif key in ("sidebar_collapsed", "tutorial_done"):
+        elif key == "date_format":
+            clean[key] = _choice(key, value, DATE_FORMATS)
+        elif key == "time_format":
+            clean[key] = _choice(key, value, TIME_FORMATS)
+        elif key == "week_start":
+            clean[key] = _choice(key, value, WEEK_STARTS)
+        elif key == "number_format":
+            clean[key] = _choice(key, value, NUMBER_FORMATS)
+        elif key == "landing":
+            clean[key] = _choice(key, value, LANDING)
+        elif key in ("sidebar_collapsed", "tutorial_done", "show_seconds", "relative_times"):
             if not isinstance(value, bool):
                 raise PreferenceError(f"{key} must be true or false")
             clean[key] = value

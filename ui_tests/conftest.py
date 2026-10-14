@@ -52,6 +52,14 @@ class Api:
                            cwd=ROOT / "backend", env=Api.console_env, capture_output=True, check=True)
         return out
 
+    def make_super_admin(self, username, password):
+        """A second super admin, the way root makes one (the console), with their own password chosen at first sign-in."""
+        out = subprocess.run([sys.executable, "-m", "app.console", "-c", f"superadmin create {username} --password Temp-{username}-1"],
+                             cwd=ROOT / "backend", env=Api.console_env, capture_output=True, text=True)
+        assert "created super admin" in out.stdout, out.stdout + out.stderr
+        temp = Api(self.base)("/api/auth/login", {"username": username, "password": f"Temp-{username}-1"})["access_token"]
+        Api(self.base, temp)("/api/auth/change-password", {"current_password": f"Temp-{username}-1", "new_password": password})
+
     def upload(self, path, filename, data: bytes):
         """multipart/form-data POST of one file field named 'file'."""
         boundary = "----impress-ui-test"

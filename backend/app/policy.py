@@ -55,10 +55,13 @@ ADMINISTRATION = frozenset({
     "firmware.approve",
     "firmware.deploy",       # start, pause, resume, cancel deployments and single pushes
     "audit.read",
+    "features.manage",       # switch features on and off (rank rules in services/features.py)
+    "sessions.read",         # sign-in risk, traffic alerts
 })
 SUPER = frozenset({
     "users.assign_role",     # grant or remove any role
     "users.manage_privileged",  # manage admin and super admin accounts' credentials
+    "sessions.end_any",      # sign any account out of every session
     "firmware.override_window",  # deploy to hubs/gateways outside classroom downtime (#128)
 })
 

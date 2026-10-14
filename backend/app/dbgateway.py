@@ -126,6 +126,8 @@ USER_TABLE_PERMISSION = {
     "firmware_deployments": "firmware.deploy",
     "deployment_targets": "firmware.deploy",
     "schedule_sources": "classes.manage_all",
+    "feature_flags": "features.manage",
+    "policy_log": "features.manage",
 }
 SYSTEM_ONLY = frozenset(SEAL_TABLES) | {"schema_migrations"}
 

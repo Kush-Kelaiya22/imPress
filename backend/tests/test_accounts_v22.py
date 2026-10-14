@@ -357,3 +357,15 @@ def test_presence_and_the_activity_summary(client):
     assert s["logins"] >= 1 and s["total"] >= 1 and s["by_kind"][0]["kind"] == "auth"
     assert client.get(f"/api/admin/users/{uid}/activity-summary?days=7", headers=th).status_code == 403
     assert client.get(f"/api/admin/users/{uid}/activity-summary?days=999", headers=su).status_code == 422
+
+
+def test_date_and_time_formats_are_preferences(client):
+    su = auth(login(client))
+    r = client.put("/api/auth/preferences", headers=su, json={"date_format": "long", "time_format": "12h", "show_seconds": True,
+                                                              "week_start": "sunday", "number_format": "1.234,5",
+                                                              "relative_times": False, "landing": "classrooms"})
+    assert r.status_code == 200 and r.json()["date_format"] == "long" and r.json()["time_format"] == "12h"
+    p = client.get("/api/auth/preferences", headers=su).json()
+    assert p["week_start"] == "sunday" and p["relative_times"] is False and p["landing"] == "classrooms"
+    for bad in ({"date_format": "yy"}, {"time_format": "36h"}, {"week_start": "friday"}, {"show_seconds": "yes"}, {"landing": "admin"}):
+        assert client.put("/api/auth/preferences", headers=su, json=bad).status_code == 422, bad

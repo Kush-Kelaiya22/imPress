@@ -74,6 +74,10 @@ The launchers never select the hardened profile and never switch debug or plain 
 | `device.https_required` | bool | `False` | `True` | Gateways and hubs must use HTTPS/WSS (same effect as IMPRESS_DEVICE_HTTPS_ONLY). |
 | `device.keys_required` | bool | `False` | `True` | The shared device key may only enrol; every device must use its own key (same as IMPRESS_DEVICE_KEYS_REQUIRED). |
 | `firmware.signing_required` | bool | `False` | `True` | A site firmware signing key must be configured and unsigned images are never accepted. |
+| `features.disabled` | str | empty | empty | Comma-separated features switched off by root; administrators cannot switch them on (see the System page for the list). |
+| `root.allow_access` | bool | `True` | `True` | Whether the separate root console may be opened (ssh, docker exec). TrustedInstaller switches it off inside a container: use the console attached to the container instead. |
+| `iips.enabled` | bool | `True` | `True` | imPress Integrity Protection Service: refuse to start when the program's own files changed since the last baseline. |
+| `traffic.monitor` | bool | `True` | `True` | Watch request rates per endpoint, address and account and alert administrators to unusual traffic. |
 
 "Safer" for an inline override in the hardened profile: `true`/`false` flags can only move to their protective value, numbers only in their protective direction (shorter lifetimes, longer retention; for the `0 = never` expiries any limit is safer than none), `code.verify_manifest` only towards `enforce`, a text flag (audit sink) may be filled in but not replaced, and `audit.purge_days` is *locked*: in the hardened profile only a signed file may change it, because neither direction is simply safer.
 

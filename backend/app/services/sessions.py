@@ -27,6 +27,7 @@ async def _cleanup_once() -> int:
     Returns the number of rows removed.
     """
     from ..database import async_session
+    from ..auth import BOOT_ID
     from ..models import UserSession
 
     now = istnow()
@@ -38,7 +39,9 @@ async def _cleanup_once() -> int:
             delete(UserSession).where(
                 (UserSession.expires_at <= now)
                 | (UserSession.last_activity_at < idle_cutoff)
-                | (UserSession.revoked.is_(True))
+                | (UserSession.revoked.is_(True) & ((UserSession.end_reason != "disabled")
+                                                       | (UserSession.last_activity_at < now - timedelta(days=1))))
+                | (UserSession.boot_id != BOOT_ID)
             )
         )
         from .throttle import prune

@@ -583,4 +583,36 @@ class UserSession(Base):
     ip = Column(String(45), default="")
     user_agent = Column(String(255), default="")
     revoked = Column(Boolean, default=False)
+    boot_id = Column(String(16), default="")               # the server run that issued it (1PSID)
+    end_reason = Column(String(16), default="")            # disabled | signed_out, once revoked
     user = relationship("User")
+
+
+# ── Feature flags and the policy log (v2.2) ───────────────────────────
+
+class FeatureFlag(Base):
+    """A feature an administrator can switch on or off at run time (services/features.py). Absent row = the default."""
+    __tablename__ = "feature_flags"
+
+    name = Column(String(64), primary_key=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+    min_rank = Column(Integer, nullable=False, default=1)       # the least authority that may change it again
+    set_rank = Column(Integer, nullable=False, default=1)       # authority of whoever set it last
+    set_by = Column(String(96), default="")
+    set_at = Column(DateTime, default=istnow)
+    prev = Column(JSON, nullable=True)                           # what TrustedInstaller replaced, to restore it later
+
+
+class PolicyLog(Base):
+    """Who changed which policy or feature, when, and from what to what (administrator, super admin, root,
+    TrustedInstaller). Append-only."""
+    __tablename__ = "policy_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    at = Column(DateTime, default=istnow, index=True)
+    flag = Column(String(64), nullable=False, index=True)
+    old = Column(String(64), default="")
+    new = Column(String(64), default="")
+    actor = Column(String(96), default="")
+    actor_rank = Column(Integer, default=1)
+    note = Column(String(240), default="")

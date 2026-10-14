@@ -482,11 +482,10 @@ async def change_designation(
 @router.post("/users/{user_id}/end-sessions")
 async def end_user_sessions(
     user_id: int,
-    user: User = Depends(require("users.manage")),
+    user: User = Depends(require("sessions.end_any")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Sign a user out everywhere (v2.2): e.g. to free an account whose
-    other device still holds the only allowed session."""
+    """Sign a user out everywhere (v2.2). Super admins only: administrators cannot end other people's sessions."""
     target = await _target(db, user_id)
     await accounts.revoke(db, target)
     await log_activity(db, "user.end_sessions", user.id, "user", user_id)

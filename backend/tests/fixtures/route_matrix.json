@@ -105,7 +105,7 @@
   "POST /api/admin/users/import": 422,
   "POST /api/admin/users/{user_id}/deactivate": 403,
   "POST /api/admin/users/{user_id}/designation": 422,
-  "POST /api/admin/users/{user_id}/end-sessions": 200,
+  "POST /api/admin/users/{user_id}/end-sessions": 403,
   "POST /api/admin/users/{user_id}/reactivate": 403,
   "POST /api/admin/users/{user_id}/reset-password": 403,
   "POST /api/admin/users/{user_id}/role": 422,

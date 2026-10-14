@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import re
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -31,6 +32,7 @@ from .routers.system import router as system_router
 from .routers.approvals import router as approvals_router
 from .routers.search import router as search_router
 from .routers.backups import router as backups_router
+from .routers.features import router as features_router
 from .routers.testmode import router as testmode_router
 
 
@@ -68,13 +70,34 @@ async def lifespan(app: FastAPI):
     if insecure_settings(settings):
         logger.warning("DEBUG mode with default secrets %s — never deploy like this",
                        insecure_settings(settings))
+    from .services import iips
+    verdict = iips.check(enabled=bool(gpc.get("iips.enabled")), rehash=bool(int(os.environ.get("IMPRESS_REHASH", "0"))))
+    if iips.locked():
+        logger.error(iips.violation_message())
+    elif verdict["status"] == "bypassed":
+        logger.warning("imPress Integrity Protection Service is disabled. Proceed with caution.")
     await init_db()
     logger.info("Database tables created")
+
+    from .services import boot_verify, features
+    async with async_session() as db:      # TrustedInstaller: verify the host before anything is offered
+        from .dbgateway import SYSTEM, act_as
+        act_as(SYSTEM)
+        await features.load(db)
+        verdict = await boot_verify.run(db)
+        await db.commit()
+    if verdict["locked"]:
+        logger.error("TrustedInstaller: %s", verdict["summary"])
+    elif not verdict["passed"]:
+        startup_alerts.append("TrustedInstaller: " + verdict["summary"])
 
     async with async_session() as db:      # pre-v2.1 <type>-<version>.bin files → registry
         from .services.firmware_store import adopt_legacy_files
         await adopt_legacy_files(db)
         await db.commit()
+
+    from .services.features import refresh_loop
+    features_task = asyncio.create_task(refresh_loop())
 
     # ESP device presence monitor: logs classroom ESP online/offline.
     presence_task = asyncio.create_task(presence_sweep_loop())
@@ -114,7 +137,7 @@ async def lifespan(app: FastAPI):
     finally:
         # Stop every background loop and WAIT for it: a loop cancelled in the middle of holding the integrity
         # lock must release it before the event loop goes away.
-        tasks = [presence_task, deployment_task, quiz_timer_task, integrity_task, maintenance_task, session_task]
+        tasks = [features_task, presence_task, deployment_task, quiz_timer_task, integrity_task, maintenance_task, session_task]
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -156,6 +179,37 @@ _ACTIVITY_FREE_PATHS = frozenset({
     "/api/auth/login",
     "/api/auth/logout",
 })
+
+
+_OPEN_WHILE_LOCKED = ("/api/system/status", "/health", "/static", "/favicon")
+
+
+@app.middleware("http")
+async def locked_down(request: Request, call_next):
+    """TrustedInstaller has not verified the host (or found it unable to run imPress): nothing is offered."""
+    from .services import boot_verify, iips
+    path = request.url.path
+    if iips.locked() and not path.startswith(_OPEN_WHILE_LOCKED):
+        return JSONResponse({"detail": {"code": "INTEGRITY_VIOLATION", "message": iips.violation_message()}},
+                            status_code=503, headers={"Retry-After": "300"})
+    if boot_verify.locked() and not path.startswith(_OPEN_WHILE_LOCKED):
+        why = boot_verify.report().get("summary") or "TrustedInstaller is verifying this server."
+        return JSONResponse({"detail": {"code": "LOCKED_DOWN", "message": "imPress is locked down. " + why}},
+                            status_code=503, headers={"Retry-After": "30"})
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def traffic_monitor(request: Request, call_next):
+    """Count the request for the traffic monitor (it flags and alerts, it never refuses)."""
+    response = await call_next(request)
+    try:
+        from .services import traffic
+        traffic.record(request.client.host if request.client else "unknown", request.url.path, request.method,
+                       response.status_code, getattr(request.state, "user_id", None))
+    except Exception:                                    # noqa: BLE001
+        logger.exception("traffic monitor failed")
+    return response
 
 
 @app.middleware("http")
@@ -237,6 +291,7 @@ app.include_router(testmode_router)
 app.include_router(approvals_router)
 app.include_router(search_router)
 app.include_router(backups_router)
+app.include_router(features_router)
 
 
 # ── Static Files & Templates ────────────────────────────────────────

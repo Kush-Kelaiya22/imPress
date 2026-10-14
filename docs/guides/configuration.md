@@ -26,7 +26,8 @@ Environment variables with prefix **`IMPRESS_`**, or a `.env` file in the workin
 | `IMPRESS_SESSION_WARNING_MINUTES` | `5` | `session-status.warning_active` window. |
 | `IMPRESS_DEVICE_API_KEY` | public default | The shared **provisioning** key: must be set in production and equal every device's `api_key`. Devices register with it and are issued their own key (#66). |
 | `IMPRESS_DEVICE_KEYS_REQUIRED` | `false` | `true`: the shared key works for registration only, so every device must use its own key. Firmware older than v2.1 per-device keys then stops working. |
-| `IMPRESS_INITIAL_ADMIN_PASSWORD` | empty | First-run admin password; empty = random, logged once. |
+| `IMPRESS_INITIAL_ADMIN_PASSWORD` | empty | The default super admin's password; empty = a new random one at every start, printed once on the root screen. |
+| `IMPRESS_DEFAULT_SUPERADMIN_PASSWORD` | empty | Fixes the default super admin `impress.default.superAdmin`'s password for every start (takes precedence over the line above). Leave empty in production. |
 | `IMPRESS_FIRMWARE_DIR` | `./firmware_bins` | OTA image store. |
 | `IMPRESS_SSL_CERTFILE`, `IMPRESS_SSL_KEYFILE` | empty | read by `scripts/start.sh`, not the app: both set → uvicorn serves HTTPS/WSS itself (#66). Alternatively terminate TLS at a reverse proxy. |
 | `IMPRESS_FIRMWARE_SIGNING_KEY` | empty | Path to the site's firmware **public** key (PEM, from `scripts/firmware_key.sh`). Set: uploads must be signed with it and other images are never deployed (#66). Empty: signatures are recorded, and images are deployed only when `IMPRESS_FIRMWARE_ALLOW_UNSIGNED=true` (#123). |

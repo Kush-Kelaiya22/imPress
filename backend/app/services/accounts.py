@@ -40,6 +40,8 @@ async def commit(db: AsyncSession, revoked: User | None = None) -> None:
     if revoked_id is not None:
         from ..ws.manager import manager
         await manager.close_user(revoked_id)
+        from . import events
+        events.to_user(revoked_id, {"type": "session_ended", "reason": "disabled" if not revoked.is_active else "signed_out"})
 
 
 # What happens to each reference when a user is deleted (#117). Every foreign

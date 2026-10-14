@@ -31,6 +31,9 @@ COPY graphify-out graphify-out
 COPY backend/.env.example backend/.env.example
 COPY scripts/init_env.py scripts/docker-entrypoint.sh scripts/
 
+# imPress Integrity Protection: the reference for the program's own files is made here, read-only for the server.
+RUN cd /app/backend && PYTHONPATH=/app/backend python -m app.services.iips --write /app/IIPS-BASELINE.json
+
 # Unprivileged user. Everything that persists (database, uploaded firmware,
 # generated secrets in .env) lives in the /data volume; backend/.env points there.
 RUN useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin impress \

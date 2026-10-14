@@ -22,6 +22,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import gpc, signing
@@ -42,12 +43,28 @@ RECHECK_S = 30
 
 
 @router.get("/api/system/status")
-async def system_status():
+async def system_status(db: AsyncSession = Depends(get_db)):
+    from ..config import APP_RELEASE
+    from ..models import FirmwareDeployment
+    from ..services import boot_verify, features, iips
     st = integrity.status()
     tm = st.get("test_mode") or {}
+    running = (await db.execute(select(func.count()).select_from(FirmwareDeployment)
+                                .where(FirmwareDeployment.state == "running"))).scalar_one() if features.enabled("update_overlay") else 0
+    # banners shown above every page, in this order (test mode and the integrity warning can both be on)
+    banners = []
+    if not iips.state()["enabled"]:
+        banners.append({"id": "iips", "level": "danger", "text": "imPress Integrity Protection Service is disabled. Proceed with caution."})
+    if tm.get("on"):
+        banners.append({"id": "test_mode", "level": "warning", "since": tm.get("since"),
+                        "text": "Test mode: you are working on test data, not the real database."})
     # no database state here: the integrity state is for administrators (/api/events, System page)
-    return {"version": APP_VERSION, "test_mode": bool(tm.get("on")), "test_mode_since": tm.get("since"),
-            "test_mode_forced": bool(gpc.get("test_mode.forced")),
+    return {"version": APP_VERSION, "release": APP_RELEASE, "test_mode": bool(tm.get("on")), "test_mode_since": tm.get("since"),
+            "test_mode_forced": bool(gpc.get("test_mode.forced")), "banners": banners,
+            "integrity_protection": iips.state()["status"], "locked": boot_verify.locked() or iips.locked(),
+            "updating": {"active": bool(running), "deployments": running,
+                         "message": "We are updating the system. Please wait a moment: this page will return as soon as the update has finished."},
+            "feature_flags": features.snapshot(),
             "features": {"ota": bool(gpc.get("ota.enabled")), "test_data": bool(gpc.get("test_mode.allowed"))}}
 
 
@@ -81,6 +98,8 @@ async def stream_events(token: str, user: User, is_disconnected):
             try:
                 data = await asyncio.wait_for(sub.queue.get(), timeout=KEEPALIVE_S)
                 yield f"data: {data}\n\n"
+                if '"type": "session_ended"' in data:
+                    return
             except asyncio.TimeoutError:
                 yield ": keepalive\n\n"
             now = asyncio.get_running_loop().time()

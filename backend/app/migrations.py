@@ -238,6 +238,7 @@ async def add_device_caps(conn: AsyncConnection) -> None:
 _ACCOUNT_COLUMNS = {
     "users": {"display_name": "VARCHAR(64) DEFAULT ''", "designation": "VARCHAR(8) DEFAULT 'faculty'",
               "must_change_password": "BOOLEAN DEFAULT 0", "onboarded_at": "DATETIME", "preferences": "JSON"},
+    "user_sessions": {"boot_id": "VARCHAR(16) DEFAULT ''", "end_reason": "VARCHAR(16) DEFAULT ''"},
     "class_sessions": {"icon": "VARCHAR(24) DEFAULT ''", "color": "VARCHAR(7) DEFAULT ''"},
 }
 

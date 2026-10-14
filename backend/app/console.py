@@ -279,6 +279,74 @@ class Console(cmd.Cmd):
         self.run(bootstrap.after_reset("root (console)"))
         self.say(f"the system was reset. A copy of what was there: {backup}")
 
+    def do_features(self, line):
+        """features: every feature, whether it is on, and who set it last (administrators, super admins, root, TrustedInstaller)."""
+        from .services import features
+
+        async def go():
+            from .database import async_session
+            async with async_session() as db:
+                await features.load(db)
+            return [{k: (d[k] if d[k] is not None else "-") for k in ("name", "enabled", "set_by", "set_at")} | {"changeable_by": features.RANK_SHORT.get(d["min_rank"])}
+                    for d in (features.describe(n) for n in features.FEATURES)]
+        self.say(table(self.run(go())))
+
+    def do_feature(self, line):
+        """feature NAME on|off [--lock]: switch a feature as root. Root outranks administrators and super admins; --lock stops
+        everyone below root changing it again. (To set it at launch instead: --feature features.disabled=NAME,NAME.)"""
+        from .database import async_session
+        from .services import features
+        a = self._args(line)
+        pos, o = _opts(a, flags={"lock"})
+        if len(pos) != 2 or pos[1] not in ("on", "off"):
+            return self.fail("feature NAME on|off [--lock]")
+
+        async def go():
+            async with async_session() as db:
+                await features.load(db)
+                try:
+                    out = await features.set_feature(db, pos[0], pos[1] == "on", "root (console)", features.ROOT,
+                                                     min_rank=features.ROOT if o.get("lock") else None)
+                except features.Refused as exc:
+                    raise ValueError(str(exc)) from None
+                await db.commit()
+                return out
+        d = self.run(go())
+        self.say(f"{d['name']}: {'on' if d['enabled'] else 'off'}" + (" (locked: only root can change it)" if o.get("lock") else ""))
+
+    def do_policylog(self, line):
+        """policylog [FLAG]: who changed which policy or feature, and when."""
+        from .database import async_session
+        from .services import features
+        a = self._args(line)
+
+        async def go():
+            async with async_session() as db:
+                return await features.history(db, a[0] if a else None, 40)
+        self.say(table(self.run(go()), ["at", "flag", "old", "new", "actor", "actor_role"]))
+
+    def do_requirements(self, line):
+        """requirements: what TrustedInstaller checks on this host (system, memory, disk, ...) and the minimum for each."""
+        from .services import boot_verify
+        checks, host = boot_verify.inspect()
+        self.say(table([{"check": c["title"], "found": c["detail"], "needs": c["minimum"], "ok": "yes" if c["ok"] else "NO"} for c in checks]))
+        self.say(f"\ncontainer: {'yes' if host['container'] else 'no'}")
+
+    def do_iips(self, line):
+        """iips status | rehash: imPress Integrity Protection. 'rehash' makes the program's files, as they are now, the reference."""
+        from .services import iips
+        a = self._args(line)
+        if a[:1] == ["rehash"]:
+            doc = iips.write_baseline()
+            self.say(f"the current files are the new reference ({len(doc['files'])} files, tree {doc['root_hash'][:16]})")
+        elif a[:1] in ([], ["status"]):
+            st = iips.check(enabled=True)
+            self.say(kv({"status": st["status"], "differences": len(st["changes"]), "baseline": iips.baseline_path().name}))
+            for c in st["changes"][:20]:
+                self.say(f"  {c['change']:8} {c['path']}")
+        else:
+            self.fail("iips status | rehash")
+
     def do_clear(self, line):
         """clear: clear the screen."""
         print("\033[2J\033[H", end="", file=self.out)
@@ -294,11 +362,31 @@ class Console(cmd.Cmd):
         return [n[3:] + " " for n in self.get_names() if n.startswith("do_" + text) and n not in ("do_EOF", "do_quit")]
 
 
+def _root_screen_allowed() -> bool:
+    """The separate console (ssh, docker exec) is closed when root.allow_access is off or the host is a container.
+    The console on the container's own screen (the root screen) sets IMPRESS_ROOT_SCREEN and is always allowed."""
+    import os
+    if os.environ.get("IMPRESS_ROOT_SCREEN"):
+        return True
+    from . import gpc
+    from .config import settings
+    from .services import boot_verify
+    try:
+        gpc.load(settings)
+    except Exception:                                    # noqa: BLE001
+        pass
+    return bool(gpc.get("root.allow_access")) and not boot_verify.in_container()
+
+
 def main(argv: list[str] | None = None) -> int:
     import argparse
     ap = argparse.ArgumentParser(prog="python -m app.console", description=__doc__.split("\n\n")[0])
     ap.add_argument("-c", "--command", action="append", default=[], help="run this command (repeatable), then exit")
     args = ap.parse_args(argv)
+    if not _root_screen_allowed():
+        print("The separate root console is switched off here (policy root.allow_access): TrustedInstaller closes it inside a "
+              "container. Use the console on the container's own screen (docker run -it, docker attach).", file=sys.stderr)
+        return 4
     try:
         import readline  # noqa: F401  (line editing and history)
     except ImportError:

@@ -27,6 +27,8 @@ os.environ.update({
     # The in-process test client is neither HTTPS nor loopback; test_transport.py
     # checks the HTTPS rule itself (#152).
     "IMPRESS_REQUIRE_HTTPS": "false",
+    # TrustedInstaller's minimum hardware: a CI runner may be small, test_boot_verify.py checks the rule itself
+    "IMPRESS_MIN_CORES": "1", "IMPRESS_MIN_MEMORY_MB": "1", "IMPRESS_MIN_DISK_MB": "1",
     "IMPRESS_TEMP_BACKUP_DIR": str(_TMP / "backups"),
 })
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -64,7 +66,7 @@ async def _reset_db():
 # Fire-and-forget DB tasks the app spawns (presence pushes, WS presence
 # refresh). If one outlives a test, its open SQLite connection makes the next
 # test's _reset_db() fail with "database is locked".
-_BACKGROUND_TASKS = {"_push_after_commit", "_touch_device_on_message"}
+_BACKGROUND_TASKS = {"_push_after_commit", "_touch_device_on_message", "_persist"}
 
 
 async def _drain_background_tasks(timeout=5.0):
