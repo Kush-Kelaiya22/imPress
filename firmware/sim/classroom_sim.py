@@ -59,6 +59,17 @@ class _Msg(ctypes.Structure):
                 ("payload", ctypes.c_uint8 * MSG_MAX_PAYLOAD), ("crc", ctypes.c_uint16)]
 
 
+class _SpiLink(ctypes.Structure):           # spi_link_t (spi_link.h, #182)
+    _fields_ = [("announce", ctypes.c_bool), ("peer", ctypes.c_bool), ("epoch", ctypes.c_uint8),
+                ("next_seq", ctypes.c_uint8), ("head_seq", ctypes.c_uint8), ("sent_trailer", ctypes.c_bool),
+                ("peer_epoch", ctypes.c_uint8), ("rx_last", ctypes.c_uint8),
+                ("resent", ctypes.c_uint32), ("duplicates", ctypes.c_uint32)]
+
+
+SPI_LINK_TRAILER = 8
+SPI_FIFO_DEPTH = 8          # SPI_SLOT_FIFO_DEPTH
+
+
 class _AnswerTx(ctypes.Structure):          # answer_tx_t (protocol.h, #181)
     _fields_ = [("state", ctypes.c_int), ("msg_id", ctypes.c_uint32), ("resends", ctypes.c_uint8),
                 ("due_ms", ctypes.c_uint32)]
@@ -71,7 +82,7 @@ _lib = None
 
 
 def firmware() -> ctypes.CDLL:
-    """Compile protocol.c + ota_chunk.c once per process and load them."""
+    """Compile protocol.c, ota_chunk.c and spi_link.c once per process and load them."""
     global _lib
     if _lib is None:
         cc = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
@@ -79,7 +90,8 @@ def firmware() -> ctypes.CDLL:
             raise RuntimeError("a C compiler (cc) is needed to run the firmware protocol code")
         out = Path(tempfile.mkdtemp(prefix="impress-sim-")) / "libprotocol.so"
         subprocess.run([cc, "-std=gnu11", "-O1", "-shared", "-fPIC", f"-I{PROTOCOL}",
-                        str(PROTOCOL / "protocol.c"), str(PROTOCOL / "ota_chunk.c"), "-o", str(out)],
+                        str(PROTOCOL / "protocol.c"), str(PROTOCOL / "ota_chunk.c"), str(PROTOCOL / "spi_link.c"),
+                        "-o", str(out)],
                        check=True, capture_output=True)
         lib = ctypes.CDLL(str(out))
         u8p, sz = ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t
@@ -104,6 +116,13 @@ def firmware() -> ctypes.CDLL:
         lib.answer_tx_ack.restype = ctypes.c_bool
         lib.ack_ttl.argtypes = [ctypes.c_uint8, ctypes.c_uint8]
         lib.ack_ttl.restype = ctypes.c_uint8
+        lk = ctypes.POINTER(_SpiLink)
+        lib.spi_link_init.argtypes = [lk, ctypes.c_uint8, ctypes.c_bool]
+        lib.spi_link_tx.argtypes = [lk, u8p, sz, u8p, sz]
+        lib.spi_link_rx.argtypes = [lk, u8p, sz, ctypes.POINTER(ctypes.c_bool)]
+        lib.spi_link_rx.restype = sz
+        lib.spi_link_drop_head.argtypes = [lk, ctypes.c_bool, ctypes.c_bool]
+        lib.spi_link_drop_head.restype = ctypes.c_bool
         _lib = lib
     return _lib
 
@@ -223,10 +242,14 @@ class Hub:
     mesh_dedup_check), queue (64 entries), then pack SPI records into one
     4 KB slot per exchange (firmware spi_record_write / spi_slot_encode)."""
 
-    def __init__(self):
+    def __init__(self, spi_ack: bool = True):
         self.dedup = ctypes.create_string_buffer(1024)          # mesh_dedup_t, zero = empty
         self.queue: list[tuple[int, bytes]] = []
-        self.log = {"accepted": 0, "bad_frame": 0, "duplicate": 0, "queue_full": 0}
+        self.spi_fifo: list[bytes] = []
+        self.spi_ack = spi_ack
+        self.link = _SpiLink()
+        firmware().spi_link_init(ctypes.byref(self.link), 0x3B, True)
+        self.log = {"accepted": 0, "bad_frame": 0, "duplicate": 0, "queue_full": 0, "spi_slots_sent": 0}
 
     def receive(self, packet: bytes, now_ms: int) -> str:
         """'queued', 'duplicate', 'full' or 'bad' (mesh_master.c on_espnow_recv)."""
@@ -258,22 +281,62 @@ class Hub:
         payload = struct.pack("<IIH", firmware().mesh_msg_id(sender, _buf(frame), len(frame)), sender, seq & 0xFFFF)
         return struct.pack("<BIB", firmware().ack_ttl(hops, RELAY_TTL), 0, 0) + encode(MSG_ACK, payload)
 
-    def flush_slot(self) -> bytes:
-        """One SPI slot (4096 bytes) holding as many queued records as fit."""
-        records = _buf(SPI_SLOT_PAYLOAD_MAX)
+    def pending(self) -> bool:
+        return bool(self.queue or self.spi_fifo)
+
+    def _pack(self) -> None:
+        """mesh_master_flush_to_spi + spi_master_send: queued records into one
+        payload (room left for the link trailer) on the SPI FIFO."""
+        if not self.queue or len(self.spi_fifo) >= SPI_FIFO_DEPTH:
+            return
+        room = SPI_SLOT_PAYLOAD_MAX - SPI_LINK_TRAILER
+        records = _buf(room)
         total = 0
         while self.queue:
             sender, frame = self.queue[0]
             n = firmware().spi_record_write(ctypes.cast(ctypes.byref(records, total), ctypes.POINTER(ctypes.c_uint8)),
-                                            SPI_SLOT_PAYLOAD_MAX - total, sender, _buf(frame), len(frame))
+                                            room - total, sender, _buf(frame), len(frame))
             if n < 0:
                 break
             total += n
             self.queue.pop(0)
+        self.spi_fifo.append(bytes(records[:total]))
+
+    def exchange(self, gw: "Gateway", corrupt_down: bool = False, corrupt_up: bool = False) -> list[dict]:
+        """spi_master_poll(): one full-duplex slot with the gateway. With
+        spi_ack the FIFO head stays until the gateway acknowledges it (#182);
+        without, it is dropped once clocked (the old firmware)."""
+        lib = firmware()
+        self._pack()
+        head = self.spi_fifo[0] if self.spi_fifo else None
+        out = _buf(SPI_SLOT_PAYLOAD_MAX)
+        if self.spi_ack:
+            n = lib.spi_link_tx(ctypes.byref(self.link), _buf(head) if head else None, len(head) if head else 0,
+                                out, SPI_SLOT_PAYLOAD_MAX)
+        else:
+            n = len(head) if head else 0
+            if head:
+                ctypes.memmove(out, head, n)
         slot = _buf(SPI_SLOT_BYTES)
-        if firmware().spi_slot_encode(slot, records, total) != 0:
-            raise RuntimeError("spi_slot_encode refused the batch")
-        return bytes(slot)
+        lib.spi_slot_encode(slot, out, n)
+        down = bytearray(slot)
+        if corrupt_down:
+            down[3] ^= 0x01                                    # a bit error inside the payload
+        items, up = gw.exchange(bytes(down))
+        up = bytearray(up)
+        if corrupt_up:
+            up[3] ^= 0x01
+        acked = ctypes.c_bool(False)
+        rx = _buf(SPI_SLOT_BYTES)
+        m = lib.spi_slot_decode(_buf(up), rx, SPI_SLOT_BYTES)
+        if m >= 0 and self.spi_ack:
+            lib.spi_link_rx(ctypes.byref(self.link), rx, m, ctypes.byref(acked))
+        drop = (lib.spi_link_drop_head(ctypes.byref(self.link), head is not None, acked.value)
+                if self.spi_ack else head is not None)
+        if drop and head is not None:
+            self.spi_fifo.pop(0)
+            self.log["spi_slots_sent"] += 1
+        return items
 
 
 class Gateway:
@@ -281,17 +344,41 @@ class Gateway:
     (spi_record_read), decode frames and build the batch JSON the backend
     receives at POST /api/device/batch (model of msg_to_json)."""
 
-    def __init__(self, mac: str = "AABBCCDDEEFF"):
+    def __init__(self, mac: str = "AABBCCDDEEFF", spi_ack: bool = True):
         self.mac = mac
-        self.log = {"slots": 0, "bad_slots": 0, "records": 0}
+        self.spi_ack = spi_ack
+        self.link = _SpiLink()
+        firmware().spi_link_init(ctypes.byref(self.link), 0x6C, False)
+        self.armed = bytes(SPI_SLOT_BYTES)                     # the slot the hub clocks next
+        self.log = {"slots": 0, "bad_slots": 0, "records": 0, "repeats": 0}
 
-    def receive_slot(self, slot: bytes) -> list[dict]:
+    def exchange(self, slot: bytes) -> tuple[list[dict], bytes]:
+        """spi_slave_read(): the hub clocked `slot` and read self.armed.
+        Returns the batch items and the slot the hub received."""
+        lib = firmware()
+        sent = self.armed
         self.log["slots"] += 1
         out = _buf(SPI_SLOT_BYTES)
-        n = firmware().spi_slot_decode(_buf(slot), out, SPI_SLOT_BYTES)
+        n = lib.spi_slot_decode(_buf(slot), out, SPI_SLOT_BYTES)
+        items = []
         if n < 0:
             self.log["bad_slots"] += 1
-            return []
+        else:
+            if self.spi_ack:
+                acked = ctypes.c_bool(False)
+                before = self.link.duplicates
+                n = lib.spi_link_rx(ctypes.byref(self.link), out, n, ctypes.byref(acked))
+                self.log["repeats"] += self.link.duplicates - before
+            items = self._records(out, n)
+        # Arm the next slot: nothing queued C6 -> S3 here, just the trailer once the hub uses them.
+        reply = _buf(SPI_SLOT_PAYLOAD_MAX)
+        m = lib.spi_link_tx(ctypes.byref(self.link), None, 0, reply, SPI_SLOT_PAYLOAD_MAX) if self.spi_ack else 0
+        armed = _buf(SPI_SLOT_BYTES)
+        lib.spi_slot_encode(armed, reply, m)
+        self.armed = bytes(armed)
+        return items, sent
+
+    def _records(self, out, n: int) -> list[dict]:
         items, off = [], 0
         sender = ctypes.c_uint32()
         fptr = ctypes.POINTER(ctypes.c_uint8)()
@@ -353,36 +440,50 @@ class Report:
 
 def _sources_digest() -> str:
     h = hashlib.sha256()
-    for f in ("protocol.c", "protocol.h", "ota_chunk.c", "ota_chunk.h"):
+    for f in ("protocol.c", "protocol.h", "ota_chunk.c", "ota_chunk.h", "spi_link.c", "spi_link.h"):
         h.update((PROTOCOL / f).read_bytes())
     return h.hexdigest()
+
+
+def _boot_link(hub: "Hub", gw: "Gateway", seed: int, spi_corrupt: float) -> None:
+    """The hub polls the SPI link from power-on (every 50 ms), long before the
+    first press: idle exchanges until both ends have heard the other's
+    trailer (#182). With a link that never gets a slot through, they keep the
+    old rule (see spi_link.h). Its own random stream: the class's draws stay
+    the same with or without it."""
+    rng = random.Random(seed ^ 0xB007)
+    for _ in range(50):
+        if not hub.spi_ack or (hub.link.peer and gw.link.peer):
+            return
+        hub.exchange(gw, rng.random() < spi_corrupt, rng.random() < spi_corrupt)
 
 
 def run_quiz(students: int = 30, *, seed: int = 1, loss: float = 0.0, duplicate: float = 0.0,
              corrupt: float = 0.0, reorder: float = 0.0, quiz_id: int = 1, question: int = 0,
              spi_corrupt: float = 0.0, roll_prefix: str = "SIM", arrival_gap_ms: int = 20,
-             spi_poll_ms: int = SPI_POLL_MS, ack: bool = False) -> Report:
+             spi_poll_ms: int = SPI_POLL_MS, ack: bool = False, spi_ack: bool = True,
+             max_exchanges: int = 1000) -> Report:
     """Every student answers one question; the hub drains to the gateway in
     SPI slots. Returns what reached the gateway's batch.
 
     ack=False: a hub without acknowledgements (before #181): one send per press.
     ack=True: the hub confirms with MSG_ACK over the same lossy radio and each
-    module runs the firmware's answer_tx_* state machine (resend, then give up)."""
+    module runs the firmware's answer_tx_* state machine (resend, then give up).
+    spi_ack=True: hub and gateway acknowledge SPI slots (spi_link.c, #182);
+    False: the old firmware, which drops a slot once clocked."""
     if ack:
         return _run_acked(students, seed, loss, duplicate, corrupt, quiz_id, question, spi_corrupt,
-                          roll_prefix, arrival_gap_ms, spi_poll_ms)
+                          roll_prefix, arrival_gap_ms, spi_poll_ms, spi_ack)
     rng = random.Random(seed)
     radio = Radio(rng, loss, duplicate, corrupt, reorder)
-    hub, gw = Hub(), Gateway()
+    hub, gw = Hub(spi_ack), Gateway(spi_ack=spi_ack)
+    _boot_link(hub, gw, seed, spi_corrupt)
     roster = [Student(f"{roll_prefix}{i:07d}"[:10], 0x1000 + i) for i in range(students)]
     packets = [s.press(quiz_id, question, rng.randrange(4), rng.randrange(200, 30_000)) for s in roster]
     delivered = []
 
-    def exchange():                                             # one SPI slot, hub -> gateway
-        slot = bytearray(hub.flush_slot())
-        if rng.random() < spi_corrupt:
-            slot[rng.randrange(4, 64)] ^= 0x01                 # a bit error inside the payload
-        delivered.extend(gw.receive_slot(bytes(slot)))
+    def exchange():                                             # one SPI exchange, hub <-> gateway
+        delivered.extend(hub.exchange(gw, rng.random() < spi_corrupt, rng.random() < spi_corrupt))
 
     now = last_flush = 0
     for p in radio.carry(packets):
@@ -391,13 +492,15 @@ def run_quiz(students: int = 30, *, seed: int = 1, loss: float = 0.0, duplicate:
             exchange()
             last_flush = now
         hub.receive(p, now)
-    while hub.queue:
+    for _ in range(max_exchanges):
+        if not hub.pending():
+            break
         exchange()
     return Report(seed, students, len(packets), delivered, radio.log, hub.log, gw.log)
 
 
 def _run_acked(students, seed, loss, duplicate, corrupt, quiz_id, question, spi_corrupt, roll_prefix,
-               arrival_gap_ms, spi_poll_ms, tick_ms: int = 10, loop_ms: int = 200) -> Report:
+               arrival_gap_ms, spi_poll_ms, spi_ack=True, tick_ms: int = 10, loop_ms: int = 200) -> Report:
     """Time-stepped room with acknowledgements: presses spread over
     students * arrival_gap_ms; radio latency 1-20 ms each way; the module's
     main loop runs every 200 ms (student main.c); the hub drains every
@@ -406,7 +509,8 @@ def _run_acked(students, seed, loss, duplicate, corrupt, quiz_id, question, spi_
     rng = random.Random(seed)
     up = Radio(rng, loss, duplicate, corrupt)
     down = Radio(rng, loss, duplicate, corrupt)
-    hub, gw = Hub(), Gateway()
+    hub, gw = Hub(spi_ack), Gateway(spi_ack=spi_ack)
+    _boot_link(hub, gw, seed, spi_corrupt)
     roster = [Student(f"{roll_prefix}{i:07d}"[:10], 0x1000 + i) for i in range(students)]
     press_at = {s.device_id: rng.randrange(0, max(1, students * arrival_gap_ms)) for s in roster}
     frames, txs = {}, {s.device_id: _AnswerTx() for s in roster}
@@ -443,13 +547,12 @@ def _run_acked(students, seed, loss, duplicate, corrupt, quiz_id, question, spi_
                 if lib.answer_tx_poll(ctypes.byref(tx), now, jitter()):
                     resends += 1
                     to_hub += [(now + rng.randrange(1, 21), p) for p in up.carry([frames[dev]])]
-        if now % spi_poll_ms == 0 and hub.queue:
-            slot = bytearray(hub.flush_slot())
-            if rng.random() < spi_corrupt:
-                slot[rng.randrange(4, 64)] ^= 0x01
-            delivered += gw.receive_slot(bytes(slot))
-    while hub.queue:
-        delivered += gw.receive_slot(hub.flush_slot())
+        if now % spi_poll_ms == 0:
+            delivered += hub.exchange(gw, rng.random() < spi_corrupt, rng.random() < spi_corrupt)
+    for _ in range(1000):
+        if not hub.pending():
+            break
+        delivered += hub.exchange(gw)
     states = [tx.state for tx in txs.values()]
     return Report(seed, students, len(frames), delivered, up.log, hub.log, gw.log, {
         "acks_sent": seq, "acks_radio": down.log, "resends": resends,
@@ -463,9 +566,11 @@ def main(argv=None) -> int:
     for f in ("loss", "duplicate", "corrupt", "reorder", "spi-corrupt"):
         ap.add_argument(f"--{f}", type=float, default=0.0)
     ap.add_argument("--ack", action="store_true", help="hub acknowledgements and module resends (#181)")
+    ap.add_argument("--old-spi", action="store_true", help="hub and gateway without SPI acknowledgement (before #182)")
     a = ap.parse_args(argv)
     r = run_quiz(a.students, seed=a.seed, loss=a.loss, duplicate=a.duplicate, corrupt=a.corrupt,
-                 reorder=a.reorder, spi_corrupt=a.spi_corrupt, ack=a.ack)
+                 reorder=a.reorder, spi_corrupt=a.spi_corrupt, ack=a.ack,
+                 spi_ack=not a.old_spi)
     json.dump(r.summary(), sys.stdout, indent=2)
     print()
     return 0

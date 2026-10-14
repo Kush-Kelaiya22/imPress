@@ -17,11 +17,13 @@
 #include "spi_master.h"
 #include "config.h"
 #include "protocol.h"
+#include "spi_link.h"
 
 #include <string.h>
 #include "esp_log.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
+#include "esp_random.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -40,6 +42,13 @@ static uint8_t s_rx_payload[SPI_SLOT_PAYLOAD_MAX];
 static size_t  s_rx_payload_len;
 static uint32_t s_rx_errors;
 
+/* Acknowledged slots (#182): the hub always sends the trailer; a gateway
+ * that answers with one acknowledges, an old one simply ignores it. */
+static spi_link_t s_link;
+static uint8_t s_head_slot[SPI_SLOT_BYTES];          /* FIFO head, encoded */
+static uint8_t s_head[SPI_SLOT_PAYLOAD_MAX];
+static uint8_t s_out[SPI_SLOT_PAYLOAD_MAX];
+
 static void ready_update(void)
 {
     gpio_set_level(PIN_READY_S3_TO_C6, spi_slot_fifo_count(&s_txq) ? 1 : 0);
@@ -57,6 +66,7 @@ int spi_master_init(void)
     }
     spi_slot_fifo_init(&s_txq);
     s_rx_payload_len = 0;
+    spi_link_init(&s_link, (uint8_t)(1 + esp_random() % 255), true);
 
     gpio_config_t s3_out = {
         .pin_bit_mask = (1ULL << PIN_READY_S3_TO_C6),
@@ -114,6 +124,11 @@ int spi_master_init(void)
 
 int spi_master_send(const uint8_t *data, size_t len)
 {
+    if (len > SPI_SLOT_PAYLOAD_MAX - SPI_LINK_TRAILER) {   /* room for the link trailer (#182) */
+        ESP_LOGE(TAG, "Send too large: %u bytes (max %u)",
+                 (unsigned)len, (unsigned)(SPI_SLOT_PAYLOAD_MAX - SPI_LINK_TRAILER));
+        return SPI_SLOT_ERR_LEN;
+    }
     xSemaphoreTake(s_spi_mutex, portMAX_DELAY);
     int rc = spi_slot_fifo_push(&s_txq, data, len);
     ready_update();
@@ -152,8 +167,20 @@ SemaphoreHandle_t spi_master_link_signal(void)
 bool spi_master_poll(void)
 {
     xSemaphoreTake(s_spi_mutex, portMAX_DELAY);
-    bool sending = spi_slot_fifo_peek(&s_txq, s_tx_slot);   /* zero slot if empty */
+    bool sending = spi_slot_fifo_peek(&s_txq, s_head_slot);   /* zero slot if empty */
     xSemaphoreGive(s_spi_mutex);
+    int head_len = sending ? spi_slot_decode(s_head_slot, s_head, sizeof s_head) : 0;
+    if (head_len < 0) {                                       /* our own queue: cannot happen */
+        sending = false;
+        head_len = 0;
+    }
+    /* The FIFO head (kept until the C6 acknowledges it) plus the trailer. */
+    int out_len = spi_link_tx(&s_link, sending ? s_head : NULL, (size_t)head_len, s_out, sizeof s_out);
+    if (out_len < 0) {                                        /* refused at send time; never too large */
+        out_len = 0;
+        sending = false;
+    }
+    spi_slot_encode(s_tx_slot, s_out, (size_t)out_len);
     memset(s_rx_slot, 0, sizeof(s_rx_slot));
 
     spi_transaction_t t = {
@@ -168,21 +195,29 @@ bool spi_master_poll(void)
         return false;
     }
 
-    if (sending) {                        /* delivered: only now leave the FIFO */
+    int n = spi_slot_decode(s_rx_slot, s_rx_payload, sizeof(s_rx_payload));
+    bool acked = false;
+    if (n < 0) {
+        s_rx_errors++;
+        ESP_LOGW(TAG, "Dropped C6 slot (error %d, %lu total)%s", n, (unsigned long)s_rx_errors,
+                 s_link.peer ? ": the C6 resends it" : "");
+    } else {
+        n = (int)spi_link_rx(&s_link, s_rx_payload, (size_t)n, &acked);   /* strips the trailer, drops repeats */
+    }
+
+    /* Leave the FIFO only once delivered: acknowledged by a C6 that does so
+     * (#182), or clocked out to one that doesn't. */
+    if (spi_link_drop_head(&s_link, sending, acked)) {
         xSemaphoreTake(s_spi_mutex, portMAX_DELAY);
         spi_slot_fifo_drop(&s_txq);
         ready_update();
         xSemaphoreGive(s_spi_mutex);
     }
-
-    int n = spi_slot_decode(s_rx_slot, s_rx_payload, sizeof(s_rx_payload));
-    if (n < 0) {
-        s_rx_errors++;
-        ESP_LOGW(TAG, "Dropped C6 slot (error %d, %lu total)", n, (unsigned long)s_rx_errors);
+    if (n <= 0) {
         return false;
     }
     s_rx_payload_len = (size_t)n;
-    return n > 0;
+    return true;
 }
 
 int spi_master_rx_copy(uint8_t *buf, size_t buf_size)

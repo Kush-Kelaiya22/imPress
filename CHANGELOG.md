@@ -24,6 +24,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 ### Fixed
 
 - An unconfigured hub now looks for its updates on the same server as its gateway: the hub's built-in default server address differed from the gateway's. `firmware/activate_idf.ps1` no longer searches one developer's own drive.
+- A transfer error between the hub and the gateway no longer loses the answers it carried: each side keeps what it sent until the other confirms it, and sends it again otherwise. Works with older hubs and gateways (they keep the old behaviour). ([#182](https://github.com/Kush-Kelaiya22/imPress/issues/182))
 - A student's answer or vote lost on the radio is now sent again until the hub confirms it (at most three more times), and the module shows *Answer received*, or *Not delivered: press again* if it never got through. Before, a lost answer was silently missing from the results. Needs the v2.2 hub and module firmware; older hubs and modules keep working as before. ([#181](https://github.com/Kush-Kelaiya22/imPress/issues/181))
 
 ### Security
