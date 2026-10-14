@@ -52,7 +52,7 @@ window.refreshClassRoster = async function (classId) {
           <td class="text-muted">${escHtml(s.email || '—')}</td>
           <td>${s.device_mac ? `<code>${escHtml(s.device_mac)}</code>` : '<span class="text-muted">Not linked</span>'}</td>
           <td><a href="#/student?id=${s.id}&class=${classId}" class="btn btn-sm btn-outline">View</a></td>
-          <td><button class="btn btn-sm btn-danger-ghost" onclick="unenrollStudent(${classId}, ${s.id})">Unenroll</button></td>
+          <td><button class="btn btn-sm btn-danger-ghost" ${callAttr('unenrollStudent', classId, s.id)}>Unenroll</button></td>
         </tr>
       `).join('');
     }
@@ -204,7 +204,7 @@ async function renderLogin(app) {
     <div class="login-page">
       <div class="login-shell">
         <section class="login-form-side">
-          <button class="icon-btn login-theme" onclick="toggleTheme()" aria-label="Toggle dark mode" data-theme-icon>${themeIcon()}</button>
+          <button class="icon-btn login-theme" data-action="toggle-theme" aria-label="Toggle dark mode" data-theme-icon>${themeIcon()}</button>
           <form id="login-form" novalidate>
             <div class="login-brand"><span class="brand-mark">${icon('layers')}</span><span>imPress</span></div>
             <h1>Welcome back</h1>
@@ -479,7 +479,7 @@ async function renderAdminCourses(app) {
       <div class="card hidden" id="course-form-card">
         <div class="card-header">
           <h2 id="course-form-title">New Course</h2>
-          <button class="btn btn-sm btn-outline" onclick="this.closest('.card').classList.add('hidden')"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+          <button class="btn btn-sm btn-outline" data-action="hide-closest" data-closest=".card"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
         </div>
         <form id="course-form" style="padding:1rem">
           <div class="form-section">
@@ -530,7 +530,7 @@ async function renderAdminCourses(app) {
           <input type="hidden" id="cf-edit-id" value="" />
           <div class="mt-1" style="display:flex;gap:0.5rem">
             <button type="submit" class="btn btn-primary" id="cf-submit">Create Course</button>
-            <button type="button" class="btn btn-outline" onclick="document.getElementById('course-form-card').classList.add('hidden')">Cancel</button>
+            <button type="button" class="btn btn-outline" data-action="hide" data-target="#course-form-card">Cancel</button>
           </div>
         </form>
       </div>
@@ -560,8 +560,8 @@ async function renderAdminCourses(app) {
                       <td class="text-muted" style="font-size:0.85rem">${escHtml(examInfo)}</td>
                       <td>${c.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-outline">Inactive</span>'}</td>
                       <td>
-                        <button class="btn btn-sm btn-outline" onclick="window._editCourse(${c.id})"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-                        <button class="btn btn-sm btn-outline text-danger" onclick="window._deleteCourse(${c.id})"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                        <button class="btn btn-sm btn-outline" ${callAttr('_editCourse', c.id)}><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+                        <button class="btn btn-sm btn-outline text-danger" ${callAttr('_deleteCourse', c.id)}><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
                       </td>
                     </tr>
                   `}).join('')}
@@ -783,13 +783,13 @@ async function renderAdminClassForm(app, params) {
     if (!container) return;
     container.innerHTML = scheduleSlots.map((s, i) => `
       <div class="schedule-row-input" style="margin-bottom:0.4rem">
-        <select class="input-sm" onchange="window.formScheduleSlots[${i}].day=this.value">
+        <select class="input-sm" data-change="slot-field" data-i="${i}" data-field="day">
           ${DAYS.map(d => `<option value="${d}" ${s.day === d ? 'selected' : ''}>${d}</option>`).join('')}
         </select>
-        <input type="time" class="input-sm" value="${s.start || '09:00'}" onchange="window.formScheduleSlots[${i}].start=this.value" />
+        <input type="time" class="input-sm" value="${s.start || '09:00'}" data-change="slot-field" data-i="${i}" data-field="start" />
         <span class="text-muted">to</span>
-        <input type="time" class="input-sm" value="${s.end || '10:00'}" onchange="window.formScheduleSlots[${i}].end=this.value" />
-        <button type="button" class="btn btn-sm btn-outline text-danger" onclick="window.formScheduleSlots.splice(${i},1);window.formRenderScheduleRows()"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        <input type="time" class="input-sm" value="${s.end || '10:00'}" data-change="slot-field" data-i="${i}" data-field="end" />
+        <button type="button" class="btn btn-sm btn-outline text-danger" data-action="slot-remove" data-i="${i}"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
       </div>
     `).join('');
   }
@@ -1094,7 +1094,7 @@ async function renderAdminStudents(app) {
       <div class="card hidden" id="csv-import-card">
         <div class="card-header">
           <h2>Import Students from CSV</h2>
-          <button class="btn btn-sm btn-outline" onclick="document.getElementById('csv-import-card').classList.add('hidden')"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+          <button class="btn btn-sm btn-outline" data-action="hide" data-target="#csv-import-card"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
         </div>
         <div style="padding:1rem">
           <p class="form-hint" style="margin-top:0;margin-bottom:0.75rem">
@@ -1120,7 +1120,7 @@ async function renderAdminStudents(app) {
       <div class="card hidden" id="student-form-card">
         <div class="card-header">
           <h2 id="student-form-title">New Student</h2>
-          <button class="btn btn-sm btn-outline" onclick="this.closest('.card').classList.add('hidden')"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+          <button class="btn btn-sm btn-outline" data-action="hide-closest" data-closest=".card"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
         </div>
         <form id="student-form" style="padding:1rem">
           <div class="form-section" style="margin-top:0;padding-top:0;border-top:none">
@@ -1169,7 +1169,7 @@ async function renderAdminStudents(app) {
           <input type="hidden" id="sf-edit-id" value="" />
           <div class="mt-1" style="display:flex;gap:0.5rem">
             <button type="submit" class="btn btn-primary" id="sf-submit">Register Student</button>
-            <button type="button" class="btn btn-outline" onclick="document.getElementById('student-form-card').classList.add('hidden')">Cancel</button>
+            <button type="button" class="btn btn-outline" data-action="hide" data-target="#student-form-card">Cancel</button>
           </div>
         </form>
       </div>
@@ -1457,9 +1457,9 @@ async function renderAdminModules(app) {
                   <td class="text-sm text-center">${d.free_heap ? formatBytes(d.free_heap) : '—'}</td>
                   <td class="text-sm text-center">${d.total_flash ? formatBytes(d.total_flash) : '—'}</td>
                   <td><div class="row-actions" style="justify-content:flex-start">
-                    <button class="btn btn-xs btn-outline" onclick="window._showDiagnostics(${d.id})">Diagnostics</button>
-                    <button class="btn btn-xs btn-outline" onclick="window._pushOta(${d.id}, ${jsArg(d.device_name || d.mac_address)}, ${jsArg(d.device_type)}, ${jsArg(d.firmware_version || '')})">Push OTA</button>
-                    ${d.is_active && !d.verified_at ? `<button class="btn btn-xs btn-outline" onclick="window._verifyModule(${d.id})">Verify</button>` : ''}
+                    <button class="btn btn-xs btn-outline" ${callAttr('_showDiagnostics', d.id)}>Diagnostics</button>
+                    <button class="btn btn-xs btn-outline" ${callAttr('_pushOta', d.id, d.device_name || d.mac_address, d.device_type, d.firmware_version || '')}>Push OTA</button>
+                    ${d.is_active && !d.verified_at ? `<button class="btn btn-xs btn-outline" ${callAttr('_verifyModule', d.id)}>Verify</button>` : ''}
                   </div></td>
                 </tr>
               `).join('')}
@@ -1658,7 +1658,7 @@ async function renderAdminFirmware(app) {
     ${renderNavbar(user, '#/admin/firmware')}
     <div class="container">
       ${pageHeader('Firmware & OTA', 'Upload, qualify, approve and deploy firmware to your classroom devices. Only qualified, approved images reach a device.',
-        `<button class="btn btn-primary" onclick="document.getElementById('fw-upload').scrollIntoView({behavior:'smooth'})">${icon('plus')} Upload firmware</button>`, todayLabel())}
+        `<button class="btn btn-primary" data-action="scroll-to" data-target="#fw-upload">${icon('plus')} Upload firmware</button>`, todayLabel())}
       <div class="stats-grid">
         ${statCard('Registered images', images.length, `${images.filter(a => a.status === 'approved').length} approved · ${images.filter(a => a.status === 'uploaded').length} pending`, 'file')}
         ${statCard('Active deployments', deployments.filter(d => ['running', 'paused', 'scheduled'].includes(d.status)).length, `${deployments.length} in total`, 'radio', 'blue')}
@@ -2186,7 +2186,7 @@ async function renderClassDetail(app, params) {
               ${(cls.faculty_names && cls.faculty_names.length)
                 ? cls.faculty_names.map(f => escHtml(f.full_name)).join(', ')
                 : escHtml(cls.teacher_name || 'Unassigned')}
-              ${isAdmin ? `<button class="btn btn-sm btn-outline ml-1" onclick="openManageFaculty(${classId})">Manage Faculty</button>` : ''}
+              ${isAdmin ? `<button class="btn btn-sm btn-outline ml-1" ${callAttr('openManageFaculty', classId)}>Manage Faculty</button>` : ''}
             </span>
             <span>Code: <code>${escHtml(cls.code)}</code>${cls.classroom_code ? `${cls.code !== cls.classroom_code ? ` · Room ${escHtml(cls.classroom_code)}` : ''}` : ''}</span>
           </div>
@@ -2199,8 +2199,8 @@ async function renderClassDetail(app, params) {
         </div>
         <div class="flex gap-1">
           ${cls.is_active
-            ? `<button class="btn btn-danger-soft" onclick="deactivateClass('${classId}')">${icon('power', 'sm')} End session</button>`
-            : `<button class="btn btn-primary" onclick="activateClass('${classId}')">${icon('play', 'sm')} Start session</button>`
+            ? `<button class="btn btn-danger-soft" ${callAttr('deactivateClass', classId)}>${icon('power', 'sm')} End session</button>`
+            : `<button class="btn btn-primary" ${callAttr('activateClass', classId)}>${icon('play', 'sm')} Start session</button>`
           }
         </div>
       </div>
@@ -2225,10 +2225,10 @@ async function renderClassDetail(app, params) {
                   </div>
                 </div>
                 <div class="flex gap-1" id="quiz-actions-${q.id}">
-                  ${q.status === 'draft' ? `<button class="btn btn-sm btn-success" onclick="startQuiz(${q.id})"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 4 14 8-14 8Z"/></svg> Start</button>` : ''}
+                  ${q.status === 'draft' ? `<button class="btn btn-sm btn-success" ${callAttr('startQuiz', q.id)}><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 4 14 8-14 8Z"/></svg> Start</button>` : ''}
                   ${q.status === 'active' ? `
-                    <button class="btn btn-sm btn-primary" onclick="nextQuestion(${q.id})">Next →</button>
-                    <button class="btn btn-sm btn-danger" onclick="stopQuiz(${q.id})"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg> Stop</button>
+                    <button class="btn btn-sm btn-primary" ${callAttr('nextQuestion', q.id)}>Next →</button>
+                    <button class="btn btn-sm btn-danger" ${callAttr('stopQuiz', q.id)}><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg> Stop</button>
                   ` : ''}
                   ${q.status === 'completed' ? `<a href="#/quiz-results?id=${q.id}" class="btn btn-sm btn-outline">Results</a>` : ''}
                 </div>
@@ -2256,8 +2256,8 @@ async function renderClassDetail(app, params) {
                   </div>
                 </div>
                 <div class="flex gap-1">
-                  ${p.status === 'draft' ? `<button class="btn btn-sm btn-success" onclick="startPoll(${p.id})"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 4 14 8-14 8Z"/></svg> Start</button>` : ''}
-                  ${p.status === 'active' ? `<button class="btn btn-sm btn-danger" onclick="endPoll(${p.id})"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg> End</button>` : ''}
+                  ${p.status === 'draft' ? `<button class="btn btn-sm btn-success" ${callAttr('startPoll', p.id)}><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 4 14 8-14 8Z"/></svg> Start</button>` : ''}
+                  ${p.status === 'active' ? `<button class="btn btn-sm btn-danger" ${callAttr('endPoll', p.id)}><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg> End</button>` : ''}
                   ${p.status === 'closed' ? `<a href="#/poll-results?id=${p.id}" class="btn btn-sm btn-outline">Results</a>` : ''}
                 </div>
               </div>
@@ -2282,8 +2282,8 @@ async function renderClassDetail(app, params) {
         <div class="card-header">
           <h2><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Students (${students.length})</h2>
           <div class="flex gap-1" style="flex-wrap:wrap">
-            <button class="btn btn-sm btn-outline" onclick="toggleClassCsvImport()"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg> Import CSV</button>
-            <button class="btn btn-sm btn-primary" onclick="toggleClassStudentForm()">${icon('plus', 'sm')} Enroll Student</button>
+            <button class="btn btn-sm btn-outline" ${callAttr('toggleClassCsvImport')}><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg> Import CSV</button>
+            <button class="btn btn-sm btn-primary" ${callAttr('toggleClassStudentForm')}>${icon('plus', 'sm')} Enroll Student</button>
           </div>
         </div>
 
@@ -2325,7 +2325,7 @@ async function renderClassDetail(app, params) {
                     <a href="#/student?id=${s.id}&class=${classId}" class="btn btn-sm btn-outline">View</a>
                   </td>
                   <td>
-                    <button class="btn btn-sm btn-danger-ghost" onclick="unenrollStudent(${classId}, ${s.id})">Unenroll</button>
+                    <button class="btn btn-sm btn-danger-ghost" ${callAttr('unenrollStudent', classId, s.id)}>Unenroll</button>
                   </td>
                 </tr>
               `).join('')}
@@ -2389,7 +2389,7 @@ async function renderClassDetail(app, params) {
 
       <!-- Manage Faculty Modal -->
       <div id="faculty-modal" class="modal hidden">
-        <div class="modal-backdrop" onclick="this.parentElement.classList.add('hidden')"></div>
+        <div class="modal-backdrop" data-action="hide-parent"></div>
         <div class="modal-content card">
           <h2>Manage Faculty for ${escHtml(cls.name)}</h2>
           <p class="text-muted text-sm">Select every teacher assigned to this classroom. The primary owner is shown first.</p>
@@ -2397,8 +2397,8 @@ async function renderClassDetail(app, params) {
             <p class="text-muted">Loading teachers…</p>
           </div>
           <div class="flex gap-1 mt-2">
-            <button class="btn btn-primary" onclick="saveClassFaculty(${classId})">Save Faculty</button>
-            <button class="btn btn-outline" onclick="document.getElementById('faculty-modal').classList.add('hidden')">Cancel</button>
+            <button class="btn btn-primary" ${callAttr('saveClassFaculty', classId)}>Save Faculty</button>
+            <button class="btn btn-outline" data-action="hide" data-target="#faculty-modal">Cancel</button>
           </div>
         </div>
       </div>
@@ -2711,7 +2711,7 @@ async function renderClassExceptions(classId) {
         <tbody>${rows.map(e => `<tr>
           <td>${label[e.kind] || escHtml(e.kind)}</td><td>${escHtml(when(e))}</td>
           <td>${escHtml(e.classroom_code || '—')}</td><td>${escHtml(e.source)}</td><td>${escHtml(e.note || '')}</td>
-          <td>${e.source === 'local' ? `<button class="btn btn-sm btn-outline text-danger" onclick="removeClassException(${classId}, ${e.id})">Remove</button>` : ''}</td>
+          <td>${e.source === 'local' ? `<button class="btn btn-sm btn-outline text-danger" ${callAttr('removeClassException', classId, e.id)}>Remove</button>` : ''}</td>
         </tr>`).join('')}</tbody></table></div>` : '<p class="text-muted">No changes recorded.</p>'}
       <form id="exception-form" class="mt-1">
         <div class="flex gap-1" style="flex-wrap:wrap">
@@ -2833,7 +2833,7 @@ async function renderQuizCreate(app, params) {
               </div>
             </div>
 
-            <button type="button" class="btn btn-outline mb-2" onclick="addQuizQuestion()">${icon('plus', 'sm')} Add Question</button>
+            <button type="button" class="btn btn-outline mb-2" ${callAttr('addQuizQuestion')}>${icon('plus', 'sm')} Add Question</button>
 
             <div class="flex gap-1">
               <button type="submit" class="btn btn-primary">Create Quiz</button>
@@ -3012,7 +3012,7 @@ window.addQuizQuestion = function () {
   div.innerHTML = `
     <div class="flex-between">
       <h2 style="font-size:1rem">Question ${qi + 1}</h2>
-      <button type="button" class="btn btn-sm btn-danger" onclick="this.closest('[data-qi]').remove()"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      <button type="button" class="btn btn-sm btn-danger" data-action="remove-closest" data-closest="[data-qi]"><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="form-group">
       <label>Question Text</label>
@@ -3106,7 +3106,7 @@ async function renderQuizResults(app, params) {
   app.innerHTML = `
     ${renderNavbar(user, window.location.hash)}
     <div class="container" style="max-width:800px">
-      <a href="javascript:history.back()" class="text-muted" style="font-size:0.9rem">← Back</a>
+      <a href="#/dashboard" data-action="back" class="text-muted" style="font-size:0.9rem">← Back</a>
       <div class="card mt-1">
         <h1><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M8 17V10M13 17V6M18 17v-4"/></svg> ${escHtml(results.title)}</h1>
         <p class="text-muted">${results.status} · ${results.quiz_mode} · ${results.timing_mode}</p>
@@ -3149,7 +3149,7 @@ async function renderPollResults(app, params) {
   app.innerHTML = `
     ${renderNavbar(user, window.location.hash)}
     <div class="container" style="max-width:600px">
-      <a href="javascript:history.back()" class="text-muted" style="font-size:0.9rem">← Back</a>
+      <a href="#/dashboard" data-action="back" class="text-muted" style="font-size:0.9rem">← Back</a>
       <div class="card mt-1">
         <h1><svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M8 17V10M13 17V6M18 17v-4"/></svg> ${escHtml(results.title)}</h1>
         <p class="text-muted">${results.status} · ${results.total_votes} votes · ${results.poll_mode}</p>
@@ -3258,11 +3258,7 @@ function escHtml(str) {
   return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-// A string argument for an inline handler: onclick="f(${jsArg(name)})".
-// JSON gives a valid JS literal; the HTML escaping keeps it inside the attribute.
-function jsArg(v) {
-  return escHtml(JSON.stringify(v == null ? '' : String(v)));
-}
+
 
 // ── Indian Standard Time (Asia/Kolkata, UTC+05:30) ─────────────────────
 // The backend stores & serves all timestamps as IST (naive "YYYY-MM-DD HH:MM:SS"

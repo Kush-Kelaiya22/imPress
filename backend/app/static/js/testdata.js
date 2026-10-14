@@ -66,12 +66,12 @@ function tdModeCard(st) {
     </div>
     ${(st.pending || []).length ? `<h3 class="mt-2 mb-1">Test data waiting for a decision</h3>${st.pending.map(p => `<div class="feed-item"><span class="feed-icon amber">${icon('clock', 'sm')}</span>
       <div class="feed-body"><b>${escHtml(p.id)}</b><span>${(p.size / 1024).toFixed(0)} KB</span></div>
-      <button class="btn btn-sm btn-outline" onclick="tdPending(${jsArg(p.id)})">Decide</button></div>`).join('')}` : ''}
+      <button class="btn btn-sm btn-outline" ${callAttr('tdPending', p.id)}>Decide</button></div>`).join('')}` : ''}
     ${ds.length ? `<h3 class="mt-2 mb-1">Saved datasets</h3><div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Contents</th><th>Saved</th><th></th></tr></thead><tbody>
       ${ds.map(d => `<tr><td><b>${escHtml(d.name)}</b></td><td class="text-sm">${d.counts ? `${d.counts.students} students · ${d.counts.classes} classes · ${d.counts.teachers} teachers` : '—'}</td>
         <td class="text-sm">${d.saved_at ? istDateTime(istParseToEpoch(d.saved_at)) : '—'}${d.by ? ` · ${escHtml(d.by)}` : ''}</td>
-        <td class="nowrap"><button class="btn btn-sm btn-outline" onclick="testModeApi.download('dataset', ${jsArg(d.name)}).catch(e => showToast(e.message, 'error'))">${icon('download', 'sm')} Export</button>
-          <button class="btn btn-sm btn-danger-ghost" onclick="tdDeleteDataset(${jsArg(d.name)})">${icon('trash', 'sm')}</button></td></tr>`).join('')}</tbody></table></div>` : ''}
+        <td class="nowrap"><button class="btn btn-sm btn-outline" data-action="td-export" data-name="${escHtml(d.name)}">${icon('download', 'sm')} Export</button>
+          <button class="btn btn-sm btn-danger-ghost" ${callAttr('tdDeleteDataset', d.name)}>${icon('trash', 'sm')}</button></td></tr>`).join('')}</tbody></table></div>` : ''}
   </div>`;
 }
 

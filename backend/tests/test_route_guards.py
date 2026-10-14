@@ -15,6 +15,7 @@ PUBLIC = {
     ("POST", "/api/auth/login"),
     ("GET", "/api/system/status"),          # the debug-mode banner shows on the sign-in page too (v2.2)
     ("GET", "/api/system/signing-key"),     # the PUBLIC key that verifies signed exports (v2.2)
+    ("POST", "/api/system/csp-report"),     # browsers report blocked content here, without credentials (v2.2)
     ("GET", "/api/quizzes/questions/template.csv"),
     ("GET", "/api/admin/classes/import-template.csv"),
 }
@@ -62,4 +63,4 @@ def test_device_routes_reject_a_wrong_key(client):
 def test_public_routes_are_still_reachable(client):
     for method, path in PUBLIC:
         r = client.request(method, path, **({"json": {"username": "x", "password": "y"}} if method == "POST" else {}))
-        assert r.status_code in (200, 401), (method, path, r.status_code)     # 401 = wrong password, still public
+        assert r.status_code in (200, 204, 401), (method, path, r.status_code)     # 401 = wrong password, still public

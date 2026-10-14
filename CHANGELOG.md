@@ -46,6 +46,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Security
 
+- The web app's Content-Security-Policy no longer allows inline scripts or inline event handlers (`script-src 'self'`, `script-src-attr 'none'`): every button, field and link now uses delegated events, and a browser blocks, and reports, any injected script. ([#197](https://github.com/Kush-Kelaiya22/imPress/issues/197))
 - Erasing a student now also removes their name and enrollment number from the activity log (they were left in some entries), and the erase entry keeps only a keyed reference. ([#200](https://github.com/Kush-Kelaiya22/imPress/issues/200))
 - The integrity state, the policy and the audit trail are controlled by root, not by an application super admin; accepting a changed database or clearing data needs a second super admin. See *Added*.
 - Names with quotes can no longer break out of the web app's HTML (a teacher could create a class, or a device could register with a name, that ran script in an administrator's browser). Quotes are escaped everywhere, and inline handlers receive names as JSON.
