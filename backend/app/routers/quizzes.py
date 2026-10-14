@@ -4,7 +4,7 @@ import hashlib
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -183,6 +183,35 @@ async def create_quiz(
 
 
 # ── List Quizzes ────────────────────────────────────────────────────
+
+@router.get("/overview")
+async def sessions_overview(
+    user: User = Depends(require("participation.read")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Every quiz and poll of the classes this user may access, newest first,
+    with response counts (v2.2 Quizzes & polls page)."""
+    from ..models import ClassSession, Poll, PollVote, QuizAnswer
+    from ..policy import class_access
+    classes = {c.id: c for c in (await db.execute(select(ClassSession))).scalars() if class_access(user, c)}
+    if not classes:
+        return {"quizzes": [], "polls": []}
+    quizzes = (await db.execute(select(Quiz).where(Quiz.class_session_id.in_(classes)).order_by(Quiz.id.desc()))).scalars().all()
+    polls = (await db.execute(select(Poll).where(Poll.class_session_id.in_(classes)).order_by(Poll.id.desc()))).scalars().all()
+    answers = dict((await db.execute(select(QuizAnswer.quiz_id, func.count(QuizAnswer.id)).group_by(QuizAnswer.quiz_id))).all())
+    votes = dict((await db.execute(select(PollVote.poll_id, func.count(PollVote.id)).group_by(PollVote.poll_id))).all())
+
+    def cls(cid):
+        c = classes[cid]
+        return {"class_id": cid, "class_name": c.name, "class_code": c.code, "class_active": bool(c.is_active)}
+    return {
+        "quizzes": [{**_quiz_response(q).model_dump(), **cls(q.class_session_id), "answers": answers.get(q.id, 0)}
+                    for q in quizzes],
+        "polls": [{"id": p.id, "title": p.title, "status": p.status, "is_live": bool(p.is_live),
+                   "options": p.options, "created_at": p.created_at, **cls(p.class_session_id),
+                   "votes": votes.get(p.id, 0)} for p in polls],
+    }
+
 
 @router.get("/class/{class_id}", response_model=list[QuizResponse])
 async def list_quizzes(

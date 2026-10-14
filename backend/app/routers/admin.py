@@ -30,6 +30,7 @@ from ..schemas import (
 from ..services.firmware_store import normalize_version, resolve as resolve_firmware
 from ..services import deployments as deployment_engine
 from ..timeutil import istnow
+from ..config import settings
 
 from ..activity import log_activity
 from .. import passwords
@@ -247,7 +248,26 @@ async def list_users(
     if role:
         q = q.where(User.role == role)
     result = await db.execute(q)
-    return [_user_out(user, u) for u in result.scalars().all()]
+    users = result.scalars().all()
+    from ..models import UserSession, class_faculty
+    now = istnow()
+    last = dict((await db.execute(select(ActivityLog.user_id, func.max(ActivityLog.timestamp))
+                                  .group_by(ActivityLog.user_id))).all())
+    taught: dict[int, set] = {}
+    for cid, uid in (await db.execute(select(ClassSession.id, ClassSession.teacher_id))).all():
+        taught.setdefault(uid, set()).add(cid)
+    for cid, uid in (await db.execute(select(class_faculty.c.class_session_id, class_faculty.c.user_id))).all():
+        taught.setdefault(uid, set()).add(cid)
+    live = {uid for (uid,) in (await db.execute(select(UserSession.user_id).where(
+        UserSession.revoked.is_(False), UserSession.expires_at > now,
+        UserSession.last_activity_at > now - timedelta(minutes=max(settings.SESSION_IDLE_MINUTES,
+                                                                   settings.SESSION_CLASS_IDLE_MINUTES))))).all()}
+    out = []
+    for u in users:
+        r = _user_out(user, u)
+        r.last_active_at, r.class_count, r.signed_in = last.get(u.id), len(taught.get(u.id, ())), u.id in live
+        out.append(r)
+    return out
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse)
@@ -768,6 +788,57 @@ def _student_response(s: Student) -> StudentResponse:
         is_active=s.is_active,
         registered_at=s.registered_at,
     )
+
+
+@router.get("/students/summary")
+async def students_summary(
+    user: User = Depends(require("students.read")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Per student (v2.2 Students page): classes, linked module, attendance %
+    (days present out of days their classes took attendance) and participation
+    % (questions answered out of questions asked in their classes' completed
+    quizzes). Administrators see everyone; faculty their classes' students."""
+    from ..models import Attendance, Quiz, QuizAnswer, QuizQuestion
+    visible = None
+    if not sees_all_classes(user):
+        visible = {c.id for c in (await db.execute(select(ClassSession))).scalars() if roster_access(user, c)}
+    enr = (await db.execute(select(StudentEnrollment.id, StudentEnrollment.student_id, StudentEnrollment.class_session_id,
+                                   ClassSession.code).join(ClassSession, ClassSession.id == StudentEnrollment.class_session_id))).all()
+    if visible is not None:
+        enr = [e for e in enr if e.class_session_id in visible]
+    by_student: dict[int, list] = {}
+    for e in enr:
+        by_student.setdefault(e.student_id, []).append(e)
+    held = {cid: n for cid, n in (await db.execute(
+        select(Attendance.class_session_id, func.count(func.distinct(func.date(Attendance.check_in_time))))
+        .group_by(Attendance.class_session_id))).all()}
+    present = {eid: n for eid, n in (await db.execute(
+        select(Attendance.student_enrollment_id, func.count(func.distinct(func.date(Attendance.check_in_time))))
+        .group_by(Attendance.student_enrollment_id))).all()}
+    asked = {cid: n for cid, n in (await db.execute(
+        select(Quiz.class_session_id, func.count(QuizQuestion.id)).join(QuizQuestion, QuizQuestion.quiz_id == Quiz.id)
+        .where(Quiz.status == "completed").group_by(Quiz.class_session_id))).all()}
+    answered = {(sid, cid): n for sid, cid, n in (await db.execute(
+        select(QuizAnswer.student_id, Quiz.class_session_id, func.count(QuizAnswer.id))
+        .join(Quiz, Quiz.id == QuizAnswer.quiz_id).where(Quiz.status == "completed")
+        .group_by(QuizAnswer.student_id, Quiz.class_session_id))).all()}
+    modules = {r for (r,) in (await db.execute(select(StudentModule.enrollment_number))).all()}
+    students = (await db.execute(select(Student))).scalars().all()
+    out = []
+    for s in students:
+        rows = by_student.get(s.id, [])
+        if visible is not None and not rows:
+            continue
+        h = sum(held.get(e.class_session_id, 0) for e in rows)
+        p = sum(min(present.get(e.id, 0), held.get(e.class_session_id, 0)) for e in rows)
+        a = sum(asked.get(e.class_session_id, 0) for e in rows)
+        n = sum(answered.get((s.id, e.class_session_id), 0) for e in rows)
+        out.append({"id": s.id, "classes": [e.code for e in rows],
+                    "module_linked": bool(s.device_mac) or (s.roll_number or "").upper() in modules,
+                    "attendance_pct": round(100 * p / h) if h else None,
+                    "participation_pct": round(100 * min(n, a) / a) if a else None})
+    return out
 
 
 @router.post("/students", response_model=StudentResponse, status_code=201)
