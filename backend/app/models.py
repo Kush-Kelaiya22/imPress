@@ -504,6 +504,26 @@ class ActivityLog(Base):
     user = relationship("User")
 
 
+# ── Dual control (v2.2) ────────────────────────────────────────────────
+
+class Approval(Base):
+    """A request for a dangerous action that a second super admin must approve
+    (policy dual_control.*). One row per request; it is used at most once."""
+    __tablename__ = "approvals"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    action = Column(String(48), nullable=False)             # integrity.accept_current | system.clear.<scope>
+    params = Column(JSON, default=dict)                     # what exactly was approved (e.g. the clear scope)
+    requested_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    requested_at = Column(DateTime, default=istnow)
+    status = Column(String(16), default="pending")          # pending | approved | executed | denied
+    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    not_before = Column(DateTime, nullable=True)            # approved_at + the policy's delay
+    expires_at = Column(DateTime, nullable=True)            # not_before + the policy's expiry
+    executed_at = Column(DateTime, nullable=True)
+
+
 # ── Login throttling (#153) ───────────────────────────────────────────
 
 class LoginThrottle(Base):

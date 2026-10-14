@@ -197,12 +197,32 @@ async def repair(rep, at_startup: bool = False) -> None:
         await _flag(f"The database changed outside imPress ({detail}) and no backup was available to restore. "
                     "Review it; a super admin can accept its current state.", restored=None)
         return
+    age_min = max(0, int((istnow().timestamp() - source.stat().st_mtime) // 60))
+    forensic = await keep_forensic_copy()
     await restore_from(source)
     after = await verify_now()
     await _flag(f"The database changed outside imPress ({detail}). It was restored from the "
-                f"{'start-up' if source.name == 'startup.db' else 'last good'} backup"
-                f"{' at start-up' if at_startup else ''}{'' if after.ok else '; it still does not verify'}.",
+                f"{'start-up' if source.name == 'startup.db' else 'last good'} backup made {age_min} min ago"
+                f"{' at start-up' if at_startup else ''}{'' if after.ok else '; it still does not verify'}. "
+                f"Changes made since that backup are lost. "
+                + (f"The changed database was kept as {forensic.name} for investigation." if forensic else
+                   "No copy of the changed database could be kept."),
                 restored=source.name)
+
+
+async def keep_forensic_copy() -> Path | None:
+    """Before an automatic restore replaces it, keep the failed database (what an
+    investigator needs), newest N per policy integrity.forensic_copies."""
+    from .. import gpc
+    try:
+        dst = await copy_live_to(backup_dir() / f"forensic-{istnow():%Y%m%d-%H%M%S}.db")
+    except Exception:
+        logger.exception("could not keep a forensic copy")
+        return None
+    old = sorted(backup_dir().glob("forensic-*.db"))
+    for p in old[:max(0, len(old) - max(1, gpc.get("integrity.forensic_copies")))]:
+        p.unlink(missing_ok=True)
+    return dst
 
 
 async def _flag(message: str, restored: str | None) -> None:
@@ -244,12 +264,32 @@ async def integrity_loop() -> None:
             logger.exception("Integrity check failed to run")
 
 
+def sweep_old_copies(now: float | None = None) -> list[str]:
+    """Delete the copies taken before a clear once they are older than policy integrity.before_clear_days."""
+    import time
+    from .. import gpc
+    days = gpc.get("integrity.before_clear_days")
+    if not days:
+        return []
+    now = now or time.time()
+    gone = []
+    for p in sorted(backup_dir().glob("before-clear-*.db")):
+        if now - p.stat().st_mtime > days * 86400:
+            p.unlink(missing_ok=True)
+            gone.append(p.name)
+    return gone
+
+
 def backups_info() -> list[dict]:
+    d = backup_dir()
+    names = ["startup.db", "rolling.db"] + [p.name for p in sorted(d.glob("forensic-*.db"), reverse=True)] \
+        + [p.name for p in sorted(d.glob("before-clear-*.db"), reverse=True)[:3]]
     out = []
-    for name in ("startup.db", "rolling.db"):
-        p = backup_dir() / name
+    for name in names:
+        p = d / name
         if p.exists():
             st = p.stat()
-            out.append({"name": name, "size": st.st_size,
+            kind = "forensic" if name.startswith("forensic-") else "before-clear" if name.startswith("before-clear-") else "backup"
+            out.append({"name": name, "kind": kind, "size": st.st_size,
                         "modified": istnow().fromtimestamp(st.st_mtime).isoformat(timespec="seconds")})
     return out

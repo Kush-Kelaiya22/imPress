@@ -2,7 +2,7 @@
 
 import json
 
-from conftest import auth, login, make_class, make_student, make_user
+from conftest import approved, auth, login, make_class, make_student, make_user
 
 
 def test_status_is_public(client):
@@ -74,7 +74,9 @@ def test_clearing_class_data_keeps_accounts_and_verifies(client):
     make_user(client, su, "tch8")
     make_class(client, su)
     make_student(client, su, roll="ROLL000002")
-    r = client.post("/api/admin/system/clear", headers=su, json={"scope": "class_data", "confirm": "DELETE CLASS DATA"})
+    aid = approved(client, su, "system.clear.class_data")
+    r = client.post("/api/admin/system/clear", headers=su,
+                    json={"scope": "class_data", "confirm": "DELETE CLASS DATA", "approval_id": aid})
     assert r.status_code == 200 and r.json()["backup"].startswith("before-clear-")
     assert client.get("/api/admin/classes", headers=su).json() == []
     assert any(u["username"] == "tch8" for u in client.get("/api/admin/users", headers=su).json())
@@ -86,7 +88,9 @@ def test_clearing_class_data_keeps_accounts_and_verifies(client):
 def test_reset_everything_keeps_only_the_acting_super_admin(client):
     su = auth(login(client))
     make_user(client, su, "tch7")
-    r = client.post("/api/admin/system/clear", headers=su, json={"scope": "everything", "confirm": "RESET EVERYTHING"})
+    aid = approved(client, su, "system.clear.everything")
+    r = client.post("/api/admin/system/clear", headers=su,
+                    json={"scope": "everything", "confirm": "RESET EVERYTHING", "approval_id": aid})
     assert r.status_code == 200
     assert [u["username"] for u in client.get("/api/admin/users", headers=su).json()] == ["admin"]
 

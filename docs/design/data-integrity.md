@@ -96,29 +96,79 @@ When a check fails, the service restores `rolling.db` (or `startup.db` if there 
 2. writes a flagged `system.db_degraded` entry to the activity log, saying what changed and which copy was restored;
 3. sends a toast to every signed-in administrator and super admin, and shows a red **Degraded** badge and banner to them until one of them acknowledges it on the **System** page.
 
-A super admin may instead **accept the current state** (reseal the database as it is). Do that only when an intended change was made outside the app, for example after restoring a backup by hand.
+A super admin may instead **accept the current state** (reseal the database as it is) after a second super admin approved it. Do that only when an intended change was made outside the app, for example after restoring a backup by hand.
 
 ```{note}
 Changes between the last good check and the tampering are lost in a restore: at most one interval (5 minutes). The rolling copy is refreshed only from a database that verifies, so a tampered database never overwrites the good copy.
 ```
 
-## 4. Clearing and resetting
+## 4. Clearing, resetting and accepting a changed database
 
-There is no command for it. On **System → Clear data**, a super admin picks a scope and types its confirmation phrase:
+There is no command for it, and **no single super admin can do either alone** (see [Dual control](#dual-control)). On **System → Approvals**, a super admin requests the action; a *different* super admin approves it; the policy's delay passes; the requester runs it, typing the confirmation phrase:
 
 | Scope | Phrase | Removes | Keeps |
 |---|---|---|---|
 | `class_data` | `DELETE CLASS DATA` | courses, classes, students, enrolments, quizzes, polls, answers, votes, attendance, timetable changes | accounts, devices, firmware |
 | `everything` | `RESET EVERYTHING` | all of the above, plus devices, firmware records, deployments, the activity log, and every account except yours | your account and session |
 
-A backup (`before-clear-<time>.db`) is taken first. The deletion runs through the gateway as the system, so the seals stay consistent. Everyone gets a notice that the data was cleared. API: `POST /api/admin/system/clear {scope, confirm}` (`users.assign_role`).
+A backup (`before-clear-<time>.db`, kept `integrity.before_clear_days`, 30 by default) is taken first. The deletion runs through the gateway as the system, so the seals stay consistent. Everyone gets a notice that the data was cleared. Activity-log entries younger than the policy's `audit.min_retention_days` are **not** deleted by a reset (their account link is cleared if the account is deleted), and the external audit sink is never touched. The hardened profile switches the *reset everything* scope off entirely (`system.reset_everything_allowed`). API: `POST /api/admin/system/clear {scope, confirm, approval_id}` (`users.assign_role`).
+
+## Dual control
+
+The seals are not an independent witness: whoever can *accept the current state* or *reset* decides what the system trusts. So those actions are two-person actions, controlled by root-set policy ([global policy control](gpc.md)):
+
+```mermaid
+sequenceDiagram
+    participant A as Super admin A
+    participant S as Server
+    participant B as Super admin B
+    participant L as Audit sink
+    A->>S: request action (re-enter password)
+    S->>L: approval.request
+    S-->>B: alert: A requested ...
+    B->>S: approve (re-enter password)
+    S->>S: not_before = now + delay, expires_at = not_before + expiry
+    S->>L: approval.approve
+    Note over A,S: the delay passes
+    A->>S: run it (approval_id, typed phrase)
+    S->>S: spend the approval, then run the action
+    S->>L: approval.execute, then the action's own entry
+```
+
+| Rule | Detail |
+|---|---|
+| Who | requester and approver are different super admins; with only one active super admin, the standard profile lets them approve their own request (`dual_control.single_operator_ok`) and the hardened profile refuses |
+| Step-up | each step re-checks the caller's password; five wrong passwords in 15 minutes lock step-up for a while |
+| Exactly this | an approval is for one action and its parameters; it can't be used for another action |
+| Once | the approval is spent before the action runs: a second use is refused |
+| Delay and expiry | the action may run only after `dual_control.delay_minutes` (15 in the hardened profile) and within `dual_control.expiry_minutes` after that |
+| Runs as | the requester, never a third person |
+| Records | every step is an activity-log entry (flagged) and an event in the external audit sink, and an alert for the other administrators |
+
+Actions covered: `integrity.accept_current` (accept the database as it is now), `system.clear.class_data`, `system.clear.everything`. Root can switch dual control off (`dual_control.enabled`) in a signed policy; the web app cannot.
+
+**What it is not:** a second pair of eyes at the same keyboard. If one person controls two super-admin accounts, or controls the host, dual control does not help. That is why the hardened profile also requires an audit sink the application cannot rewrite, and why root's key is kept off the server.
+
+## External audit trail
+
+Every activity-log entry is also appended to a **hash-chained** file (`audit.sink_path`) and optionally sent to a webhook (`audit.sink_url`, signed with an HMAC the receiver can check). Each line holds the SHA-256 of the previous line's hash plus its own content, so an edited, removed, reordered or truncated line is found:
+
+```bash
+cd backend && python -m app.manage audit-verify /var/log/impress/audit.jsonl
+```
+
+A chain makes tampering *evident*, not impossible: put the file on an append-only or write-once volume, or the URL on a collector that is not administered by the application's administrators. Entries about students are reduced to non-identifying fields before they are written (the sink can't be erased), and erasing a student also scrubs their entries from the database log. The event is written when the action is logged, before its database transaction commits, so a rolled-back action can appear as an attempt.
+
+## Forensic copy before a restore
+
+When a check fails, the changed database is first copied to `forensic-<time>.db` (0600; the newest `integrity.forensic_copies` are kept), and only then replaced by the last good backup. The alert and the flagged log entry say which backup was used, **how many minutes old it was** (the changes since then are lost) and the name of the forensic copy. Investigate the forensic copy before acknowledging.
 
 ## 5. Where it shows up in the app
 
 - **Sidebar and top bar** (administrators): a **Degraded** badge next to *System* while the database is degraded.
 - **Banner** (administrators): what happened and a link to the System page.
 - **Toasts**: write refusals, Degraded, blocked second sign-ins, clear / reset, debug mode on and off. These arrive live over `/api/events` (Server-Sent Events).
-- **System page**: last verification, row count, both backups with size and time, *Verify now*, *Acknowledge*, *Accept current state* (super admin) and *Clear data*.
+- **System page**: last verification, row count, the backups (start-up, rolling, forensic copies, copies taken before a clear) with size and time, *Verify now*, *Acknowledge*, the read-only **policy** (every flag, its value and where it came from), and the **Approvals** list with *Request*, *Approve*, *Run* and *Deny* for dangerous actions (super admin).
 - **Activity log**: flagged entries (`db.write_refused`, `system.db_degraded`, `auth.second_sign_in_blocked`, `system.clear_*`) are marked and can be filtered.
 
 ## 6. Limits
@@ -126,3 +176,5 @@ A backup (`before-clear-<time>.db`) is taken first. The deletion runs through th
 - The gateway guards writes made **through the application**. Someone with shell access to the server can still change the file; the seals make that visible and reversible, but they don't prevent it. Keep the database folder readable by the service account only.
 - Restores and backups apply to SQLite databases (the supported deployment). With another database URL, the gateway's write rules still apply, but there are no file backups.
 - The seal key comes from `IMPRESS_JWT_SECRET`. Anyone who has that secret and the file can forge seals: protect `.env` like the database itself.
+- **Root is outside what the application can defend.** Someone who controls the host can replace the code, the policy file and its public key together. The signed manifest, the signed policy and the external audit sink move that boundary (the application can then *notice*, and the evidence is somewhere else), but only separation of duties does the rest: root's key off the server, the audit volume administered by someone other than the application's administrators, a second person for dangerous actions. See [production hardening](../guides/production-hardening.md).
+- Restoring a stale copy loses the changes made since it was taken (at most one check interval). The alert states the age, and the failed database is kept for investigation (see above).

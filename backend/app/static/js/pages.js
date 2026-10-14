@@ -679,31 +679,70 @@ function wireActivity(activity) {
 
 // ── System: database integrity, clearing data ─────────────────────────
 
+const APPROVAL_LABEL = {
+  'integrity.accept_current': ['Accept the current database state', 'shieldCheck'],
+  'system.clear.class_data': ['Clear class data', 'trash'],
+  'system.clear.everything': ['Reset everything', 'power'],
+};
+
+function fmtFlag(v) { return v === '' ? '—' : typeof v === 'boolean' ? (v ? 'on' : 'off') : escHtml(v); }
+
+function approvalRow(r, me) {
+  const [label, ic] = APPROVAL_LABEL[r.action] || [r.action, 'key'];
+  const mine = r.requested_by === me.username;
+  const tone = { pending: 'amber', approved: 'blue', executed: 'green', denied: 'red' }[r.status] || '';
+  const buttons = [];
+  if (r.status === 'pending') {
+    buttons.push(`<button class="btn btn-sm btn-primary" data-action="sys-approve" data-id="${r.id}">${icon('check', 'sm')} Approve</button>`);
+    buttons.push(`<button class="btn btn-sm btn-outline" data-action="sys-deny" data-id="${r.id}">Deny</button>`);
+  } else if (r.status === 'approved') {
+    if (mine) buttons.push(`<button class="btn btn-sm btn-danger-soft" data-action="sys-run" data-id="${r.id}" data-kind="${escHtml(r.action)}">${icon('play', 'sm')} Run</button>`);
+    buttons.push(`<button class="btn btn-sm btn-outline" data-action="sys-deny" data-id="${r.id}">Cancel</button>`);
+  }
+  const when = r.status === 'approved'
+    ? `can run from ${istTime(istParseToEpoch(r.not_before))} until ${istTime(istParseToEpoch(r.expires_at))}`
+    : r.status === 'executed' ? `run ${timeAgo(istParseToEpoch(r.executed_at))}` : timeAgo(istParseToEpoch(r.requested_at));
+  return `<div class="feed-item"><span class="feed-icon ${tone}">${icon(ic, 'sm')}</span>
+    <div class="feed-body"><b>${escHtml(label)}</b>
+      <span>${statusPill(r.status === 'executed' ? 'ok' : r.status === 'denied' ? 'bad' : 'warn', r.status)}
+        requested by ${mine ? 'you' : '@' + escHtml(r.requested_by)}${r.approved_by ? `, approved by ${r.approved_by === me.username ? 'you' : '@' + escHtml(r.approved_by)}` : ''} · ${when}</span></div>
+    <div class="row-actions">${buttons.join('')}</div></div>`;
+}
+
 async function renderSystem(app) {
   const user = await authApi.me();
   const isSuper = user.role === 'super_admin';
-  const [info, clear] = await Promise.all([systemApi.integrity(), isSuper ? systemApi.clearOptions().catch(() => null) : null]);
+  const [info, policy, appr, clear] = await Promise.all([
+    systemApi.integrity(), systemApi.policy().catch(() => null),
+    isSuper ? approvalsApi.list().catch(() => null) : null, isSuper ? systemApi.clearOptions().catch(() => null) : null]);
   System.db = info.db;
+  window._clearOptions = clear;
   const lv = info.last_verification || {};
   const deg = info.degraded;
+  const hardened = policy && policy.profile === 'hardened';
+  const backupLabel = (b) => b.kind === 'forensic' ? 'Failed database (kept for investigation)' : b.kind === 'before-clear' ? 'Taken before a clear'
+    : b.name === 'startup.db' ? 'Start-up' : 'Rolling (last good)';
+  const actions = appr ? Object.keys(appr.actions).filter(a => a !== 'system.clear.everything' || (clear && clear.scopes.everything)) : [];
   app.innerHTML = `
     ${renderNavbar(user, '#/admin/system')}
     <div class="container">
-      ${pageHeader('System', 'Database integrity, temporary backups and the controlled ways to reset data.', '', 'Administration')}
+      ${pageHeader('System', 'Database integrity, backups, the policy root has set, and the approvals that dangerous actions need.', '', 'Administration')}
       <div class="stats-grid">
         ${statCard('Database', info.db === 'ok' ? 'Verified' : 'Degraded', info.db === 'ok' ? 'every row matches its seal' : 'restored automatically, needs review', 'database', info.db === 'ok' ? 'green' : 'red')}
         ${statCard('Rows checked', (lv.rows || 0).toLocaleString('en-IN'), lv.verified_at ? `last check ${timeAgo(istParseToEpoch(lv.verified_at))}` : 'not checked yet', 'shieldCheck', 'blue')}
-        ${statCard('Check interval', `${Math.round(info.interval_s / 60)}<small> min</small>`, 'verification and rolling backup', 'clock')}
+        ${statCard('Policy profile', policy ? (hardened ? 'Hardened' : 'Standard') : '—', policy && policy.file ? `signed file, serial ${policy.file.serial}` : 'built-in defaults', 'lock', hardened ? 'green' : 'amber')}
         ${statCard('Debug mode', System.test_mode ? 'On' : 'Off', System.test_mode ? 'working on test data' : 'real data', 'flask', System.test_mode ? 'amber' : '')}
       </div>
       ${deg ? `<div class="callout danger mb-2" role="alert"><b>${icon('alert', 'sm')} Database degraded since ${istDateTime(istParseToEpoch(deg.since))}.</b>
         <div style="margin-top:6px">${escHtml(deg.message)}</div>
-        <div class="flex gap-1 mt-1"><button class="btn btn-sm btn-outline" onclick="sysAck(false)">${icon('check', 'sm')} Acknowledge</button>
-        ${isSuper ? `<button class="btn btn-sm btn-danger-soft" onclick="sysAck(true)">Accept the current state as correct</button>` : ''}</div></div>` : ''}
+        <div class="flex gap-1 mt-1"><button class="btn btn-sm btn-outline" data-action="sys-ack">${icon('check', 'sm')} Acknowledge</button>
+        ${isSuper ? `<span class="text-sm text-muted">To accept the current state as correct, request it under <b>Approvals</b> below.</span>` : ''}</div></div>` : ''}
+      ${policy && policy.problems.length ? `<div class="callout danger mb-2" role="alert"><b>${icon('alert', 'sm')} A policy file was refused.</b>
+        ${policy.problems.map(p => `<div>${escHtml(p)}</div>`).join('')}</div>` : ''}
       <div class="grid-2">
         <div class="card">
           <div class="card-header"><div><h2>${icon('shieldCheck')} Database integrity</h2><div class="card-sub">Every change goes through the database gateway; changes made outside imPress are found and repaired.</div></div>
-            <button class="btn btn-sm btn-primary" id="sys-verify">${icon('refresh', 'sm')} Verify now</button></div>
+            <button class="btn btn-sm btn-primary" data-action="sys-verify">${icon('refresh', 'sm')} Verify now</button></div>
           <dl class="kv">
             <dt>State</dt><dd>${info.db === 'ok' ? statusPill('ok', 'Verified') : statusPill('bad', 'Degraded')}</dd>
             <dt>Last verification</dt><dd>${lv.verified_at ? istDateTime(istParseToEpoch(lv.verified_at)) : '—'}</dd>
@@ -712,57 +751,97 @@ async function renderSystem(app) {
           </dl>
           <h3 class="mt-2 mb-1">Temporary backups</h3>
           ${info.backups.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Backup</th><th>Taken</th><th>Size</th></tr></thead><tbody>
-            ${info.backups.map(b => `<tr><td><b>${b.name === 'startup.db' ? 'Start-up' : 'Rolling (last good)'}</b><div class="text-sm text-muted">${escHtml(b.name)}</div></td>
-              <td>${istDateTime(istParseToEpoch(b.modified))}</td><td>${(b.size / 1024).toFixed(0)} KB</td></tr>`).join('')}</tbody></table></div>`
+            ${info.backups.map(b => `<tr><td><b>${backupLabel(b)}</b><div class="text-sm text-muted">${escHtml(b.name)}</div></td>
+              <td class="nowrap">${istDateTime(istParseToEpoch(b.modified))}</td><td class="nowrap">${(b.size / 1024).toFixed(0)} KB</td></tr>`).join('')}</tbody></table></div>`
             : emptyState('No backups yet')}
+          <p class="text-sm text-muted mt-1">These live on the same machine. They repair tampering; they are not off-host backups.</p>
         </div>
         <div class="card">
-          <div class="card-header"><div><h2>${icon('trash')} Clear or reset data</h2><div class="card-sub">The only way to clear the database. A backup is taken first.</div></div></div>
-          ${isSuper && clear ? `
-            <div class="choice-grid" style="grid-template-columns:1fr">
-              ${Object.entries(clear).map(([k, v], i) => `<label class="choice"><input type="radio" name="clr-scope" value="${k}" ${i === 0 ? 'checked' : ''}>
-                <div><b>${k === 'class_data' ? 'Clear class data' : 'Reset everything'}</b><span>${escHtml(v.description)}</span></div></label>`).join('')}
-            </div>
-            <div class="form-group mt-1"><label for="clr-confirm">Type <code id="clr-phrase">${escHtml(Object.values(clear)[0].confirm)}</code> to confirm</label>
-              <input id="clr-confirm" autocomplete="off"></div>
-            <button class="btn btn-danger" id="clr-go" disabled>${icon('trash', 'sm')} Clear data</button>`
-            : `<p class="text-muted">Only a super admin can clear or reset data.</p>`}
+          <div class="card-header"><div><h2>${icon('lock')} Policy</h2><div class="card-sub">Set by root, read-only here. ${hardened ? 'Hardened profile.' : 'Standard profile.'}</div></div>
+            ${policy && policy.file ? `<span class="badge badge-outline">serial ${policy.file.serial}</span>` : ''}</div>
+          ${policy ? `<div class="table-wrap"><table class="table"><thead><tr><th>Flag</th><th>Value</th><th>From</th></tr></thead><tbody>
+            ${policy.flags.map(f => `<tr><td><code>${escHtml(f.name)}</code><div class="text-sm text-muted">${escHtml(f.description)}</div></td>
+              <td class="nowrap"><b>${fmtFlag(f.value)}</b></td>
+              <td><span class="chip">${escHtml(f.source)}</span></td></tr>`).join('')}</tbody></table></div>
+            <dl class="kv mt-1">
+              <dt>Audit sink</dt><dd>${policy.audit.file ? `<code>${escHtml(policy.audit.file)}</code>` : 'not set'}${policy.audit.url ? ' + webhook' : ''}</dd>
+              <dt>Code manifest</dt><dd>${!policy.code_manifest.present ? 'not signed' : policy.code_manifest.problems.length ? statusPill('bad', `${policy.code_manifest.problems.length} problem(s)`) : statusPill('ok', 'matches the signed manifest')}</dd>
+            </dl>` : emptyState('Policy not available')}
         </div>
       </div>
+      ${isSuper && appr ? `<div class="card mt-2">
+        <div class="card-header"><div><h2>${icon('key')} Approvals</h2>
+          <div class="card-sub">Accepting a changed database or clearing data needs a second super admin to approve it${policy && policy.flags.find(f => f.name === 'dual_control.delay_minutes').value ? `, then a ${policy.flags.find(f => f.name === 'dual_control.delay_minutes').value}-minute wait` : ''}. Everything here is logged and copied to the audit sink.</div></div></div>
+        <div class="flex gap-1 mb-1" style="flex-wrap:wrap">
+          ${actions.map(a => `<button class="btn btn-outline" data-action="sys-request" data-kind="${escHtml(a)}">${icon((APPROVAL_LABEL[a] || [0, 'key'])[1], 'sm')} Request: ${escHtml((APPROVAL_LABEL[a] || [a])[0])}</button>`).join('')}
+        </div>
+        ${appr.requests.length ? appr.requests.map(r => approvalRow(r, user)).join('') : emptyState('No requests yet', 'Dangerous actions start here.', 'key')}
+      </div>` : ''}
     </div>`;
-  document.getElementById('sys-verify').onclick = async (e) => {
-    e.target.disabled = true;
-    try {
-      const st = await systemApi.verify();
-      showToast(st.db === 'ok' ? 'The database verifies' : 'The database did not verify: it was restored', st.db === 'ok' ? 'success' : 'error');
-      router();
-    } catch (err) { showToast(err.message, 'error'); e.target.disabled = false; }
-  };
-  if (isSuper && clear) {
-    const phrase = () => clear[document.querySelector('input[name=clr-scope]:checked').value].confirm;
-    const check = () => { document.getElementById('clr-go').disabled = document.getElementById('clr-confirm').value.trim() !== phrase(); };
-    document.querySelectorAll('input[name=clr-scope]').forEach(r => r.onchange = () => { document.getElementById('clr-phrase').textContent = phrase(); check(); });
-    document.getElementById('clr-confirm').oninput = check;
-    document.getElementById('clr-go').onclick = async () => {
-      const scope = document.querySelector('input[name=clr-scope]:checked').value;
-      try {
-        const r = await systemApi.clear(scope, document.getElementById('clr-confirm').value.trim());
-        showToast(`Done. A copy was saved first (${r.backup}).`, 'success');
-        router();
-      } catch (err) { showToast(err.message, 'error'); }
-    };
-  }
 }
 
-window.sysAck = async function (accept) {
-  if (accept && !confirm('Accept the database exactly as it is now? It will be re-sealed and treated as correct from now on.')) return;
+Actions['sys-verify'] = async (el) => {
+  el.disabled = true;
   try {
-    await systemApi.acknowledge(accept);
-    System.db = 'ok';
-    renderBanners();
-    showToast('Acknowledged', 'success');
+    const st = await systemApi.verify();
+    showToast(st.db === 'ok' ? 'The database verifies' : 'The database did not verify: it was restored', st.db === 'ok' ? 'success' : 'error');
     router();
+  } catch (err) { showToast(err.message, 'error'); el.disabled = false; }
+};
+
+Actions['sys-ack'] = async () => {
+  try {
+    await systemApi.acknowledge(false);
+    System.db = 'ok'; renderBanners(); showToast('Acknowledged', 'success'); router();
   } catch (err) { showToast(err.message, 'error'); }
+};
+
+const PASSWORD_FIELD = { name: 'password', label: 'Your password', type: 'password', autocomplete: 'current-password' };
+
+Actions['sys-request'] = async (el) => {
+  const kind = el.dataset.kind;
+  const v = await askDialog({ title: `Request: ${APPROVAL_LABEL[kind][0]}`, confirm: 'Request approval',
+    body: 'Another super admin must approve it before it can run. Enter your password to confirm it is you.',
+    fields: [PASSWORD_FIELD], validate: (x) => x.password.length > 0 });
+  if (!v) return;
+  try { await approvalsApi.request(kind, v.password); showToast('Requested: now another super admin has to approve it', 'success'); router(); }
+  catch (err) { showToast(err.message, 'error'); }
+};
+
+Actions['sys-approve'] = async (el) => {
+  const v = await askDialog({ title: 'Approve this request', confirm: 'Approve',
+    body: 'You are allowing this action to run. Enter your password to confirm it is you.', fields: [PASSWORD_FIELD], validate: (x) => x.password.length > 0 });
+  if (!v) return;
+  try { const r = await approvalsApi.approve(el.dataset.id, v.password); showToast(`Approved. It can run from ${istTime(istParseToEpoch(r.not_before))}.`, 'success'); router(); }
+  catch (err) { showToast(err.message, 'error'); }
+};
+
+Actions['sys-deny'] = async (el) => {
+  try { await approvalsApi.deny(el.dataset.id); showToast('Request closed', 'success'); router(); }
+  catch (err) { showToast(err.message, 'error'); }
+};
+
+Actions['sys-run'] = async (el) => {
+  const id = Number(el.dataset.id), kind = el.dataset.kind;
+  try {
+    if (kind === 'integrity.accept_current') {
+      const v = await askDialog({ title: 'Accept the current database state', danger: true, confirm: 'Accept as correct',
+        body: 'The database is re-sealed exactly as it is now and treated as correct from now on.', fields: [] });
+      if (!v) return;
+      await systemApi.acknowledge(true, id);
+      System.db = 'ok'; renderBanners(); showToast('Accepted', 'success');
+    } else {
+      const scope = kind.split('.').pop();
+      const phrase = window._clearOptions.scopes[scope].confirm;
+      const v = await askDialog({ title: APPROVAL_LABEL[kind][0], danger: true, confirm: 'Run now',
+        body: `${escHtml(window._clearOptions.scopes[scope].description)} A copy is saved first. Type <code>${escHtml(phrase)}</code> to run it.`,
+        fields: [{ name: 'phrase', label: 'Confirmation' }], validate: (x) => x.phrase.trim() === phrase });
+      if (!v) return;
+      const r = await systemApi.clear(scope, v.phrase.trim(), id);
+      showToast(`Done. A copy was saved first (${r.backup}).`, 'success');
+    }
+    router();
+  } catch (err) { showToast(err.message, 'error'); router(); }
 };
 
 // ── Students: richer table (attendance, participation, classes) ────────

@@ -376,9 +376,24 @@ See [data integrity](../design/data-integrity.md).
 | `GET /api/events` | session (no activity refresh) | Server-Sent Events, one stream per signed-in browser. Events (`data:` JSON): `{"type": "status", "db", "test_mode"}` on connect and on change; `{"type": "changed", "topics": [table names]}` (coalesced, at most one per 300 ms), so open pages refetch; `{"type": "alert", "message", "level"}` (toasts; most go to administrators only); `{"type": "session_ended", "reason"}` then the stream closes. A comment line every 15 s keeps proxies from closing it |
 | `GET /api/admin/system/integrity` | audit.read | `{db, degraded: {since, message, restored_from}, last check {verified_at, ok, summary, rows}, test_mode, backups: [{name, size, modified}], backup_dir, interval_s}` |
 | `POST /api/admin/system/integrity/verify` | users.manage | verify now; refreshes the rolling backup if it verifies, restores and flags Degraded if not |
-| `POST /api/admin/system/integrity/acknowledge` | users.manage | `{accept_current: false}`: clear the Degraded flag. `accept_current: true` (super admin only) also reseals the database as it is now |
-| `GET /api/admin/system/clear` | users.assign_role | the scopes with their description and confirmation phrase |
-| `POST /api/admin/system/clear` | users.assign_role | `{scope: "class_data"\|"everything", confirm: "DELETE CLASS DATA"\|"RESET EVERYTHING"}`; a backup is taken first; `{status, backup}`. Wrong phrase: `422 CONFIRM` |
+| `POST /api/admin/system/integrity/acknowledge` | users.manage | `{accept_current: false, approval_id}`: clear the Degraded flag. `accept_current: true` (super admin only) also reseals the database as it is now and needs an **approved** `integrity.accept_current` request (`approval_id`, see *Dual control* below) |
+| `GET /api/admin/system/clear` | users.assign_role | `{scopes: {scope: {description, confirm}}, dual_control, delay_minutes, retained_audit_days}`; the `everything` scope is left out when policy switches it off |
+| `POST /api/admin/system/clear` | users.assign_role | `{scope: "class_data"\|"everything", confirm: "DELETE CLASS DATA"\|"RESET EVERYTHING", approval_id}`; needs an approved `system.clear.<scope>` request; a backup is taken first; `{status, backup}`. Wrong phrase: `422 CONFIRM`; no approval: `403 APPROVAL_REQUIRED`; full reset switched off by policy: `403 POLICY_DISABLED`. Activity-log entries younger than `audit.min_retention_days` survive a reset |
+| `GET /api/admin/system/policy` | audit.read | the effective **global policy**: `{profile, file: {serial, issued_at, key_id}\|null, problems, flags: [{name, value, source: default\|file\|inline, standard, hardened, description}], audit: {file, url, webhook_failures}, code_manifest: {present, problems}}`. Read-only: no route changes the policy (root does, [global policy control](../design/gpc.md)) |
+| `GET /api/system/signing-key` | public | `{alg: "ed25519", public_key (base64), key_id}`: verifies the `SIGNATURE.json` in exports (`scripts/verify_export.py`). Only the public half |
+
+### Dual control: `/api/admin/approvals` (super admin)
+
+A dangerous action runs only after a second super admin approved it (policy `dual_control.*`, see [data integrity](../design/data-integrity.md#dual-control)). Each step re-checks the caller's password (*step-up*; 5 wrong ones in 15 minutes: `429 STEP_UP_LOCKED`) and is logged and copied to the external audit sink.
+
+| Method & path | Notes |
+|---|---|
+| `GET /api/admin/approvals` | `{actions: {name: description}, requests: [{id, action, description, params, status, requested_by, requested_at, approved_by, approved_at, not_before, expires_at, executed_at}]}`, newest first |
+| `POST /api/admin/approvals` | `{action: "integrity.accept_current"\|"system.clear.class_data"\|"system.clear.everything", params: {}, password}` → `201 {id, status: "pending"}`. Wrong password: `403 STEP_UP_FAILED`; unknown action `422`; reset switched off `403 POLICY_DISABLED` |
+| `POST /api/admin/approvals/{id}/approve` | `{password}` → `{id, status: "approved", not_before, expires_at}`. A different super admin must approve: `403 SELF_APPROVAL` (the requester may approve only when policy `dual_control.single_operator_ok` is on and they are the only active super admin). `not_before` is the approval plus `dual_control.delay_minutes` |
+| `POST /api/admin/approvals/{id}/deny` | pending or approved → denied |
+
+The requester then calls the action with `approval_id`: it must be approved, for exactly that action and parameters, requested by the caller, past its delay (`409 NOT_YET`), before it expires (`409 EXPIRED`), and it is spent by the call (`409 NOT_APPROVED` on a second use). Other errors: `403 APPROVAL_REQUIRED`, `403 APPROVAL_MISMATCH`.
 
 A write the database gateway refuses answers `403 {"code": "DB_WRITE_REFUSED", "message"}` on any route.
 

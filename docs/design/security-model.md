@@ -73,6 +73,22 @@ sequenceDiagram
 | Teacher WebSocket | The browser's session cookie (or a bearer header from a script); **never a URL parameter** (v2.2: URLs end up in proxy and server logs) | Same validator as REST, no activity refresh (#8). A browser handshake whose `Origin` is not this server is refused (4403: cross-site WebSocket hijacking). Joins only classes the user may access; a gateway's per-device key joins only its linked class; browsers cannot send device commands (#121). Requires `wss://` in deployment. |
 | Students | **None on air** | ESP-NOW frames are unauthenticated; identity is the enrollment number inside the payload. |
 
+## Policy, dual control and signing (v2.2)
+
+Security and integrity switches are **root's**, set outside the application ([global policy control](gpc.md)): built-in defaults for a *standard* or *hardened* profile, optionally a root-signed file (Ed25519, rollback-proof serial), optionally inline overrides that in the hardened profile may only tighten. A super admin can read the policy but not change it.
+
+| Control | What it gives | Where |
+|---|---|---|
+| Dual control | accepting a changed database and clearing or resetting data need a second super admin's approval, a password re-entry at each step, a delay, an expiry, and run once | [data integrity](data-integrity.md#dual-control) |
+| External audit trail | every activity entry is also written to a hash-chained file / signed webhook the application cannot rewrite; students' personal data is never written to it | [data integrity](data-integrity.md#external-audit-trail) |
+| Signed code manifest | the server checks its own files against root's signature at start-up | [GPC](gpc.md#the-signed-code-manifest) |
+| Signed exports | exports carry a signature a receiver can verify offline | [test data](../guides/test-mode.md#signed-exports) |
+| Hardened floor | the server refuses to start with debug on, default secrets, HTTP, unsigned firmware, shared device keys, or no external audit sink | [production hardening](../guides/production-hardening.md) |
+| Content-Security-Policy | **not yet strict:** `script-src` still allows `'unsafe-inline'` until the web app's remaining inline handlers are replaced ([#197](https://github.com/Kush-Kelaiya22/imPress/issues/197)). Quote-escaping of every name shown in the app is in place and tested | `transport.py` |
+| Erasure | erasing a student removes their name and number from the activity log; the erase entry holds only a keyed reference | [data rights](../compliance/dsar-runbook.md) |
+
+Device messages are **not** signed or authenticated by this layer: the radio and the gateway protocols are unchanged. Authenticating the ESP-NOW frames is a separate proposal ([mesh authentication](mesh-authentication.md)).
+
 ## Sessions and passwords (v2.2)
 
 **Passwords** are stored as `$i2$` + bcrypt(base64(SHA-256(password))): bcrypt with its own random salt per password and cost factor, after a SHA-256 prehash so that long passphrases are not cut at bcrypt's 72-byte limit. Hashes from earlier versions (plain bcrypt) are still accepted and are upgraded at the next successful sign-in.

@@ -24,6 +24,7 @@ import re
 from fastapi import Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from . import gpc
 from .config import settings
 
 # Routes a device calls with its key (device_caller): the device API and the
@@ -63,7 +64,7 @@ def needs_https(path: str, scheme: str, client_host: str | None) -> bool:
     if _ALWAYS_OPEN.search(path):
         return False
     if _DEVICE_PATHS.search(path):
-        return settings.DEVICE_HTTPS_ONLY
+        return gpc.device_https_only(settings)
     return True
 
 

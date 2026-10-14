@@ -6,6 +6,7 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from .manager import manager
+from .. import gpc
 from ..config import settings
 from ..database import async_session
 from ..models import EspDevice, ClassSession
@@ -31,7 +32,7 @@ async def _device_refusal(key: str | None, class_id: int) -> tuple[int, str] | N
         if caller is None:
             return 4401, "invalid device api_key"
         if caller.shared:
-            return (4401, "per-device key required") if settings.DEVICE_KEYS_REQUIRED else None
+            return (4401, "per-device key required") if gpc.device_keys_required(settings) else None
         if caller.device.is_active is False:
             return 4401, "device disabled"
         await db.commit()                       # first use activates the key
@@ -163,7 +164,7 @@ async def class_websocket(websocket: WebSocket, class_id: int):
     # follow IMPRESS_DEVICE_HTTPS_ONLY.
     client = websocket.client.host if websocket.client else None
     if (https_required() and websocket.url.scheme != "wss" and not is_loopback(client)
-            and (role != "device" or settings.DEVICE_HTTPS_ONLY)):
+            and (role != "device" or gpc.device_https_only(settings))):
         await _refuse(websocket, role, 4403, "wss:// required")
         return
 

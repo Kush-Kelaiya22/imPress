@@ -22,4 +22,6 @@ async def log_activity(
         details=details or {},
     )
     db.add(entry)
+    from .services import auditsink
+    auditsink.emit(action, user_id, entity_type, entity_id, details)     # off-database copy (policy: audit.sink_*)
     # Don't commit here — let the caller commit as part of their transaction.

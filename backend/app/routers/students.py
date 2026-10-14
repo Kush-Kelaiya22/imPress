@@ -15,7 +15,7 @@ from ..schemas import (
     CsvImportResult, CsvImportError,
 )
 
-from ..services.records import erase_student
+from ..services.records import erase_student, student_ref
 from ..activity import log_activity
 
 router = APIRouter(prefix="/api/students", tags=["students"])
@@ -216,14 +216,11 @@ async def hard_delete_student(
         raise HTTPException(404, "Student not found")
 
     roll = student.roll_number
-    name = student.student_name
     # answers/votes stay (anonymised) so completed results keep their totals
     await erase_student(db, student_id)
 
-    await log_activity(db, "student.hard_delete", user.id, "student", student_id, {
-        "roll_number": roll,
-        "student_name": name,
-    })
+    # No name or enrollment number: this entry outlives the record (and is copied to the audit sink).
+    await log_activity(db, "student.hard_delete", user.id, "student", student_id, {"student_ref": student_ref(roll)})
     await db.commit()
     return {"status": "deleted", "roll_number": roll}
 

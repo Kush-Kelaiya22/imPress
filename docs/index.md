@@ -36,6 +36,7 @@ design/mesh
 design/mesh-authentication
 design/security-model
 design/data-integrity
+design/gpc
 design/authorization
 design/scheduling
 design/student-ota
@@ -52,9 +53,24 @@ api/device-api
 guides/configuration
 guides/csv-imports
 guides/test-mode
+guides/production-hardening
 guides/ota-updates
 guides/releases
 guides/testing
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Privacy and compliance
+
+compliance/README
+compliance/data-inventory
+compliance/privacy-notice-template
+compliance/retention-schedule
+compliance/dsar-runbook
+compliance/incident-response
+compliance/control-mapping
+compliance/risk-register
 ```
 
 ```{toctree}

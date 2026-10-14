@@ -28,6 +28,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import re
 import secrets
 import sqlite3
@@ -35,6 +36,7 @@ from contextlib import closing
 import zipfile
 from pathlib import Path
 
+from .. import gpc, signing
 from ..timeutil import istnow
 from . import events, integrity
 
@@ -52,7 +54,16 @@ def _root() -> Path:
     d = (db.parent if db else Path(".")) / "test-data"
     for sub in ("snapshots", "pending", "datasets"):
         (d / sub).mkdir(parents=True, exist_ok=True)
+    for path in (d, d / "snapshots", d / "pending", d / "datasets"):
+        _private(path, 0o700)                       # copies of the data: the server's user only
     return d
+
+
+def _private(path: Path, mode: int = 0o600) -> None:
+    try:
+        os.chmod(path, mode)
+    except OSError:                                   # e.g. a filesystem without permissions
+        pass
 
 
 def test_password() -> str | None:
@@ -205,8 +216,29 @@ def save_pending(pid: str, name: str, by: str) -> dict:
         raise TestModeError("NAME_TAKEN", f"A dataset named {name} exists already")
     src.replace(dst)
     counts = counts_in(dst)
-    dst.with_suffix(".json").write_text(json.dumps({"saved_at": istnow().isoformat(), "by": by, "counts": counts}))
+    meta = dst.with_suffix(".json")
+    meta.write_text(json.dumps({"saved_at": istnow().isoformat(), "by": by, "counts": counts}))
+    _private(meta)
+    _private(dst)
     return {"name": name, "counts": counts}
+
+
+def sweep_expired(now=None) -> list[str]:
+    """Delete test data older than the policy allows (pending: hours, saved datasets: days; 0 = keep).
+    Returns what was deleted, for the audit trail."""
+    import time
+    now = now or time.time()
+    gone = []
+    for sub, ttl_s in (("pending", gpc.get("test_mode.pending_ttl_hours") * 3600),
+                       ("datasets", gpc.get("test_mode.dataset_ttl_days") * 86400)):
+        if not ttl_s:
+            continue
+        for p in sorted((_root() / sub).glob("*.db")):
+            if now - p.stat().st_mtime > ttl_s:
+                p.unlink(missing_ok=True)
+                p.with_suffix(".json").unlink(missing_ok=True)
+                gone.append(f"{sub}/{p.stem}")
+    return gone
 
 
 def delete_pending(pid: str) -> None:
@@ -284,11 +316,15 @@ def export_zip(path: Path) -> bytes:
             data["polls"].append(dict(class_code=classes.get(r[0], ""), title=r[1],
                                       options=" | ".join(json.loads(r[2] or "[]")),
                                       status="closed" if r[3] == "closed" else "draft"))
+        files = {}
         for name, rows in data.items():
             buf = io.StringIO()
             w = csv.DictWriter(buf, fieldnames=cols[name], extrasaction="ignore")
             w.writeheader()
             for row in rows:
                 w.writerow({k: ("'" + v if isinstance(v, str) and v[:1] in "=+-@" else v) for k, v in row.items()})
-            z.writestr(f"{name}.csv", buf.getvalue())
+            files[f"{name}.csv"] = buf.getvalue().encode()
+        for name, content in files.items():
+            z.writestr(name, content)
+        z.writestr("SIGNATURE.json", signing.sign_files(files))      # who produced it, and that it is unchanged
     return out.getvalue()

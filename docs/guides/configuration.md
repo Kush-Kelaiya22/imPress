@@ -16,6 +16,10 @@ Environment variables with prefix **`IMPRESS_`**, or a `.env` file in the workin
 | `IMPRESS_SESSION_IDLE_MINUTES` | `5` | Idle timeout (v2.2). Requests the web app makes on its own (live refresh) don't count as activity. |
 | `IMPRESS_SESSION_CLASS_IDLE_MINUTES` | `30` | Idle timeout for faculty (primary or co-faculty) while one of their classes is in session: activated, or inside a timetable slot including dated changes. |
 | `IMPRESS_SINGLE_SESSION` | `true` | One device per account: a sign-in from another device or address is refused while the first session is alive, flagged in the activity log and shown to administrators. Admins can end a user's sessions under *User access*. |
+| `IMPRESS_PROFILE` | `standard` | The policy profile (`standard` or `hardened`). The hardened profile turns every protection on and **refuses to start** below its floor: debug off, real secrets, HTTPS required, per-device keys, signed firmware, an external audit sink. [Global policy control](../design/gpc.md). |
+| `IMPRESS_GPC` | empty | Inline policy overrides on the start command, e.g. `IMPRESS_GPC="dual_control.delay_minutes=30,test_mode.allowed=false"`. In the hardened profile an override may only make a flag safer. |
+| `IMPRESS_GPC_FILE` | `./global_policy_control.json` | The root-signed policy file (Ed25519). Made with `scripts/gpc.py sign`; the server only reads it. |
+| `IMPRESS_ROOT_PUBLIC_KEY` | `./root_public.key` | Root's public key (base64) that verifies the policy file and the code manifest. Keep the matching private key off the server. |
 | `IMPRESS_TEMP_BACKUP_DIR` | system temp folder | Where the integrity backups go (`<dir>/impress-backups/<database>`): `startup.db` and `rolling.db`, readable by the server's user only. For example `/temp/backups`. |
 | `IMPRESS_INTEGRITY_INTERVAL_S` | `300` | How often the database is verified and the rolling backup refreshed. |
 | `IMPRESS_SESSION_HARD_MINUTES` | `360` | Absolute session lifetime. |

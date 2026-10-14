@@ -93,6 +93,34 @@ flowchart LR
 
 Generated teachers sign in with the password shown on the page. It is random, new for each debug-mode session (it is not a published default), kept in the state file next to the database (readable by the server's user only), and it exists only in test data.
 
+## Safety rules and policy
+
+Debug mode starts from a **copy of the real database**, so the copies it makes can contain real student records. The hardened profile therefore treats them as sensitive data:
+
+| Rule | What it does |
+|---|---|
+| `test_mode.allowed` | root can switch debug mode and all test-data routes off (the hardened profile does). Leaving, saving, deleting and exporting what already exists stay possible so nothing is stranded |
+| `test_mode.export_allowed` | root can forbid CSV exports of test data |
+| `test_mode.pending_ttl_hours` | a finished test database is deleted after this many hours (168 in the standard profile, 24 hardened; `0` = keep) |
+| `test_mode.dataset_ttl_days` | a saved dataset is deleted after this many days (`0` = keep in the standard profile, 30 hardened) |
+| Permissions | the `test-data` folders are `0700` and the files `0600`, set after every change |
+| Audit | enable, disable, save, export, delete and every expiry are flagged activity-log entries (and go to the external audit sink) |
+| Passwords | generated teachers get a random password per debug-mode session |
+
+Prefer **generated** data over a copy of real data whenever you only need to look at the screens: the generator never needs production records.
+
+### Signed exports
+
+An export zip contains `SIGNATURE.json`: the SHA-256 of every file in it and an Ed25519 signature by the server's export key. A receiver checks it offline:
+
+```bash
+scripts/verify_export.py impress-test-data-<id>.zip --server https://impress.example.edu
+# or, with a key you obtained another way:
+scripts/verify_export.py impress-test-data-<id>.zip --public-key <base64>
+```
+
+It proves the files are exactly what this server exported and that nobody changed them afterwards. Get the public key over a channel you trust (the key id is on `GET /api/system/signing-key`); a key fetched together with the zip proves integrity but not the sender.
+
 ## Notes
 
 - Only super admins see the page and the endpoints (`users.assign_role`). Generating, checking and importing require debug mode to be on (`409 TEST_MODE_OFF` otherwise).
