@@ -5,7 +5,6 @@ import io
 import json
 import time
 import zipfile
-from pathlib import Path
 
 import pytest
 
