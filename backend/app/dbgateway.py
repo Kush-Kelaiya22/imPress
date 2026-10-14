@@ -359,7 +359,9 @@ def _trigger_sql(table) -> list[str]:
     def key(alias):
         return "json_array(" + ", ".join(f'{alias}."{c}"' for c in cols) + ")"
     t = table.name
-    rec = "INSERT OR IGNORE INTO temp.gw_changes (tbl, pk) VALUES ('{t}', {k});"
+    # unqualified: older SQLite refuses schema names in trigger bodies; a TEMP
+    # trigger resolves gw_changes in the temp schema first
+    rec = "INSERT OR IGNORE INTO gw_changes (tbl, pk) VALUES ('{t}', {k});"
     return [
         f'CREATE TEMP TRIGGER IF NOT EXISTS gw_{t}_i AFTER INSERT ON main."{t}" BEGIN '
         + rec.format(t=t, k=key("NEW")) + " END",
