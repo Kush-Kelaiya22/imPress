@@ -34,7 +34,7 @@ A lower ring number does **not** inherit everything automatically: each role hol
 1. **Authenticated**: a valid, unexpired, unrevoked session (`auth.get_current_user`), or a device key for device routes.
 2. **Active**: a deactivated account holds no permission.
 3. **Permission**: the route's `require("<permission>")` must be granted to the user's role (`GRANTS`). Default deny.
-4. **Scope**: the resource must be the caller's: `class_access` (primary teacher, co-faculty, admin) for classes, quizzes, polls, results and the class WebSocket; `roster_access` for enrolment; `class_owner_or_admin` for deleting a class.
+4. **Scope**: the resource must be the caller's: `class_access` (primary teacher, co-faculty, admin) for classes, quizzes, polls, results and the class WebSocket; `roster_access` for enrolment and rosters (the same people as `class_access`, decision #146); `class_owner_or_admin` for deleting a class.
 5. **Root rules**: checked last and override any grant (below).
 
 ## Permission matrix
@@ -48,9 +48,11 @@ A lower ring number does **not** inherit everything automatically: each role hol
 | `classes.read` | ✓ | ✓ | ✓ | open assigned classes, their live device tree and presence (scope: class access) |
 | `courses.read` | ✓ | ✓ | ✓ | list active courses |
 | `participation.read` | ✓ | ✓ | ✓ | quiz and poll details and results of assigned classes |
-| `students.manage` | ✓ | ✓ | ✓ | register, edit, import and enrol students (roster: primary teacher, #146) |
+| `students.manage` | ✓ | ✓ | ✓ | register, import and enrol students (rosters of classes they may access: primary teacher or co-faculty, #146); **edit or deactivate** a student only within the *student scope* below |
 | `students.read` | ✓ | ✓ | ✓ | look up students |
 | `audit.read` | – | ✓ | ✓ | activity log |
+| `features.manage` | – | ✓ | ✓ | switch features on and off, read the policy log |
+| `sessions.read` | – | ✓ | ✓ | traffic alerts and account risk badges |
 | `classes.manage_all` | – | ✓ | ✓ | every class: create for others, assign faculty, import/export, delete |
 | `courses.manage` | – | ✓ | ✓ | create, edit, delete courses; see inactive ones |
 | `devices.manage` | – | ✓ | ✓ | device access, keys, links and verification |
@@ -63,6 +65,7 @@ A lower ring number does **not** inherit everything automatically: each role hol
 | `users.manage` | – | ✓ | ✓ | create, edit, deactivate, reactivate, reset password, delete staff accounts |
 | `users.read` | – | ✓ | ✓ | list staff accounts |
 | `firmware.override_window` | – | – | ✓ | deploy to hubs and gateways outside classroom maintenance windows (#128) |
+| `sessions.end_any` | – | – | ✓ | sign any account out of every session |
 | `users.assign_role` | – | – | ✓ | grant or remove any role |
 | `users.manage_privileged` | – | – | ✓ | manage super admin accounts |
 
@@ -94,3 +97,15 @@ Refusals carry a machine-readable code: `{"detail": {"code": "FORBIDDEN", "messa
 3. Run `pytest backend/tests/test_policy.py backend/tests/test_route_matrix.py`. The matrix test records which status every route returns to five kinds of caller; an intended permission change is recorded with `IMPRESS_UPDATE_ROUTE_MATRIX=1` and explained in the PR.
 
 The web app does not keep its own permission rules: user rows carry `allowed_actions` computed by the policy (#119), and navigation by role is only a convenience; the server refuses whatever it does not allow.
+
+
+## Student scope (v2.2)
+
+`students.read` and `students.manage` say a teacher may work with students; **which** students is a resource scope, like `class_access` is for classes (`services/records.student_scope`):
+
+| Who | Scope |
+|---|---|
+| administrator, super admin | every student |
+| teacher | the students they **registered**, and the students **enrolled in a class they teach** (primary or co-faculty) |
+
+Inside the scope a teacher edits and deactivates students and sees their e-mail and phone. Outside it they can still **find** a student by name or enrollment number (they must, to enrol one) and see the name, number, programme and status, but contact details are returned empty and `PUT` / `DELETE` answer `403 STUDENT_OUT_OF_SCOPE`. This closes a gap the v2.2 permissions review found: before, any teacher could edit or deactivate any student in the institution and read every student's contact details ([review](../engineering/PERMISSIONS_AND_OTA_REVIEW.md)).

@@ -38,9 +38,17 @@ Base URL: `http(s)://<host>:<port>`. All bodies are JSON unless marked *multipar
 // 200
 {"access_token": "impress_Q3h…", "token_type": "bearer",
  "expires_at": "2026-10-08T03:35:16", "created_at": "2026-10-07T21:35:16",
- "idle_timeout_s": 3600, "hard_timeout_s": 21600, "server_time": "2026-10-07T21:35:16"}
+ "idle_timeout_s": 300, "hard_timeout_s": 21600, "server_time": "2026-10-07T21:35:16"}
 ```
-Errors: `401` wrong username/password · `403` account disabled. Each login creates an independent session.
+Errors: `401` wrong username/password · `403` account disabled · `409 ALREADY_SIGNED_IN` the account is signed in on another device (v2.2, below).
+
+**One device per account (v2.2).** While the account has a live session from another device (a different client address, or a different browser or operating system), the sign-in is refused with `409 {"code": "ALREADY_SIGNED_IN", "message"}`, written to the activity log as a flagged `auth.second_sign_in_blocked` entry, and administrators get a toast. Signing in again from the **same** device is allowed and creates another session. The other device must sign out, or its session must expire, or an administrator ends it (`POST /api/admin/users/{id}/end-sessions`). `IMPRESS_SINGLE_SESSION=false` turns the rule off.
+
+**Two-step verification (v2.2, super admins).** `GET /api/auth/mfa` (state), `POST /api/auth/mfa/setup {password}` (returns the secret and an `otpauth://` link, once), `POST /api/auth/mfa/enable {code}` (returns ten single-use recovery codes, once), `POST /api/auth/mfa/disable {password, code}` and `POST /api/auth/mfa/recovery-codes {password, code}`. Every dual-control step, and a backup restore, then takes `code` next to `password` (an authenticator code or a recovery code): `403 MFA_CODE_REQUIRED`, `403 STEP_UP_FAILED` (wrong, or a code already used), `403 MFA_ENROLMENT_REQUIRED` (policy `dual_control.mfa_required` and not enrolled), `403 MFA_REQUIRED_BY_POLICY` (turning it off). Wrong codes count with wrong passwords towards `429 STEP_UP_LOCKED`.
+
+**Policy and errors (v2.2).** `GET /api/admin/system/policy` (every flag: value, source, who set it and when, who enforces it since when, who may change it), `GET /api/admin/system/policy/history?flag=&limit=` (the hash-chained change history and the restrictions). A **super admin** may change the operational flags only: `PUT /api/admin/system/policy/{name}` with `{value, note, password, code}` and `DELETE /api/admin/system/policy/{name}?password=&code=`; every other flag is root's, in the console (`403 POLICY_FORBIDDEN`). `GET /api/system/errors` returns the error catalogue. Every error response carries `error: {code, status, title, message, reference?}` next to the unchanged `detail`, and the `X-Impress-Error` header ([error reference](../reference/errors.md)).
+
+**Idle limit (v2.2).** `idle_timeout_s` is 900 (15 minutes, `IMPRESS_SESSION_IDLE_MINUTES`). For a teacher or administrator while one of their classes is in session (activated, or inside a timetable slot, as primary teacher or co-faculty) it is 3600 (60 minutes, `IMPRESS_SESSION_CLASS_IDLE_MINUTES`). The session endpoints report the limit that applies now. Requests with `X-Impress-Background: 1` (the web app's live refresh) do not count as activity.
 
 ### `GET /api/auth/me`: session
 Returns `UserResponse`: `{id, username, email, full_name, role, is_active, created_at}`.
@@ -86,6 +94,7 @@ See [scheduling and room occupancy](../design/scheduling.md).
 | `POST /api/admin/users/{id}/deactivate` | admin | – | reversible; signs the user out everywhere (sessions revoked, WebSockets closed). Yourself → 403 `SELF_LOCKOUT`; the last active super admin → 409 `LAST_SUPER_ADMIN`; super admin by an admin → 403 `FORBIDDEN_TARGET`. Returns the user |
 | `POST /api/admin/users/{id}/reactivate` | admin | – | allows logging in again; earlier sessions stay revoked. Returns the user |
 | `POST /api/admin/users/{id}/role` | **super_admin** | `{role}` | `role ∈ teacher|admin|super_admin`; signs the user out; yourself → 403 `SELF_LOCKOUT`; an admin caller → 403 `FORBIDDEN_ROLE`; last active super admin → 409; unknown role → 422 |
+| `POST /api/admin/users/{id}/end-sessions` | admin | – | signs the user out everywhere (e.g. to free an account held by another device, v2.2) |
 | `POST /api/admin/users/{id}/reset-password` | admin | `{new_password (≥6)}` | signs the user out; a super admin's by an admin → 403 |
 | `DELETE /api/admin/users/{id}` | admin | – | **permanent** delete → `204`; primary teacher of a class → 409 `USER_OWNS_CLASSES`; yourself → 403 `SELF_LOCKOUT`; the last active super admin → 409. Retention rules: [security model → data handling](../design/security-model.md#data-handling). To keep the account, use `/deactivate` |
 | `POST /api/admin/users/import` | admin | *multipart* `file` (CSV) | columns `username,email,password,full_name,role` (all required); per-row errors returned; `admin` rows need super_admin |
@@ -200,9 +209,10 @@ Conflicts reported as errors:
 |---|---|---|
 | `POST /api/students/` | teacher+ | `{roll_number, student_name, email, phone, program, enrollment_year, graduation_year, device_mac}`; `roll_number` = exactly 10 alphanumerics, stored **upper-case**; duplicate → 400 |
 | `POST /api/students/bulk` | teacher+ | `{students: [StudentCreate…], class_session_id?}`; optionally enrolls into the class |
-| `GET /api/students/` | teacher+ | `?search=` matches roll number or name (case-insensitive substring) |
-| `GET /api/students/{id}` · `PUT` | teacher+ | partial update (`StudentUpdate`) |
-| `DELETE /api/students/{id}` | teacher+ | **soft** delete (`is_active=false`) |
+| `GET /api/students/` | teacher+ | `?search=` matches roll number or name (case-insensitive substring). Any teacher can find a student to enrol them, but `email`, `phone` and `device_mac` come back **empty** for students outside the caller's scope (below) |
+| `GET /api/students/{id}` | teacher+ | the same redaction |
+| `PUT /api/students/{id}` | teacher+, **in scope** | partial update (`StudentUpdate`); outside the caller's scope `403 STUDENT_OUT_OF_SCOPE` |
+| `DELETE /api/students/{id}` | teacher+, **in scope** | **soft** delete (`is_active=false`); `403 STUDENT_OUT_OF_SCOPE` outside scope |
 | `DELETE /api/students/{id}/hard-delete` | admin only (403 for teachers) | permanently removes the student, their enrollments and attendance rows; their quiz answers and poll votes are kept **anonymised** so results keep their totals |
 | `GET /api/students/{id}/classes` | teacher+ | `[{enrollment_id, class_id, course_code, course_name, subject, course_section, term, year, meeting_schedule, location, teacher_name, is_active}]` |
 | `POST /api/students/import` | teacher+ | *multipart* CSV, below |
@@ -212,6 +222,7 @@ Conflicts reported as errors:
 | `POST /api/admin/classes/{id}/enroll-bulk` | teacher+ | `{student_ids: [...]}` |
 | `DELETE /api/admin/classes/{id}/unenroll/{student_id}` | teacher+ | |
 | `GET /api/admin/students/class/{id}` | teacher+ | roster |
+| `GET /api/admin/students/summary` | students.read | one row per visible student for the Students page: `[{id, classes, module_linked, attendance_pct, participation_pct}]` (percentages over the classes and quizzes of that student's classes; `null` when there is nothing to count) |
 | `GET /api/admin/students/{id}/participation` | teacher+ | `{student, quizzes_answered, total_quiz_answers, polls_voted, total_poll_votes, attendance_count, total_classes, quiz_details, poll_details}` |
 
 **Student CSV:** exactly these 7 columns, all required:
@@ -245,6 +256,7 @@ stateDiagram-v2
 |---|---|---|
 | `POST /api/quizzes/` | class access | `{class_session_id, title, questions: [{question_text, options (2-4), correct_option}], quiz_mode: planned|impromptu, timing_mode: per_question|total|manual, question_time_limit, total_time_limit}`; ≥ 1 question; `correct_option` must be `< len(options)` (422, #22). At most **4 options** (student modules have four buttons, #49). The response has `warnings`: text longer than a module can show (question 139, option 14 bytes of UTF-8) is accepted but truncated on the device. |
 | `GET /api/quizzes/class/{class_id}` | class access | newest first |
+| `GET /api/quizzes/overview` | participation.read | quizzes and polls of every class the caller can see, newest first, with `class_name`, `class_code` and the number of `answers` / `votes` (the Quizzes & polls page) |
 | `GET /api/quizzes/{id}` | class access (#20) | `QuizResponse {id, class_session_id, title, status, quiz_mode, timing_mode, question_time_limit, total_time_limit, current_question, is_live, question_count, created_at, started_at}` |
 | `POST /api/quizzes/{id}/start` | class access | draft only: already active → 400, completed → 409 (its answers are kept; create a new quiz, #76); broadcasts `quiz_question` (q 0) |
 | `POST /api/quizzes/{id}/next` | class access | any timing mode; not active → 400; broadcasts the next `quiz_question`, or completes. If the timer advanced the same question a moment earlier, returns the current state without advancing again |
@@ -358,6 +370,118 @@ Images are stored as `<FIRMWARE_DIR>/<sha256>.bin`, a name derived from the cont
 `strategy`: `{canary: 1, batch_size: 5, max_concurrent: 5, max_failures: 0, max_attempts: 2, timeout_s: 900}`. States and rules are in the [OTA architecture](../firmware/OTA_ARCHITECTURE.md).
 
 `POST /api/admin/modules/{id}/ota {version, allow_downgrade?}` is a one-device deployment, with the same exclusions: `409` with the reason.
+
+## System and data integrity (v2.2)
+
+See [data integrity](../design/data-integrity.md).
+
+| Method & path | Permission | Notes |
+|---|---|---|
+| `GET /api/system/status` | public | `{version, test_mode, test_mode_since}`; what every page needs for its banner. The database's integrity state is not public: administrators get it in the `status` events of `/api/events` (`{"type": "status", "db": "ok"\|"degraded"}`, to administrators only) |
+| `GET /api/events` | session (no activity refresh) | Server-Sent Events, one stream per signed-in browser. Events (`data:` JSON): `{"type": "status", "db", "test_mode"}` on connect and on change; `{"type": "changed", "topics": [table names]}` (coalesced, at most one per 300 ms), so open pages refetch; `{"type": "alert", "message", "level"}` (toasts; most go to administrators only); `{"type": "session_ended", "reason"}` then the stream closes. A comment line every 15 s keeps proxies from closing it |
+| `GET /api/admin/system/integrity` | audit.read | `{db, degraded: {since, message, restored_from}, last check {verified_at, ok, summary, rows}, test_mode, backups: [{name, size, modified}], backup_dir, interval_s}` |
+| `POST /api/admin/system/integrity/verify` | users.manage | verify now; refreshes the rolling backup if it verifies, restores and flags Degraded if not |
+| `POST /api/admin/system/integrity/acknowledge` | users.manage | `{accept_current: false, approval_id}`: clear the Degraded flag. `accept_current: true` (super admin only) also reseals the database as it is now and needs an **approved** `integrity.accept_current` request (`approval_id`, see *Dual control* below) |
+| `GET /api/admin/system/clear` | users.assign_role | `{scopes: {scope: {description, confirm}}, dual_control, delay_minutes, retained_audit_days}`; the `everything` scope is left out when policy switches it off |
+| `POST /api/admin/system/clear` | users.assign_role | `{scope: "class_data"\|"everything", confirm: "DELETE CLASS DATA"\|"RESET EVERYTHING", approval_id}`; needs an approved `system.clear.<scope>` request; a backup is taken first; `{status, backup}`. Wrong phrase: `422 CONFIRM`; no approval: `403 APPROVAL_REQUIRED`; full reset switched off by policy: `403 POLICY_DISABLED`. Activity-log entries younger than `audit.min_retention_days` survive a reset |
+| `GET /api/admin/system/policy` | audit.read | the effective **global policy**: `{profile, file: {serial, issued_at, key_id}\|null, problems, flags: [{name, value, source: default\|file\|inline, standard, hardened, description}], audit: {file, url, webhook_failures}, code_manifest: {present, problems}}`. Read-only: no route changes the policy (root does, [global policy control](../design/gpc.md)) |
+| `POST /api/system/csp-report` | public | where browsers report content the page's Content-Security-Policy blocked (`application/csp-report`). Public because browsers send it without credentials, so: body capped at 4 KB, at most 30 reports a minute for the whole server, **no database write** (log and external audit trail only). `204` |
+| `GET /api/system/signing-key` | public | `{alg: "ed25519", public_key (base64), key_id}`: verifies the `SIGNATURE.json` in exports (`scripts/verify_export.py`). Only the public half |
+
+### Dual control: `/api/admin/approvals` (super admin)
+
+A dangerous action runs only after a second super admin approved it (policy `dual_control.*`, see [data integrity](../design/data-integrity.md#dual-control)). Each step re-checks the caller's password (*step-up*; 5 wrong ones in 15 minutes: `429 STEP_UP_LOCKED`) and is logged and copied to the external audit sink.
+
+| Method & path | Notes |
+|---|---|
+| `GET /api/admin/approvals` | `{actions: {name: description}, requests: [{id, action, description, params, status, requested_by, requested_at, approved_by, approved_at, not_before, expires_at, executed_at}]}`, newest first |
+| `POST /api/admin/approvals` | `{action: "integrity.accept_current"\|"system.clear.class_data"\|"system.clear.everything", params: {}, password}` → `201 {id, status: "pending"}`. Wrong password: `403 STEP_UP_FAILED`; unknown action `422`; reset switched off `403 POLICY_DISABLED` |
+| `POST /api/admin/approvals/{id}/approve` | `{password}` → `{id, status: "approved", not_before, expires_at}`. A different super admin must approve: `403 SELF_APPROVAL` (the requester may approve only when policy `dual_control.single_operator_ok` is on and they are the only active super admin). `not_before` is the approval plus `dual_control.delay_minutes` |
+| `POST /api/admin/approvals/{id}/deny` | pending or approved → denied |
+
+The requester then calls the action with `approval_id`: it must be approved, for exactly that action and parameters, requested by the caller, past its delay (`409 NOT_YET`), before it expires (`409 EXPIRED`), and it is spent by the call (`409 NOT_APPROVED` on a second use). Other errors: `403 APPROVAL_REQUIRED`, `403 APPROVAL_MISMATCH`.
+
+A write the database gateway refuses answers `403 {"code": "DB_WRITE_REFUSED", "message"}` on any route.
+
+## Debug mode and test data (v2.2)
+
+Super admins only (`users.assign_role`). See [debug mode and test data](../guides/test-mode.md).
+
+| Method & path | Notes |
+|---|---|
+| `GET /api/admin/test-mode` | `{on, since, by, pending: [{id, size}], datasets: [{name, size, saved_at, by, counts}], test_password}` |
+| `POST /api/admin/test-mode/enable` | `{dataset: null\|"<name>"}`. Verifies and snapshots the real database first (`409 DB_NOT_VERIFIED`, `409 ALREADY_ON`, `404 NO_DATASET`) |
+| `POST /api/admin/test-mode/disable` | back to the real database (its SHA-256 is checked first); the test database waits for a decision: `{…state, pending_id}` |
+| `POST /api/admin/test-mode/pending/{id}` | `{action: "save", name}` (1–48 letters, digits, spaces, `. _ -`; `409 NAME_TAKEN`) or `{action: "delete"}` |
+| `GET /api/admin/test-mode/{kind}/{id}/export.zip` | `kind` is `pending` or `dataset`; a zip with one CSV per table |
+| `DELETE /api/admin/test-mode/datasets/{name}` | |
+| `GET /api/admin/test-data/schema` | the sheets and their columns, generator defaults and limits, current table counts |
+| `POST /api/admin/test-data/generate` | `{seed, counts}` → `{seed, sheets}`; stores nothing |
+| `POST /api/admin/test-data/validate` | `{sheets}` → `{ok, errors: [{sheet, row, column, message}]}` |
+| `POST /api/admin/test-data/import` | `{sheets, simulate_activity, seed}` → `{ok, imported, activity}`; all or nothing (`422 INVALID_ROWS` with `errors`) |
+
+The `test-data` routes answer `409 TEST_MODE_OFF` while debug mode is off.
+
+## Accounts, preferences and platform (v2.2)
+
+Accounts start with a **temporary password** and are *pending setup* until their owner chooses their own: until then every
+route except `/api/auth/me`, `change-password`, `logout`, `preferences`, `onboarding`, `session` and `session-status`
+answers `403 PASSWORD_CHANGE_REQUIRED`. The password rule for administrators and faculty: at least 8 characters, one
+lower-case and one upper-case letter, one number and one special character; super admins need 10 characters and may keep a
+simpler rule otherwise. A session that has ended says why in the `X-Session-Code` header: `idle`, `hard`, `disabled`
+(the account was disabled while signed in) or `restart` (the server restarted; session ids carry the identity of the server
+run that issued them, called the 1PSID).
+
+### Own account: `/api/auth`
+
+| Method & path | Guard | Body / params | Notes |
+|---|---|---|---|
+| `GET /api/auth/preferences` | session | – | the saved preferences, defaults filled in (theme, accent, motion, contrast, scale, colour-vision mode, density, sidebar, advanced mode, dashboard layout, date and time formats, week start, number format, landing page) |
+| `PUT /api/auth/preferences` | session | any subset | validated; unknown keys or values → 422. `advanced` is kept only for administrators |
+| `POST /api/auth/onboarding` | session | `{display_name, theme}` | finishes the welcome set-up; needs the password to have been changed first (`409 PASSWORD_CHANGE_REQUIRED`) |
+
+### Accounts: `/api/admin/users` (additions)
+
+| Method & path | Guard | Body / params | Notes |
+|---|---|---|---|
+| `POST /api/admin/users` | admin | `{username, email, password?, full_name, display_name, role, designation}` | no `password`: one is generated and returned once as `temporary_password`. `role` is `teacher` or `admin` (granting `admin` needs a super admin); `super_admin` → 403 `SUPER_ADMIN_VIA_CONSOLE`. `designation` is `faculty` or `ta` |
+| `POST /api/admin/users/{id}/designation` | admin | `{designation: faculty\|ta}` | a teaching assistant has faculty permissions; only faculty accounts can be TAs |
+| `GET /api/admin/users/deleted` | admin | – | the trash: `{retention_days: 30, accounts: [{id, username, deleted_at, deleted_by, days_left, ...}]}` |
+| `POST /api/admin/users/deleted/{id}/restore` | admin | – | restores the account (administrator accounts need a super admin); the name must still be free (`409`) |
+| `DELETE /api/admin/users/deleted/{id}` | admin | – | removes it for good → `204` |
+| `GET /api/admin/presence` | admin | – | who is signed in now, last activity, recently active accounts and the number of accounts |
+| `GET /api/admin/users/{id}/activity-summary` | admin | `?days=30` (1-180) | per-day counts, counts by kind, a 7x24 heat map, sign-in count and the latest events: what the activity graphs draw |
+
+### Features, requirements, traffic and risk: `/api/admin`
+
+| Method & path | Guard | Notes |
+|---|---|---|
+| `GET /api/admin/features` | features.manage | every feature with `enabled`, `set_by`, `set_at`, `set_rank` and `min_rank` (the least authority that may change it) |
+| `PUT /api/admin/features/{name}` | features.manage | `{enabled?, min_rank?}`. A change needs at least the authority of whoever set it last and of `min_rank`; `min_rank` can only be raised up to the caller's own level. Refused → `403 FEATURE_LOCKED` |
+| `GET /api/admin/features/log` | features.manage | `?flag=&limit=`: who changed what, when (administrator, super admin, root, TrustedInstaller) |
+| `GET /api/admin/system/requirements` | features.manage | what TrustedInstaller found at start-up: each check, its minimum, and which features it switched off |
+| `GET /api/admin/traffic` | sessions.read | unusual-traffic alerts (DoS or DDoS: origin, pages, rate, limit, account), the busiest origins and the limits per kind of endpoint. Nothing is blocked |
+| `GET /api/admin/risk` | sessions.read | `{account id: {score 0-100, label, reasons}}`; labels *Safe*, *Potentially Unsafe*, *Likely Compromised* |
+| `POST /api/admin/users/{id}/end-sessions` | **super_admin** | signs the account out everywhere (administrators cannot) |
+
+### Search and backups
+
+| Method & path | Guard | Notes |
+|---|---|---|
+| `GET /api/search` | session | `?q=` (2+ characters): results grouped by kind, limited to what the caller may see (faculty: their own classes and the students they registered; administrators: accounts and devices too) |
+| `GET /api/admin/backups` | admin | named and rolling backups of the database and system state |
+| `POST /api/admin/backups` | admin | `{name}`: save one now |
+| `GET /api/admin/backups/{kind}/{name}` | admin | what is in it |
+| `POST /api/admin/backups/{kind}/{name}/restore` | admin | restore it (the current database is kept aside; the hardened profile needs an approval) |
+| `DELETE /api/admin/backups/{kind}/{name}` | admin | delete a saved backup |
+
+### Status for the web app
+
+`GET /api/system/status` (public) also returns `release` (with the patch number), `banners` (the integrity-protection and test-mode
+banners to show, in order), `integrity_protection`, `locked`, `updating` (`active` while a firmware rollout is running, with the message to show),
+and `feature_flags` (every feature, on or off).
+
+---
 
 ## Misc
 

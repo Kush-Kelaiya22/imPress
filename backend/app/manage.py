@@ -2,6 +2,7 @@
 
     cd backend && python -m app.manage restore-super-admin --username admin
     docker exec -w /app/backend impress python -m app.manage restore-super-admin --username admin
+    python -m app.manage audit-verify /var/log/impress/audit.jsonl
 
 restore-super-admin recovers an installation where no one can manage users
 any more (for example a database locked out before #116): it makes the named
@@ -54,7 +55,17 @@ def main(argv=None) -> int:
     r = sub.add_parser("restore-super-admin", help="make an account an active super admin with a new password")
     r.add_argument("--username", required=True)
     r.add_argument("--create", action="store_true", help="create the account if it does not exist")
+    v = sub.add_parser("audit-verify", help="check an external audit file's hash chain (policy audit.sink_path)")
+    v.add_argument("file")
     args = parser.parse_args(argv)
+
+    if args.command == "audit-verify":
+        from pathlib import Path
+
+        from .services import auditsink
+        problems = auditsink.verify_file(Path(args.file))
+        print("\n".join(problems) if problems else "the audit chain is intact")
+        return 1 if problems else 0
 
     try:
         password = asyncio.run(restore_super_admin(args.username, args.create))

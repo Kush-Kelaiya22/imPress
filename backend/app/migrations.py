@@ -23,7 +23,9 @@ from __future__ import annotations
 
 import logging
 import shutil
+import sqlite3
 from collections.abc import Awaitable, Callable
+from contextlib import closing
 from pathlib import Path
 
 from sqlalchemy import text
@@ -233,6 +235,24 @@ async def add_device_caps(conn: AsyncConnection) -> None:
                                               "ota_slot_kb": "INTEGER", "rollback_supported": "BOOLEAN"}})
 
 
+# v2.2: display names, faculty/TA, first-sign-in state, preferences; a class's icon and colour.
+# Existing accounts are NOT 'pending setup' (must_change_password stays false) but see the welcome once.
+_ACCOUNT_COLUMNS = {
+    "users": {"display_name": "VARCHAR(64) DEFAULT ''", "designation": "VARCHAR(8) DEFAULT 'faculty'",
+              "must_change_password": "BOOLEAN DEFAULT 0", "onboarded_at": "DATETIME", "preferences": "JSON"},
+    "user_sessions": {"boot_id": "VARCHAR(16) DEFAULT ''", "end_reason": "VARCHAR(16) DEFAULT ''"},
+    "class_sessions": {"icon": "VARCHAR(24) DEFAULT ''", "color": "VARCHAR(7) DEFAULT ''"},
+}
+
+
+async def add_account_and_class_fields(conn: AsyncConnection) -> None:
+    await _add_columns(conn, _ACCOUNT_COLUMNS)
+
+
+# The versions applied by this process's start-up (an upgrade): services/integrity.py re-seals after one.
+APPLIED_AT_START: list[int] = []
+
+
 # Append-only. (version, name, step)
 MIGRATIONS: list[tuple[int, str, Step]] = [
     (1, "add_v2_columns", add_v2_columns),
@@ -247,6 +267,7 @@ MIGRATIONS: list[tuple[int, str, Step]] = [
     (10, "add_deployment_deferral", add_deployment_deferral),
     (11, "add_firmware_qualification", add_firmware_qualification),
     (12, "add_device_caps", add_device_caps),
+    (13, "add_account_and_class_fields", add_account_and_class_fields),
 ]
 
 LATEST = MIGRATIONS[-1][0]
@@ -282,15 +303,19 @@ def backup(engine: AsyncEngine, from_version: int, to_version: int) -> Path | No
     if src is None or not src.exists():
         return None
     dest = src.with_name(f"{src.name}.bak-{from_version}-to-{to_version}-{istnow():%Y%m%d%H%M%S}")
-    shutil.copy2(src, dest)
+    with closing(sqlite3.connect(str(src))) as s, closing(sqlite3.connect(str(dest))) as d:
+        s.backup(d)                          # a plain file copy would miss what is still in the WAL
+    shutil.copystat(src, dest)
     log.warning("Database backup before migrating: %s", dest)
     return dest
 
 
 async def schema_version(engine: AsyncEngine) -> int:
-    async with engine.connect() as conn:
-        applied = await _applied(conn)
-        await conn.commit()
+    from .dbgateway import as_system
+    with as_system():                       # may create schema_migrations (DDL): the server's own
+        async with engine.connect() as conn:
+            applied = await _applied(conn)
+            await conn.commit()
     return max(applied, default=0)
 
 

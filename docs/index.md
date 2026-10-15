@@ -8,6 +8,13 @@ imPress is a classroom-response system with a FastAPI service, web clients and E
 
 README
 graph/index
+install/platforms
+install/flashing
+user-guide/README
+user-guide/administrator
+user-guide/teacher
+user-guide/glossary
+user-guide/faq
 architecture/overview
 guides/development-setup
 guides/deployment
@@ -26,7 +33,14 @@ architecture/firmware
 architecture/data-flows
 design/protocols
 design/mesh
+design/mesh-authentication
 design/security-model
+design/data-integrity
+design/gpc
+design/trusted-boot
+design/integrity-protection
+design/traffic-monitor
+design/ui-design
 design/authorization
 design/scheduling
 design/student-ota
@@ -42,9 +56,31 @@ api/websocket-api
 api/device-api
 guides/configuration
 guides/csv-imports
+guides/test-mode
+guides/accounts-and-onboarding
+guides/personalization
+guides/backups
+guides/console
+guides/launch-flags
+guides/production-hardening
 guides/ota-updates
 guides/releases
 guides/testing
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Privacy and compliance
+
+compliance/README
+compliance/data-inventory
+compliance/privacy-notice-template
+compliance/retention-schedule
+compliance/dsar-runbook
+compliance/drill-records
+compliance/incident-response
+compliance/control-mapping
+compliance/risk-register
 ```
 
 ```{toctree}
@@ -56,9 +92,12 @@ hardware/DEVICE_COMPATIBILITY
 firmware/OTA_ARCHITECTURE
 firmware/FIRMWARE_VERSIONING
 firmware/RECOVERY_PROCEDURE
+reference/placeholders
 reference/data-model
 reference/hardware
 reference/known-issues
+reference/flags
+reference/errors
 reference/changelog-v2.1
 reference/changelog-v2
 ```
@@ -72,10 +111,13 @@ testing/HARDWARE_VALIDATION
 engineering/DATABASE_MIGRATIONS
 engineering/SECURITY_REVIEW
 engineering/SYSTEM_AUDIT
+engineering/PERMISSIONS_AND_OTA_REVIEW
 engineering/V2.1_ENGINEERING_REPORT
 engineering/V2_V3_COMPARISON
 engineering/REFACTOR_ROADMAP
+engineering/V2.2_PLAN
 releases/v2.1
+releases/v2.2
 ```
 
 ## Find what you need

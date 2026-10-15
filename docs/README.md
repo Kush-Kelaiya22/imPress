@@ -27,6 +27,9 @@ The portal is deliberately served by imPress rather than embedded from GitHub: i
 | ↳ [Wire protocols](design/protocols.md) | encode or decode any byte on any link |
 | ↳ [Mesh design](design/mesh.md) | understand ESP-NOW relaying, root discovery, de-duplication, timing |
 | ↳ [Security model](design/security-model.md) | reason about threats, auth, keys, sessions, OTA integrity |
+| ↳ [Web app design and motion](design/ui-design.md) | the Apple HIG and Material 3 Expressive choices, the spring tokens, the rules that keep motion from glitching |
+| ↳ [Global policy control](design/gpc.md) | the root-signed feature flags, the standard and hardened profiles, inline overrides, the signed code manifest |
+| ↳ [Data integrity](design/data-integrity.md) | the database gateway, row seals, temporary backups, Degraded and self-repair, clearing data |
 | ↳ [Design decisions](design/decisions.md) | read the decision records behind non-obvious choices |
 | **[API](api/rest-api.md)** | integrate with the backend |
 | ↳ [REST API](api/rest-api.md) | call any HTTP endpoint (request/response contracts, errors) |
@@ -37,6 +40,9 @@ The portal is deliberately served by imPress rather than embedded from GitHub: i
 | ↳ [Configuration](guides/configuration.md) | look up any backend setting or device Kconfig/NVS key |
 | ↳ [Deployment](guides/deployment.md) | put imPress in a real classroom |
 | ↳ [CSV imports](guides/csv-imports.md) | bulk-create quiz questions, courses and sections from a spreadsheet; export sections |
+| ↳ [Production hardening](guides/production-hardening.md) | the checklist for a production server: root key, signed policy, audit trail, signed firmware, backups |
+| ↳ [Privacy and compliance toolkit](compliance/README.md) | data inventory, notice template, retention, rights requests, incident response, control mapping, risk register |
+| ↳ [Debug mode and test data](guides/test-mode.md) | try imPress on realistic generated or pasted data without touching the real database |
 | ↳ [OTA updates](guides/ota-updates.md) | ship firmware to deployed hubs and gateways |
 | ↳ [Releases](guides/releases.md) | release names, how releases are made, Beta and Stable, the container image, flashing prebuilt images |
 | ↳ [Changelog](https://github.com/Kush-Kelaiya22/imPress/blob/varun/v2.1/CHANGELOG.md) | what was added, changed, removed and fixed in each release |
@@ -67,6 +73,9 @@ The portal is deliberately served by imPress rather than embedded from GitHub: i
 | ↳ [Database migrations](engineering/DATABASE_MIGRATIONS.md) | how the schema is versioned and upgraded, enforced constraints, backups and restore |
 
 ## Conventions used in these docs
+
+- **New reader path:** [install by platform](install/platforms.md) → [first 30 minutes](user-guide/README.md) → [administrator](user-guide/administrator.md) or [teacher](user-guide/teacher.md); use the [glossary](user-guide/glossary.md) and [FAQ](user-guide/faq.md) when needed.
+- **Hardware builders:** [build, configure and flash](install/flashing.md), then [device configuration](guides/configuration.md) and [hardware validation](testing/HARDWARE_VALIDATION.md).
 
 - **Paths** are relative to the repository root (`backend/app/routers/device.py`).
 - **"Gateway"** = the ESP32-C6 (`firmware/class_c6`); **"hub"/"root"** = the ESP32-S3 (`firmware/class_s3`); **"student module"/"node"** = `firmware/student`.

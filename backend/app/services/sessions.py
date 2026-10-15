@@ -27,17 +27,21 @@ async def _cleanup_once() -> int:
     Returns the number of rows removed.
     """
     from ..database import async_session
+    from ..auth import BOOT_ID
     from ..models import UserSession
 
     now = istnow()
-    idle_cutoff = now - timedelta(minutes=settings.SESSION_IDLE_MINUTES)
+    # the longest idle limit anyone can have (faculty in class); validate_session applies the exact one
+    idle_cutoff = now - timedelta(minutes=max(settings.SESSION_IDLE_MINUTES, settings.SESSION_CLASS_IDLE_MINUTES))
 
     async with async_session() as db:
         result = await db.execute(
             delete(UserSession).where(
                 (UserSession.expires_at <= now)
                 | (UserSession.last_activity_at < idle_cutoff)
-                | (UserSession.revoked.is_(True))
+                | (UserSession.revoked.is_(True) & ((UserSession.end_reason != "disabled")
+                                                       | (UserSession.last_activity_at < now - timedelta(days=1))))
+                | (UserSession.boot_id != BOOT_ID)
             )
         )
         from .throttle import prune

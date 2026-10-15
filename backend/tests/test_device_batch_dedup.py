@@ -62,6 +62,32 @@ def test_distinct_students_and_questions_all_count(client, db, setup):
     assert count(db, QuizAnswer) == 3
 
 
+def test_legacy_device_uid_resolves_via_student_module(client, db, setup):
+    from app.models import QuizAnswer, StudentModule
+
+    uid = 0x1A2B3C4D
+
+    async def link_module(s):
+        s.add(StudentModule(device_uid=uid, enrollment_number=ROLL))
+
+    db(link_module)
+    msg = answer(setup["quiz"])
+    msg.pop("enrollment_number")
+    msg["device_id"] = uid
+
+    assert batch(client, msg) == {"status": "ok", "processed": 1, "skipped": 0}
+    assert count(db, QuizAnswer) == 1
+
+
+@pytest.mark.parametrize("device_id", [True, 0, -1, 0x1_0000_0000, 123456789])
+def test_unmapped_or_invalid_device_uid_is_skipped(client, setup, device_id):
+    msg = answer(setup["quiz"])
+    msg.pop("enrollment_number")
+    msg["device_id"] = device_id
+
+    assert batch(client, msg) == {"status": "ok", "processed": 0, "skipped": 1}
+
+
 @pytest.mark.parametrize("bad", [
     {"quiz_id": 999},                      # unknown quiz
     {"enrollment_number": "NOPE000000"},   # unknown student

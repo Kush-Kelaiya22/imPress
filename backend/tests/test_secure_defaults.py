@@ -48,17 +48,18 @@ def test_app_startup_fails_with_default_secrets(monkeypatch):
             pass
 
 
-def test_first_admin_password_is_random_not_admin123(monkeypatch, caplog):
+def test_default_super_admin_password_is_random_not_admin123(monkeypatch, caplog):
     from app.config import settings
     from app.main import app
     monkeypatch.setattr(settings, "INITIAL_ADMIN_PASSWORD", "")
+    monkeypatch.setattr(settings, "DEFAULT_SUPERADMIN_PASSWORD", "")
     asyncio.run(_reset_db())
-    with caplog.at_level(logging.WARNING, logger="app.main"), TestClient(app) as c:
-        assert c.post("/api/auth/login", json={"username": "admin", "password": "admin123"}).status_code == 401
-        m = re.search(r"username=admin password=(\S+)", caplog.text)
+    with caplog.at_level(logging.WARNING, logger="app.services.bootstrap"), TestClient(app) as c:
+        assert c.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "admin123"}).status_code == 401
+        m = re.search(r"password : (\S+); \(random", caplog.text)
         assert m, caplog.text
-        assert len(m.group(1)) >= 16
-        assert c.post("/api/auth/login", json={"username": "admin", "password": m.group(1)}).status_code == 200
+        assert len(m.group(1)) >= 20
+        assert c.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": m.group(1)}).status_code == 200
 
 
 def test_cors_only_configured_origins(client):

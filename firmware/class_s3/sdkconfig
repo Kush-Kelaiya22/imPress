@@ -1025,6 +1025,8 @@ CONFIG_SPI_POLL_INTERVAL_MS=50
 CONFIG_SPI_CLOCK_MHZ=10
 # default:
 CONFIG_MESH_WIFI_CHANNEL=1
+# default:
+CONFIG_MESH_ANSWER_ACK=y
 # end of Mesh Timing
 # end of imPress S3 Class Module Configuration
 

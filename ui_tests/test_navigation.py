@@ -23,10 +23,10 @@ def test_normal_navigation_and_in_page_rerender_still_work(server, page):
                              "full_name": "Teach One", "role": "teacher"})
     login(page, base)
     page.wait_for_url("**/#/admin*")
-    expect(page.locator("text=Good day")).to_be_visible()
+    expect(page.locator(".dash-title")).to_contain_text("Good")
     page.goto(base + "/#/admin/users")
     row = page.locator("tr", has_text="teach1")
     expect(row).to_be_visible()
-    page.on("dialog", lambda d: d.accept())
-    row.locator("button", has_text="Deactivate").click()   # re-renders the same page
-    expect(page.locator("tr", has_text="teach1").locator("button", has_text="Reactivate")).to_be_visible()
+    row.locator('button[title="Disable"]').click()
+    page.click(".modal:not(.hidden) button[type=submit]")      # the confirmation dialog; the page re-renders
+    expect(page.locator("tr", has_text="teach1").locator('button[title="Enable"]')).to_be_visible()

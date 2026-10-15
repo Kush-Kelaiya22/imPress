@@ -40,6 +40,8 @@ async def commit(db: AsyncSession, revoked: User | None = None) -> None:
     if revoked_id is not None:
         from ..ws.manager import manager
         await manager.close_user(revoked_id)
+        from . import events
+        events.to_user(revoked_id, {"type": "session_ended", "reason": "disabled" if not revoked.is_active else "signed_out"})
 
 
 # What happens to each reference when a user is deleted (#117). Every foreign
@@ -61,10 +63,30 @@ DELETE_RULES = {
     ("firmware_deployments", "requested_by"): "null",
     ("activity_logs", "user_id"): "audit",
     ("class_occurrence_exceptions", "created_by"): "null",
+    ("user_mfa", "user_id"): "delete",              # a second factor belongs to its account
+    ("approvals", "requested_by"): "delete",        # a request only makes sense with its requester; the audit trail keeps the record
+    ("approvals", "approved_by"): "null",
 }
 
 
-async def delete_user(db: AsyncSession, target: User) -> None:
+TRASH_DAYS = 30
+
+
+async def _move_to_trash(db: AsyncSession, target: User, deleted_by: str) -> None:
+    """Keep a snapshot of the account for 30 days (the trash): restoring recreates the account, not its
+    class assignments."""
+    from datetime import timedelta
+
+    from ..models import DeletedUser
+    from ..timeutil import istnow
+    db.add(DeletedUser(original_id=target.id, username=target.username, email=target.email,
+                       hashed_password=target.hashed_password, full_name=target.full_name or "",
+                       display_name=target.display_name or "", role=target.role, designation=target.designation or "faculty",
+                       preferences=target.preferences or {}, created_at=target.created_at, deleted_by=deleted_by,
+                       purge_after=istnow() + timedelta(days=TRASH_DAYS)))
+
+
+async def delete_user(db: AsyncSession, target: User, deleted_by: str = "") -> None:
     """Permanently delete `target` and settle every reference to it, in the
     caller's transaction. The caller commits with commit(db, revoked=target)."""
     from sqlalchemy import select, text
@@ -76,6 +98,7 @@ async def delete_user(db: AsyncSession, target: User) -> None:
         raise error(409, "USER_OWNS_CLASSES",
                     "Assign another primary teacher first: " + ", ".join(f"{n} (#{i})" for i, n in owned))
     uid = {"u": target.id}
+    await _move_to_trash(db, target, deleted_by)
     for (table, column), rule in DELETE_RULES.items():
         if rule == "delete":
             await db.execute(text(f"DELETE FROM {table} WHERE {column} = :u"), uid)

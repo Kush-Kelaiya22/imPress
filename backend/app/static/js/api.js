@@ -2,37 +2,44 @@
 
 const API_BASE = '/api';
 
-function getToken() {
-  return localStorage.getItem('impress_token');
+/* The session token lives in an HttpOnly cookie that scripts cannot read
+ * (v2.2). Page storage only remembers that someone signed in, so the router
+ * can show the login page without a round trip; the server decides. */
+const SIGNED_IN = 'impress_signed_in';
+const CSRF = { 'X-Impress-Request': '1' };   // required on cookie-authenticated changes
+
+function markSignedIn(on) {
+  try {
+    if (on) localStorage.setItem(SIGNED_IN, '1'); else localStorage.removeItem(SIGNED_IN);
+    localStorage.removeItem('impress_token');   // left by v2.1
+  } catch { /* storage unavailable */ }
 }
 
-function setToken(token) {
-  localStorage.setItem('impress_token', token);
-}
-
-function clearToken() {
-  localStorage.removeItem('impress_token');
-}
+function clearToken() { markSignedIn(false); }
 
 function isLoggedIn() {
-  return !!getToken();
+  try { return localStorage.getItem(SIGNED_IN) === '1'; } catch { return true; }
 }
 
 async function apiRequest(path, options = {}) {
   const url = `${API_BASE}${path}`;
   const headers = {
     'Content-Type': 'application/json',
+    ...CSRF,
+    // live refresh (v2.2): not user activity, unless the user acted since it started
+    ...(window.__quiet && !(typeof Live !== 'undefined' && Live.lastUser >= window.__quiet) ? { 'X-Impress-Background': '1' } : {}),
     ...options.headers,
   };
 
-  const token = getToken();
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
   const res = await fetch(url, { ...options, headers });
 
-  if (res.status === 401) {
+  if (res.status === 401 && path !== '/auth/login') {
+    // the server says why the session ended: a disabled account and a restart get a proper notice, not a redirect
+    const why = res.headers.get('X-Session-Code');
+    if (typeof Overlays !== 'undefined' && (why === 'disabled' || why === 'restart') && !path.startsWith('/auth/login')) {
+      Overlays.sessionEnded(why);
+      throw new Error('Unauthorized');
+    }
     clearToken();
     window.location.hash = '#/login';
     throw new Error('Unauthorized');
@@ -41,9 +48,15 @@ async function apiRequest(path, options = {}) {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     const d = err.detail;
+    if (res.status === 403 && d && d.code === 'PASSWORD_CHANGE_REQUIRED' && typeof Onboarding !== 'undefined') {
+      Onboarding.required();                 // temporary credentials: the welcome flow, not an error page
+      throw new Error('Unauthorized');
+    }
     // {"detail": {"code", "message"}} (#116) or FastAPI's string / validation list
-    const msg = typeof d === 'string' ? d : (d && d.message) || 'Request failed';
-    throw Object.assign(new Error(msg), { status: res.status, code: d && d.code });
+    const msg = typeof d === 'string' ? d : (d && d.message) ||
+      (Array.isArray(d) ? d.map(v => v.msg).filter(Boolean).join('; ') : '') || 'Request failed';
+    const retryAfter = Math.max(0, Number(res.headers.get('Retry-After')) || 0);
+    throw Object.assign(new Error(msg), { status: res.status, code: d && d.code, detail: d, retryAfter });
   }
 
   if (res.status === 204) return null;
@@ -56,8 +69,7 @@ function uploadFile(path, file, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${API_BASE}${path}`);
-    const token = getToken();
-    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('X-Impress-Request', '1');
     xhr.upload.onprogress = (e) => {
       if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded * 100) / e.total));
     };
@@ -91,17 +103,19 @@ const authApi = {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     });
-    setToken(res.access_token);
+    markSignedIn(true);
     return res;
   },
   async me() {
     return apiRequest('/auth/me');
   },
-  async updateProfile(fullName) {
-    return apiRequest('/auth/me', {
-      method: 'PUT',
-      body: JSON.stringify({ full_name: fullName }),
-    });
+  async updateProfile(fullName, displayName) {
+    const body = { full_name: fullName };
+    if (displayName !== undefined) body.display_name = displayName;
+    return apiRequest('/auth/me', { method: 'PUT', body: JSON.stringify(body) });
+  },
+  async onboard(displayName, theme) {                       // the welcome set-up (v2.2)
+    return apiRequest('/auth/onboarding', { method: 'POST', body: JSON.stringify({ display_name: displayName, theme }) });
   },
   async changePassword(currentPassword, newPassword) {
     return apiRequest('/auth/change-password', {
@@ -109,7 +123,8 @@ const authApi = {
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     });
   },
-  logout() {
+  async logout() {
+    try { await fetch(`${API_BASE}/auth/logout`, { method: 'POST', headers: CSRF }); } catch { /* offline: the cookie expires */ }
     clearToken();
   },
 };
@@ -127,7 +142,7 @@ const adminApi = {
   /** Download every course section as CSV (authenticated, so via a blob). */
   async exportClassesCsv() {
     const res = await fetch(`${API_BASE}/admin/classes/export.csv`, {
-      headers: { Authorization: `Bearer ${getToken()}` },
+      headers: CSRF,
     });
     if (!res.ok) throw new Error(`Export failed (${res.status})`);
     const url = URL.createObjectURL(await res.blob());
@@ -161,17 +176,40 @@ const adminApi = {
   async deleteUser(userId) {
     return apiRequest(`/admin/users/${userId}`, { method: 'DELETE' });
   },
-  async resetPassword(userId, newPassword) {
+  async endSessions(userId) {                     // v2.2: sign a user out everywhere
+    return apiRequest(`/admin/users/${userId}/end-sessions`, { method: 'POST' });
+  },
+  async studentsSummary() { return apiRequest('/admin/students/summary'); },
+  async resetPassword(userId, newPassword) {               // no password given: one is generated and returned once
     return apiRequest(`/admin/users/${userId}/reset-password`, {
       method: 'POST',
-      body: JSON.stringify({ new_password: newPassword }),
+      body: JSON.stringify(newPassword ? { new_password: newPassword } : {}),
     });
   },
+  setDesignation(userId, designation) { return apiRequest(`/admin/users/${userId}/designation`, { method: 'POST', body: JSON.stringify({ designation }) }); },
+  presence() { return apiRequest('/admin/presence'); },
+  activitySummary(userId, days = 30) { return apiRequest(`/admin/users/${userId}/activity-summary?days=${days}`); },
+  trash() { return apiRequest('/admin/users/deleted'); },
+  restoreUser(id) { return apiRequest(`/admin/users/deleted/${id}/restore`, { method: 'POST' }); },
+  purgeUser(id) { return apiRequest(`/admin/users/deleted/${id}`, { method: 'DELETE' }); },
+  risk() { return apiRequest('/admin/risk'); },
+  traffic() { return apiRequest('/admin/traffic'); },
+  features() { return apiRequest('/admin/features'); },
+  setFeature(name, body) { return apiRequest(`/admin/features/${name}`, { method: 'PUT', body: JSON.stringify(body) }); },
+  featureLog(flag = '') { return apiRequest(`/admin/features/log${flag ? `?flag=${encodeURIComponent(flag)}` : ''}`); },
+  requirements() { return apiRequest('/admin/system/requirements'); },
+  backups() { return apiRequest('/admin/backups'); },
+  saveBackup(name, note = '') { return apiRequest('/admin/backups', { method: 'POST', body: JSON.stringify({ name, note }) }); },
+  describeBackup(id) { return apiRequest(`/admin/backups/${id}`); },
+  restoreBackup(id, password, confirm, approvalId = null, code = '') {
+    return apiRequest(`/admin/backups/${id}/restore`, { method: 'POST', body: JSON.stringify({ password, code, confirm, approval_id: approvalId }) });
+  },
+  deleteBackup(id) { return apiRequest(`/admin/backups/${id}`, { method: 'DELETE' }); },
+  search(q) { return apiRequest(`/search?q=${encodeURIComponent(q)}`); },
   async importUsersCsv(file) {
     const form = new FormData();
     form.append('file', file);
-    const token = getToken();
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = CSRF;
     const res = await fetch(`${API_BASE}/admin/users/import`, { method: 'POST', headers, body: form });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -205,8 +243,7 @@ const adminApi = {
   async importClassCsv(classId, file) {
     const form = new FormData();
     form.append('file', file);
-    const token = getToken();
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = CSRF;
     const res = await fetch(`${API_BASE}/admin/classes/${classId}/import-students`, { method: 'POST', headers, body: form });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -389,8 +426,7 @@ const studentsApi = {
     const form = new FormData();
     form.append('file', file);
     if (classSessionId) form.append('class_session_id', classSessionId);
-    const token = getToken();
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = CSRF;
     const res = await fetch(`${API_BASE}/students/import`, { method: 'POST', headers, body: form });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -440,7 +476,64 @@ const classesApi = {
 
 // ── Quizzes ─────────────────────────────────────────────────────
 
+// ── System, database integrity, debug (test) mode (v2.2) ─────────
+
+const systemApi = {
+  status() { return apiRequest('/system/status'); },
+  integrity() { return apiRequest('/admin/system/integrity'); },
+  verify() { return apiRequest('/admin/system/integrity/verify', { method: 'POST' }); },
+  acknowledge(acceptCurrent = false, approvalId = null) {
+    return apiRequest('/admin/system/integrity/acknowledge', { method: 'POST', body: JSON.stringify({ accept_current: acceptCurrent, approval_id: approvalId }) });
+  },
+  clearOptions() { return apiRequest('/admin/system/clear'); },
+  clear(scope, confirm, approvalId) {
+    return apiRequest('/admin/system/clear', { method: 'POST', body: JSON.stringify({ scope, confirm, approval_id: approvalId }) });
+  },
+  policy() { return apiRequest('/admin/system/policy'); },
+};
+
+// Two-step verification for super admins (v2.2, #211)
+const mfaApi = {
+  status() { return apiRequest('/auth/mfa'); },
+  setup(password) { return apiRequest('/auth/mfa/setup', { method: 'POST', body: JSON.stringify({ password }) }); },
+  enable(code) { return apiRequest('/auth/mfa/enable', { method: 'POST', body: JSON.stringify({ code }) }); },
+  disable(password, code) { return apiRequest('/auth/mfa/disable', { method: 'POST', body: JSON.stringify({ password, code }) }); },
+  recovery(password, code) { return apiRequest('/auth/mfa/recovery-codes', { method: 'POST', body: JSON.stringify({ password, code }) }); },
+};
+
+// Dual control: a second super admin approves dangerous actions (v2.2)
+const approvalsApi = {
+  list() { return apiRequest('/admin/approvals'); },
+  request(action, password, code = '') { return apiRequest('/admin/approvals', { method: 'POST', body: JSON.stringify({ action, params: {}, password, code }) }); },
+  approve(id, password, code = '') { return apiRequest(`/admin/approvals/${id}/approve`, { method: 'POST', body: JSON.stringify({ password, code }) }); },
+  deny(id) { return apiRequest(`/admin/approvals/${id}/deny`, { method: 'POST' }); },
+};
+
+const testModeApi = {
+  state() { return apiRequest('/admin/test-mode'); },
+  enable(dataset = null) { return apiRequest('/admin/test-mode/enable', { method: 'POST', body: JSON.stringify({ dataset }) }); },
+  disable() { return apiRequest('/admin/test-mode/disable', { method: 'POST' }); },
+  decide(id, action, name = '') {
+    return apiRequest(`/admin/test-mode/pending/${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify({ action, name }) });
+  },
+  async download(kind, id) {
+    const res = await fetch(`${API_BASE}/admin/test-mode/${kind}/${encodeURIComponent(id)}/export.zip`, { headers: CSRF });
+    if (!res.ok) throw new Error(`Export failed (${res.status})`);
+    const url = URL.createObjectURL(await res.blob());
+    const a = Object.assign(document.createElement('a'), { href: url, download: `impress-test-data-${id}.zip` });
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  },
+  deleteDataset(name) { return apiRequest(`/admin/test-mode/datasets/${encodeURIComponent(name)}`, { method: 'DELETE' }); },
+  schema() { return apiRequest('/admin/test-data/schema'); },
+  generate(seed, counts) { return apiRequest('/admin/test-data/generate', { method: 'POST', body: JSON.stringify({ seed, counts }) }); },
+  validate(sheets) { return apiRequest('/admin/test-data/validate', { method: 'POST', body: JSON.stringify({ sheets }) }); },
+  async import(sheets, simulate, seed) {
+    return apiRequest('/admin/test-data/import', { method: 'POST', body: JSON.stringify({ sheets, simulate_activity: simulate, seed }) });
+  },
+};
+
 const quizzesApi = {
+  overview() { return apiRequest('/quizzes/overview'); },
   templateUrl: `${API_BASE}/quizzes/questions/template.csv`,
 
   /** Validate a question CSV; returns a per-row report, stores nothing. */
@@ -516,8 +609,8 @@ class ClassSocket {
     this.classId = classId;
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const token = encodeURIComponent(getToken() || '');
-    const url = `${protocol}//${window.location.host}/ws/class/${classId}?role=teacher&token=${token}`;
+    // The session cookie authenticates the socket; no token in the URL.
+    const url = `${protocol}//${window.location.host}/ws/class/${classId}?role=teacher`;
 
     try {
       this.ws = new WebSocket(url);
@@ -545,9 +638,16 @@ class ClassSocket {
       // The server closed it on purpose (#160): retrying would fail forever.
       if (ev.code === 4401) {                      // session revoked or expired (#118)
         this.classId = null;
-        clearToken();
-        if (typeof showToast === 'function') showToast('Your session ended. Please log in again.', 'error');
-        window.location.hash = '#/login';
+        const leave = () => {
+          clearToken();
+          if (typeof showToast === 'function') showToast('Your session ended. Please log in again.', 'error');
+          window.location.hash = '#/login';
+        };
+        // ask why: a disabled account or a restart gets its notice, not just the sign-in page
+        fetch(`${API_BASE}/auth/me`, { headers: CSRF }).then((r) => {
+          const why = r.headers.get('X-Session-Code');
+          if (typeof Overlays !== 'undefined' && (why === 'disabled' || why === 'restart')) Overlays.sessionEnded(why); else leave();
+        }).catch(leave);
         return;
       }
       if (ev.code === 4403 || ev.code === 4404) {  // no access to this class, or HTTPS required (#121, #152)

@@ -720,6 +720,13 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of Partition Table
 
 #
+# imPress Student Module Configuration
+#
+# default:
+# CONFIG_IMPRESS_EMULATOR is not set
+# end of imPress Student Module Configuration
+
+#
 # Compiler options
 #
 # default:

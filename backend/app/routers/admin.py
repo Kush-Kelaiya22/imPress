@@ -11,14 +11,15 @@ from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..policy import allowed, can_grant, require, roster_access, sees_all_classes
+from ..policy import (allowed, can_grant, is_faculty_role, is_super_role, ota_enabled, require, roster_access,
+                      sees_all_classes)
 from ..database import commit_or_conflict, get_db
 from ..models import (
     User, ClassSession, Course, Student, StudentEnrollment, EspDevice, ActivityLog, StudentModule,
 )
 from ..schemas import (
     AdminUserCreate, UserResponse, UserUpdate, RoleChange,
-    PasswordReset,
+    PasswordReset, DesignationChange,
     ClassCreate, ClassUpdate, ClassAssignTeacher, ClassResponse, ClassImportReport,
     ClassFacultyUpdate,
     StudentRegister, StudentResponse, BulkStudentRegister, StudentEnroll,
@@ -30,6 +31,7 @@ from ..schemas import (
 from ..services.firmware_store import normalize_version, resolve as resolve_firmware
 from ..services import deployments as deployment_engine
 from ..timeutil import istnow
+from ..config import settings
 
 from ..activity import log_activity
 from .. import passwords
@@ -41,6 +43,7 @@ from ..services.health import health
 from ..services.class_import import TEMPLATE as CLASS_TEMPLATE, apply_class_import, export_rows, plan_class_import
 from ..services.csv_import import read_upload
 from ..services import accounts
+from ..services.features import require_feature
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -53,10 +56,17 @@ async def create_user(
     user: User = Depends(require("users.manage")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Admin creates a teacher or admin account. Super admin can also create admins."""
+    """An administrator creates a faculty or TA account; a super admin can also create admins. A super admin
+    account can't be created here: only root can, in the console. With no password one is generated and returned
+    once (`temporary_password`); either way the person must choose their own at first sign-in."""
+    if is_super_role(body.role):
+        raise HTTPException(403, {"code": "SUPER_ADMIN_VIA_CONSOLE",
+                                  "message": "Super admin accounts are created by root in the console (python -m app.console), not here."})
     if not can_grant(user, body.role):
         raise HTTPException(403, "Only super admin can assign admin roles")
-    if (why := passwords.problem(body.password, body.username)):
+    generated = not body.password
+    password = body.password or passwords.generate(12)
+    if (why := passwords.problem(password, body.username, body.role)):
         raise HTTPException(422, f"Password {why}")
 
     existing = await db.execute(select(User).where(User.username == body.username))
@@ -71,17 +81,24 @@ async def create_user(
     new_user = User(
         username=body.username,
         email=body.email,
-        hashed_password=hash_password(body.password),
-        full_name=body.full_name,
+        hashed_password=hash_password(password),
+        full_name=body.full_name or body.display_name,
+        display_name=body.display_name,
+        designation=body.designation if is_faculty_role(body.role) else "faculty",
+        must_change_password=True,
         role=body.role,
         created_by=user.id,
     )
     db.add(new_user)
     await db.flush()
-    await log_activity(db, "user.create", user.id, "user", new_user.id, {"role": body.role})
+    await log_activity(db, "user.create", user.id, "user", new_user.id,
+                       {"role": body.role, "designation": new_user.designation, "generated_password": generated})
     await db.commit()
     await db.refresh(new_user)
-    return new_user
+    out = _user_out(user, new_user)
+    if generated:
+        out.temporary_password = password
+    return out
 
 
 @router.post("/users/import", response_model=CsvImportResult)
@@ -157,12 +174,12 @@ async def import_users_csv(
             errors.append(CsvImportError(row=row_idx, roll_number=username,
                 error="email is invalid (must be like name@domain.com)"))
             continue
-        if (why := passwords.problem(password, username)):          # #153
-            errors.append(CsvImportError(row=row_idx, roll_number=username, error=f"password {why}"))
-            continue
         if role not in ("teacher", "admin"):
             errors.append(CsvImportError(row=row_idx, roll_number=username,
-                error="role must be 'teacher' or 'admin'"))
+                error="role must be 'teacher' or 'admin' (super admins are created in the console)"))
+            continue
+        if (why := passwords.problem(password, username, role)):          # #153
+            errors.append(CsvImportError(row=row_idx, roll_number=username, error=f"password {why}"))
             continue
         if not can_grant(user, role):
             errors.append(CsvImportError(row=row_idx, roll_number=username,
@@ -205,6 +222,7 @@ async def import_users_csv(
             hashed_password=hash_password(v["password"]),
             full_name=v["full_name"],
             role=v["role"],
+            must_change_password=True,                  # the file's password is temporary
             created_by=user.id,
         )
         db.add(new_user)
@@ -247,7 +265,26 @@ async def list_users(
     if role:
         q = q.where(User.role == role)
     result = await db.execute(q)
-    return [_user_out(user, u) for u in result.scalars().all()]
+    users = result.scalars().all()
+    from ..models import UserSession, class_faculty
+    now = istnow()
+    last = dict((await db.execute(select(ActivityLog.user_id, func.max(ActivityLog.timestamp))
+                                  .group_by(ActivityLog.user_id))).all())
+    taught: dict[int, set] = {}
+    for cid, uid in (await db.execute(select(ClassSession.id, ClassSession.teacher_id))).all():
+        taught.setdefault(uid, set()).add(cid)
+    for cid, uid in (await db.execute(select(class_faculty.c.class_session_id, class_faculty.c.user_id))).all():
+        taught.setdefault(uid, set()).add(cid)
+    live = {uid for (uid,) in (await db.execute(select(UserSession.user_id).where(
+        UserSession.revoked.is_(False), UserSession.expires_at > now,
+        UserSession.last_activity_at > now - timedelta(minutes=max(settings.SESSION_IDLE_MINUTES,
+                                                                   settings.SESSION_CLASS_IDLE_MINUTES))))).all()}
+    out = []
+    for u in users:
+        r = _user_out(user, u)
+        r.last_active_at, r.class_count, r.signed_in = last.get(u.id), len(taught.get(u.id, ())), u.id in live
+        out.append(r)
+    return out
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse)
@@ -315,8 +352,12 @@ async def change_user_role(
     user: User = Depends(require("users.manage")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Change a user's role (super admin only); signs the user out."""
+    """Move an account between faculty and admin (super admin only); signs the user out. Super admin accounts
+    are never created or changed here: that is root's, in the console."""
     target = await _target(db, user_id)
+    if is_super_role(body.role) or is_super_role(target.role):
+        raise HTTPException(403, {"code": "SUPER_ADMIN_VIA_CONSOLE",
+                                  "message": "Super admin accounts are managed by root in the console (python -m app.console), not here."})
     accounts.check(user, target, "change_role")
     if body.role == target.role:
         return _user_out(user, target)
@@ -336,18 +377,123 @@ async def reset_user_password(
     user: User = Depends(require("users.manage")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Admin sets a new password for a user (forgot-password flow); signs them out."""
+    """An administrator sets a temporary password for a user (forgot-password flow): typed, or generated and
+    returned once. The user is signed out and must choose their own at the next sign-in."""
     target = await _target(db, user_id)
     accounts.check(user, target, "reset_password")
 
-    if (why := passwords.problem(body.new_password, target.username)):
+    generated = not body.new_password
+    password = body.new_password or passwords.generate(12)
+    if (why := passwords.problem(password, target.username, target.role)):
         raise HTTPException(422, f"Password {why}")
     from ..auth import hash_password
-    target.hashed_password = hash_password(body.new_password)
+    target.hashed_password = hash_password(password)
+    target.must_change_password = True
+    from ..services import throttle
+    await throttle.reset_account(db, target.username, target.id)
     await accounts.revoke(db, target)
-    await log_activity(db, "user.reset_password", user.id, "user", user_id)
+    await log_activity(db, "user.reset_password", user.id, "user", user_id, {"generated": generated})
     await accounts.commit(db, revoked=target)
-    return {"status": "ok", "message": "Password reset"}
+    out = {"status": "ok", "message": "Password reset: they choose a new one at their next sign-in"}
+    if generated:
+        out["temporary_password"] = password
+    return out
+
+
+@router.get("/presence", dependencies=[Depends(require_feature("presence"))])
+async def presence(user: User = Depends(require("users.read")), db: AsyncSession = Depends(get_db)):
+    """Who is signed in and active right now, and who was active lately (admins and super admins)."""
+    from ..auth import idle_limit_minutes
+    from ..models import UserSession
+    now = istnow()
+    sessions = (await db.execute(select(UserSession).where(UserSession.revoked.is_(False), UserSession.expires_at > now))).scalars().all()
+    users = {u.id: u for u in (await db.execute(select(User))).scalars()}
+    last = dict((await db.execute(select(ActivityLog.user_id, func.max(ActivityLog.timestamp)).group_by(ActivityLog.user_id))).all())
+    live: dict[int, dict] = {}
+    for s in sessions:
+        u = users.get(s.user_id)
+        if u is None or not u.is_active:
+            continue
+        limit = await idle_limit_minutes(db, u, now)
+        if (now - s.last_activity_at).total_seconds() <= limit * 60:
+            cur = live.get(u.id)
+            if cur is None or s.last_activity_at > cur["last_active_at"]:
+                live[u.id] = {"id": u.id, "username": u.username, "name": u.display_name or u.full_name or u.username,
+                              "role": u.role, "designation": u.designation, "last_active_at": s.last_activity_at,
+                              "signed_in_at": s.created_at, "ip": s.ip, "idle_limit_minutes": limit}
+    recent = [{"id": u.id, "username": u.username, "name": u.display_name or u.full_name or u.username, "role": u.role,
+               "designation": u.designation, "last_active_at": last.get(u.id)}
+              for u in users.values() if u.id not in live and u.is_active and last.get(u.id)
+              and (now - last[u.id]).total_seconds() <= 86400]
+    recent.sort(key=lambda r: r["last_active_at"], reverse=True)
+    return {"now": now, "active": sorted(live.values(), key=lambda r: r["last_active_at"], reverse=True),
+            "recent": recent[:20], "total_accounts": len(users)}
+
+
+@router.get("/users/{user_id}/activity-summary", dependencies=[Depends(require_feature("activity_charts"))])
+async def user_activity_summary(user_id: int, days: int = Query(30, ge=1, le=180),
+                                user: User = Depends(require("users.read")), db: AsyncSession = Depends(get_db)):
+    """What one account has done: per day, by kind of action, by hour of the week, and the latest events."""
+    from datetime import timedelta as _td
+    target = await _target(db, user_id)
+    now = istnow()
+    since = (now - _td(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    rows = (await db.execute(select(ActivityLog).where(ActivityLog.user_id == user_id, ActivityLog.timestamp >= since)
+                             .order_by(ActivityLog.timestamp.desc()).limit(20000))).scalars().all()
+    daily = {(since + _td(days=i)).date().isoformat(): 0 for i in range(days)}
+    kinds: dict[str, int] = {}
+    heat = [[0] * 24 for _ in range(7)]
+    logins = 0
+    for r in rows:
+        day = r.timestamp.date().isoformat()
+        if day in daily:
+            daily[day] += 1
+        kind = (r.action or "other").split(".")[0]
+        kinds[kind] = kinds.get(kind, 0) + 1
+        heat[r.timestamp.weekday()][r.timestamp.hour] += 1
+        logins += r.action == "auth.login"
+    return {"user": {"id": target.id, "username": target.username, "name": target.display_name or target.full_name or target.username,
+                     "role": target.role, "designation": target.designation},
+            "days": days, "total": len(rows), "logins": logins,
+            "daily": [{"date": d, "count": n} for d, n in daily.items()],
+            "by_kind": sorted(({"kind": k, "count": n} for k, n in kinds.items()), key=lambda x: -x["count"]),
+            "heatmap": heat,
+            "recent": [{"action": r.action, "at": r.timestamp, "entity_type": r.entity_type, "entity_id": r.entity_id}
+                       for r in rows[:15]]}
+
+
+@router.post("/users/{user_id}/designation", response_model=UserResponse, dependencies=[Depends(require_feature("ta_designation"))])
+async def change_designation(
+    user_id: int,
+    body: DesignationChange,
+    user: User = Depends(require("users.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Faculty or TA: a visual distinction on a teacher account (the permissions are the same)."""
+    target = await _target(db, user_id)
+    accounts.check(user, target, "edit")
+    if not is_faculty_role(target.role):
+        raise HTTPException(422, "Only faculty accounts can be faculty or TA")
+    if target.designation != body.designation:
+        old, target.designation = target.designation, body.designation
+        await log_activity(db, "user.designation", user.id, "user", user_id, {"from": old, "to": body.designation})
+        await db.commit()
+        await db.refresh(target)
+    return _user_out(user, target)
+
+
+@router.post("/users/{user_id}/end-sessions")
+async def end_user_sessions(
+    user_id: int,
+    user: User = Depends(require("sessions.end_any")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Sign a user out everywhere (v2.2). Super admins only: administrators cannot end other people's sessions."""
+    target = await _target(db, user_id)
+    await accounts.revoke(db, target)
+    await log_activity(db, "user.end_sessions", user.id, "user", user_id)
+    await accounts.commit(db, revoked=target)
+    return {"status": "ok"}
 
 
 @router.delete("/users/{user_id}", status_code=204)
@@ -356,15 +502,70 @@ async def delete_user(
     user: User = Depends(require("users.manage")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Permanently delete a user (#117). Their sessions and co-faculty links
-    go; records they created stay without the link; activity entries keep the
-    username. Refused while they are the primary teacher of a class.
-    To keep the account but block access, use /deactivate."""
+    """Delete a user (#117). Their sessions and co-faculty links go; records they created stay without the
+    link; activity entries keep the username. Refused while they are the primary teacher of a class.
+    The account is kept in the trash for 30 days and can be restored (/users/deleted); after that it is
+    gone for good. To keep the account but block access, use /deactivate."""
     target = await _target(db, user_id)
     accounts.check(user, target, "delete")
     await log_activity(db, "user.delete", user.id, "user", user_id, {"username": target.username})
-    await accounts.delete_user(db, target)
+    await accounts.delete_user(db, target, deleted_by=user.username)
     await accounts.commit(db, revoked=target)
+    return Response(status_code=204)
+
+
+def _trash_out(d) -> dict:
+    left = max(0, (d.purge_after - istnow()).days)
+    return {"id": d.id, "username": d.username, "email": d.email, "name": d.display_name or d.full_name or d.username,
+            "role": d.role, "designation": d.designation, "deleted_at": d.deleted_at, "deleted_by": d.deleted_by,
+            "purge_after": d.purge_after, "days_left": left}
+
+
+@router.get("/users/deleted", dependencies=[Depends(require_feature("trash"))])
+async def deleted_users(user: User = Depends(require("users.manage")), db: AsyncSession = Depends(get_db)):
+    """The trash: accounts deleted in the last 30 days, newest first."""
+    from ..models import DeletedUser
+    rows = (await db.execute(select(DeletedUser).order_by(DeletedUser.id.desc()))).scalars().all()
+    return {"retention_days": accounts.TRASH_DAYS, "accounts": [_trash_out(d) for d in rows]}
+
+
+@router.post("/users/deleted/{deleted_id}/restore", response_model=UserResponse, dependencies=[Depends(require_feature("trash"))])
+async def restore_deleted_user(deleted_id: int, user: User = Depends(require("users.manage")),
+                               db: AsyncSession = Depends(get_db)):
+    """Undo a deletion within 30 days: the account comes back with its password, name and settings (not its class assignments)."""
+    from ..models import DeletedUser
+    d = await db.get(DeletedUser, deleted_id)
+    if d is None:
+        raise HTTPException(404, "Not in the trash (it may have been permanently deleted)")
+    if not can_grant(user, d.role) and not is_faculty_role(d.role):
+        raise HTTPException(403, "Only a super admin can restore an admin account")
+    if (await db.execute(select(User).where(User.username == d.username))).scalar_one_or_none():
+        raise HTTPException(409, f"The username {d.username} is taken: rename or delete that account first")
+    if (await db.execute(select(User).where(User.email == d.email))).scalar_one_or_none():
+        raise HTTPException(409, f"The e-mail {d.email} is used by another account")
+    restored = User(username=d.username, email=d.email, hashed_password=d.hashed_password, full_name=d.full_name,
+                    display_name=d.display_name, role=d.role, designation=d.designation, preferences=d.preferences or {},
+                    created_at=d.created_at, created_by=user.id, onboarded_at=istnow())
+    db.add(restored)
+    await db.flush()
+    await db.delete(d)
+    await log_activity(db, "user.restore", user.id, "user", restored.id, {"username": restored.username})
+    await db.commit()
+    await db.refresh(restored)
+    return _user_out(user, restored)
+
+
+@router.delete("/users/deleted/{deleted_id}", status_code=204, dependencies=[Depends(require_feature("trash"))])
+async def purge_deleted_user(deleted_id: int, user: User = Depends(require("users.manage")),
+                             db: AsyncSession = Depends(get_db)):
+    """Delete an account from the trash for good."""
+    from ..models import DeletedUser
+    d = await db.get(DeletedUser, deleted_id)
+    if d is None:
+        raise HTTPException(404, "Not in the trash")
+    await db.delete(d)
+    await log_activity(db, "user.purge", user.id, "user", None, {"username": d.username})
+    await db.commit()
     return Response(status_code=204)
 
 
@@ -494,6 +695,7 @@ async def admin_create_class(
         location=body.location,
         capacity=body.capacity,
         classroom_code=(body.classroom_code or "").strip() or None,
+        icon=body.icon, color=body.color,
     )
     await ensure_section_free(db, body.course_id, body.course_section)
     if selected_ids:
@@ -755,6 +957,57 @@ def _student_response(s: Student) -> StudentResponse:
     )
 
 
+@router.get("/students/summary")
+async def students_summary(
+    user: User = Depends(require("students.read")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Per student (v2.2 Students page): classes, linked module, attendance %
+    (days present out of days their classes took attendance) and participation
+    % (questions answered out of questions asked in their classes' completed
+    quizzes). Administrators see everyone; faculty their classes' students."""
+    from ..models import Attendance, Quiz, QuizAnswer, QuizQuestion
+    visible = None
+    if not sees_all_classes(user):
+        visible = {c.id for c in (await db.execute(select(ClassSession))).scalars() if roster_access(user, c)}
+    enr = (await db.execute(select(StudentEnrollment.id, StudentEnrollment.student_id, StudentEnrollment.class_session_id,
+                                   ClassSession.code).join(ClassSession, ClassSession.id == StudentEnrollment.class_session_id))).all()
+    if visible is not None:
+        enr = [e for e in enr if e.class_session_id in visible]
+    by_student: dict[int, list] = {}
+    for e in enr:
+        by_student.setdefault(e.student_id, []).append(e)
+    held = {cid: n for cid, n in (await db.execute(
+        select(Attendance.class_session_id, func.count(func.distinct(func.date(Attendance.check_in_time))))
+        .group_by(Attendance.class_session_id))).all()}
+    present = {eid: n for eid, n in (await db.execute(
+        select(Attendance.student_enrollment_id, func.count(func.distinct(func.date(Attendance.check_in_time))))
+        .group_by(Attendance.student_enrollment_id))).all()}
+    asked = {cid: n for cid, n in (await db.execute(
+        select(Quiz.class_session_id, func.count(QuizQuestion.id)).join(QuizQuestion, QuizQuestion.quiz_id == Quiz.id)
+        .where(Quiz.status == "completed").group_by(Quiz.class_session_id))).all()}
+    answered = {(sid, cid): n for sid, cid, n in (await db.execute(
+        select(QuizAnswer.student_id, Quiz.class_session_id, func.count(QuizAnswer.id))
+        .join(Quiz, Quiz.id == QuizAnswer.quiz_id).where(Quiz.status == "completed")
+        .group_by(QuizAnswer.student_id, Quiz.class_session_id))).all()}
+    modules = {r for (r,) in (await db.execute(select(StudentModule.enrollment_number))).all()}
+    students = (await db.execute(select(Student))).scalars().all()
+    out = []
+    for s in students:
+        rows = by_student.get(s.id, [])
+        if visible is not None and not rows:
+            continue
+        h = sum(held.get(e.class_session_id, 0) for e in rows)
+        p = sum(min(present.get(e.id, 0), held.get(e.class_session_id, 0)) for e in rows)
+        a = sum(asked.get(e.class_session_id, 0) for e in rows)
+        n = sum(answered.get((s.id, e.class_session_id), 0) for e in rows)
+        out.append({"id": s.id, "classes": [e.code for e in rows],
+                    "module_linked": bool(s.device_mac) or (s.roll_number or "").upper() in modules,
+                    "attendance_pct": round(100 * p / h) if h else None,
+                    "participation_pct": round(100 * min(n, a) / a) if a else None})
+    return out
+
+
 @router.post("/students", response_model=StudentResponse, status_code=201)
 async def register_student(
     body: StudentRegister,
@@ -993,14 +1246,9 @@ async def student_participation(
     )
     class_ids = [r[0] for r in enroll_rows.all()]
 
-    if not sees_all_classes(user):
-        verified = await db.execute(
-            select(ClassSession).where(
-                ClassSession.id.in_(class_ids),
-                ClassSession.teacher_id == user.id,
-            )
-        )
-        class_ids = [c.id for c in verified.scalars().all()]
+    if not sees_all_classes(user):      # the classes this teacher may see (primary or co-faculty, #146)
+        verified = await db.execute(select(ClassSession).where(ClassSession.id.in_(class_ids)))
+        class_ids = [c.id for c in verified.scalars().all() if roster_access(user, c)]
 
     if not class_ids:
         return {
@@ -1240,7 +1488,7 @@ async def admin_reset_device_key(
     return _device_response(dev)
 
 
-@router.post("/modules/{device_id}/ota", response_model=DeviceResponse)
+@router.post("/modules/{device_id}/ota", response_model=DeviceResponse, dependencies=[Depends(ota_enabled)])
 async def admin_push_ota(
     device_id: int,
     body: ModuleOtaRequest,
@@ -1397,6 +1645,7 @@ def _class_to_response(cls: ClassSession, student_count: int, warnings: list | N
         course_code=course.code if course else "",
         course_name=course.name if course else "",
         course_section=cls.course_section or "",
+        icon=cls.icon or "", color=cls.color or "",
         term=cls.term or "",
         year=cls.year,
         start_date=cls.start_date,

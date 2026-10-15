@@ -18,7 +18,7 @@ def _count_sockets(page):
     return seen
 
 
-def test_a_deactivated_teacher_is_sent_to_login(server, page):
+def test_a_disabled_teacher_sees_a_notice_then_the_sign_in_page(server, page):
     base, api = server
     uid, cid = _teacher_with_class(api)
     login(page, base, "teach1", "Passw0rd!x")
@@ -27,6 +27,8 @@ def test_a_deactivated_teacher_is_sent_to_login(server, page):
     page.goto(f"{base}/#/class?id={cid}")
     expect(page.locator("#ws-status")).to_have_text("Connected")
     api(f"/api/admin/users/{uid}/deactivate", {})
+    expect(page.locator("#notice-overlay")).to_contain_text("Your account has been disabled", timeout=15000)
+    page.click("#ov-btn")
     page.wait_for_url("**/#/login*", timeout=10000)
     before = len(sockets)
     page.wait_for_timeout(4000)                       # longer than the first reconnect delays

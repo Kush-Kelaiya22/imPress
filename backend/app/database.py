@@ -16,15 +16,26 @@ async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit
 
 @event.listens_for(engine.sync_engine, "connect")
 def _sqlite_pragmas(dbapi_conn, _record):
-    """SQLite ignores foreign keys unless asked, per connection."""
+    """SQLite ignores foreign keys unless asked, per connection. A database file runs in WAL mode: readers (the
+    integrity check, the root console, backups) see one consistent snapshot and never block the writers."""
     if engine.dialect.name == "sqlite":
         cur = dbapi_conn.cursor()
         cur.execute("PRAGMA foreign_keys=ON")
+        cur.execute("PRAGMA busy_timeout=15000")
+        if ":memory:" not in settings.DATABASE_URL:
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA synchronous=NORMAL")
         cur.close()
 
 
 class Base(DeclarativeBase):
     pass
+
+
+# Every write passes the database gateway (v2.2, dbgateway.py).
+from sqlalchemy.orm import Session as _Session  # noqa: E402
+from . import dbgateway  # noqa: E402
+dbgateway.install(engine, Base.metadata, _Session)
 
 
 async def get_db():
@@ -75,7 +86,13 @@ async def init_db():
     """Create missing tables and apply pending migrations (stops on failure)."""
     from .migrations import migrate  # late import: migrations needs Base's metadata loaded
     from . import models  # noqa: F401  register every table on Base.metadata
-    await migrate(engine, Base.metadata.create_all)
+    from .migrations import APPLIED_AT_START, schema_version
+    had_schema = await schema_version(engine) > 0
+    done = await migrate(engine, Base.metadata.create_all)
+    APPLIED_AT_START[:] = done if had_schema else []        # what an upgrade changed in an existing database (re-sealed afterwards)
+    async with engine.begin() as conn:      # the gateway's seal tables exist before any write
+        await conn.run_sync(dbgateway.ensure_tables)
+    await engine.dispose()                  # new connections carry the gateway's triggers for every table
     scrubbed = await _scrub_raw_session_tokens()
     if scrubbed:
         logging.getLogger(__name__).warning(

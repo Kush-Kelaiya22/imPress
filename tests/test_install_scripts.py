@@ -62,7 +62,7 @@ def test_generated_env_is_accepted_by_the_backend_settings(tmp_path, monkeypatch
     import sys
     sys.path.insert(0, str(ROOT / "backend"))
     from app.config import Settings, insecure_settings
-    s = Settings()                                   # reads ./.env, inline comments included
+    s = Settings(_env_file=b / ".env")               # the file the settings read, inline comments included
     assert insecure_settings(s) == [] and s.DEVICE_API_KEY == _values(b / ".env")["IMPRESS_DEVICE_API_KEY"]
 
 

@@ -27,12 +27,12 @@ def _restore(client, username, create=False):
 def test_restores_a_locked_out_installation(client, db):
     old = auth(login(client))
     _lock_out(db)
-    assert client.post("/api/auth/login", json={"username": "admin", "password": "admin123"}).status_code == 403
+    assert client.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "admin123"}).status_code == 403
 
-    password = _restore(client, "admin")
+    password = _restore(client, "impress.default.superAdmin")
 
     assert client.get("/api/auth/me", headers=old).status_code == 401        # old sessions revoked
-    assert client.get("/api/admin/users", headers=auth(login(client, "admin", password))).status_code == 200
+    assert client.get("/api/admin/users", headers=auth(login(client, "impress.default.superAdmin", password))).status_code == 200
     entry = _sql(db, "SELECT user_id, json_extract(details, '$.via') FROM activity_logs WHERE action = 'user.recovery'")
     assert entry == [(None, "cli")]
 

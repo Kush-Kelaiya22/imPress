@@ -58,7 +58,7 @@ def test_open_teacher_socket_is_closed_on_deactivation(client, su):
     uid, teacher = make_user(client, su, "tch1")
     cid = make_class(client, su, teacher_id=uid)
     token = teacher["Authorization"].split()[1]
-    with client.websocket_connect(f"/ws/class/{cid}?role=teacher&token={token}") as ws:
+    with client.websocket_connect(f"/ws/class/{cid}?role=teacher", headers=auth(token)) as ws:
         assert ws.receive_json()["event"] == "connected"
         assert client.post(f"/api/admin/users/{uid}/deactivate", headers=su).status_code == 200
         with pytest.raises(WebSocketDisconnect) as e:

@@ -24,6 +24,7 @@ import re
 from fastapi import Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from . import gpc
 from .config import settings
 
 # Routes a device calls with its key (device_caller): the device API and the
@@ -37,11 +38,13 @@ SECURITY_HEADERS = {
     "Referrer-Policy": "no-referrer",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
 }
-# The web app uses inline event handlers and Google Fonts; everything else is same-origin.
-APP_CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; "
+# Scripts only from this origin: no inline <script>, no inline event handlers (script-src-attr 'none'), no eval.
+# Styles keep 'unsafe-inline' for the style="" attributes the pages use, and Google Fonts; everything else is
+# same-origin. Violations are reported to /api/system/csp-report (rate limited, audited).
+APP_CSP = ("default-src 'self'; script-src 'self'; script-src-attr 'none'; "
            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; "
-           "img-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'self'; "
-           "form-action 'self'; object-src 'none'")
+           "img-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'none'; "
+           "form-action 'self'; object-src 'none'; report-uri /api/system/csp-report")
 HSTS = "max-age=31536000"
 
 
@@ -63,7 +66,7 @@ def needs_https(path: str, scheme: str, client_host: str | None) -> bool:
     if _ALWAYS_OPEN.search(path):
         return False
     if _DEVICE_PATHS.search(path):
-        return settings.DEVICE_HTTPS_ONLY
+        return gpc.device_https_only(settings)
     return True
 
 

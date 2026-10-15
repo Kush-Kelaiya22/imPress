@@ -16,15 +16,16 @@ if [ -z "${IMPRESS_JWT_SECRET:-}" ] || [ -z "${IMPRESS_DEVICE_API_KEY:-}" ]; the
   fi
 fi
 
-# X-Forwarded-Proto (HTTPS behind a proxy, #152) is trusted only from these addresses.
-set -- --host "${IMPRESS_HOST}" --port "${IMPRESS_PORT}" --workers 1 --proxy-headers \
-  --forwarded-allow-ips "${IMPRESS_FORWARDED_ALLOW_IPS:-127.0.0.1}"
+# Launch flags are the container's arguments (docker run IMAGE --no-ota --test-mode ...). app.serve reads the same
+# environment as before: IMPRESS_HOST, IMPRESS_PORT, IMPRESS_SSL_CERTFILE/KEYFILE and IMPRESS_FORWARDED_ALLOW_IPS
+# (X-Forwarded-Proto is trusted only from those addresses, #152). With a terminal (docker run -it) it shows the
+# root screen: the logo, the live log and a prompt for root's commands; without one it prints the log.
 if [ -n "${IMPRESS_SSL_CERTFILE:-}" ] || [ -n "${IMPRESS_SSL_KEYFILE:-}" ]; then
   if [ ! -r "${IMPRESS_SSL_CERTFILE:-}" ] || [ ! -r "${IMPRESS_SSL_KEYFILE:-}" ]; then
     echo "Set both IMPRESS_SSL_CERTFILE and IMPRESS_SSL_KEYFILE to readable files" >&2
     exit 1
   fi
-  set -- "$@" --ssl-certfile "$IMPRESS_SSL_CERTFILE" --ssl-keyfile "$IMPRESS_SSL_KEYFILE"
 fi
 # One worker: the presence sweep, the schedulers and the WebSocket rooms live in the process.
-exec python -m uvicorn app.main:app "$@"
+export IMPRESS_IN_CONTAINER=1
+exec python -m app.serve --host "${IMPRESS_HOST}" --port "${IMPRESS_PORT}" "$@"

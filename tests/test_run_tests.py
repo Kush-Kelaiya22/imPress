@@ -90,7 +90,7 @@ def test_end_to_end_json_report(tmp_path):
                           cwd=ROOT, capture_output=True, text=True, timeout=300)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     report = json.loads(out.read_text())
-    assert report["ok"] is True and {s["name"] for s in report["suites"]} == {"host:protocol", "host:protocol:backend_hint", "host:protocol:mesh_dedup", "host:protocol:ota_chunk"}
+    assert report["ok"] is True and {s["name"] for s in report["suites"]} == {"host:protocol", "host:protocol:answer_ack", "host:protocol:backend_hint", "host:protocol:mesh_auth", "host:protocol:mesh_dedup", "host:protocol:ota_chunk", "host:protocol:spi_link"}
     assert all(s["status"] == "PASS" and s["passed"] > 0 and s["seconds"] > 0 for s in report["suites"])
     assert "ALL PASSED" in proc.stdout and "imPress test report" in proc.stdout
 
@@ -251,3 +251,13 @@ def test_closed_output_pipe_exits_quietly():
                           shell=True, capture_output=True, text=True, timeout=120, cwd=ROOT)
     assert proc.stdout.startswith("▶ host:protocol:mesh_dedup")
     assert "Traceback" not in proc.stderr and "BrokenPipe" not in proc.stderr, proc.stderr
+
+
+def test_requirements_follow_environment_markers(tmp_path):
+    """A Windows-only requirement is not 'missing' elsewhere (and vice versa)."""
+    import sys
+    req = tmp_path / "r.txt"
+    req.write_text('pytest\ntzdata>=2024.1; sys_platform == "win32"\nfoo; sys_platform != "win32"\n')
+    names = run_tests._requirements(req)
+    assert ("tzdata" in names) == (sys.platform == "win32")
+    assert ("foo" in names) == (sys.platform != "win32")

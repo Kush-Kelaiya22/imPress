@@ -22,6 +22,7 @@
 
 #include "config.h"
 #include "protocol.h"
+#include "spi_link.h"
 #include "mesh_master.h"
 #include "spi_master.h"
 #include "ota.h"
@@ -96,7 +97,7 @@ static void spi_link_task(void *arg)
         xSemaphoreTake(spi_master_link_signal(),
                        pdMS_TO_TICKS(g_cfg.spi_poll_interval_ms));
 
-        int n = mesh_master_flush_to_spi(batch, sizeof(batch));
+        int n = mesh_master_flush_to_spi(batch, sizeof(batch) - SPI_LINK_TRAILER);   /* room for the link trailer (#182) */
         if (n > 0) {
             int rc = spi_master_send(batch, n);
             ESP_LOGD(TAG, "Student data → C6 SPI: %d bytes, rc=%d", n, rc);

@@ -57,7 +57,7 @@ def _route_paths():
     import importlib
     from fastapi.routing import APIRoute
     paths = set()
-    for name in ("auth", "admin", "classes", "quizzes", "polls", "device", "courses", "students", "firmware", "deployments"):
+    for name in ("auth", "admin", "classes", "quizzes", "polls", "device", "courses", "students", "firmware", "deployments", "system", "testmode", "approvals"):
         mod = importlib.import_module(f"app.routers.{name}")
         for router in (mod.router, getattr(mod, "live_router", None)):
             for r in getattr(router, "routes", []):
@@ -90,15 +90,14 @@ def test_readme_is_professional_plain_text():
     text = (ROOT / "README.md").read_text()
     emoji = [c for c in text if unicodedata.category(c) == "So" and ord(c) > 0x2600]
     assert emoji == [], f"README contains emoji: {set(emoji)}"
-    for section in ("Quick start", "Architecture", "Testing", "Documentation"):
+    for section in ("Quick start", "How it works", "Testing", "Documentation"):
         assert re.search(rf"^##\s+.*{section}", text, re.M | re.I), section
 
 
-# The brief's README structure (#44): every topic has a heading.
-README_SECTIONS = ("Overview", "Key capabilities", "Architecture", "Supported hardware", "Minimum requirements",
-                   "Prerequisites", "Installation", "Configuration", "Application startup", "Classroom management",
-                   "CSV imports", "Device management", "Firmware management", "OTA deployment", "Firmware rollback",
-                   "Development workflow", "Testing", "Troubleshooting", "Release history", "License")
+# The README's structure (redesigned for v2.2, #208): a short front page that routes each reader, every topic a heading.
+README_SECTIONS = ("What it is", "Start here", "Quick start", "Requirements", "Screenshots", "Features", "How it works",
+                   "Security and integrity", "Privacy and compliance", "Going to production", "Hardware", "Testing",
+                   "Troubleshooting", "Documentation", "Repository layout", "Releases and status", "Contributing", "License")
 
 
 def test_readme_has_every_required_section():
@@ -107,10 +106,8 @@ def test_readme_has_every_required_section():
     assert not missing, missing
 
 
-def test_readme_links_to_governance_documents_without_a_contributing_section():
+def test_readme_links_to_governance_documents():
     text = (ROOT / "README.md").read_text()
-    headings = re.findall(r"^#{2,3}\s+(.+)$", text, re.M)
-    assert not any(h.strip().lower() == "contributing" for h in headings)
     for path in ("CONTRIBUTING.md", "CODE_OF_CONDUCT.md"):
         assert f"]({path})" in text
     assert "[Version policy and history](CONTRIBUTING.md#14-version-policy-and-change-history)" in text
@@ -128,4 +125,5 @@ def test_readme_badges_reflect_real_data():
         if "img.shields.io/badge/" in url:
             assert not re.search(r"(?i)(pass|fail|success|coverage|release|version-|license|tests-)", url), url
     ci = [b for b in badges if "/actions/workflows/" in b]
-    assert len(ci) == 1 and "branch=varun%2Fv2.1" in ci[0], ci     # one CI badge: the integration branch
+    line = ".".join((ROOT / "VERSION").read_text().strip().split(".")[:2])          # 2.2.0 -> the varun/v2.2 line
+    assert len(ci) == 1 and f"branch=varun%2Fv{line}" in ci[0], ci     # one CI badge: the integration branch

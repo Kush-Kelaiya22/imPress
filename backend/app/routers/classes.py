@@ -60,6 +60,7 @@ def _to_response(cls: ClassSession, student_count: int = 0, warnings: list | Non
         course_code=course.code if course else "",
         course_name=course.name if course else "",
         course_section=cls.course_section or "",
+        icon=cls.icon or "", color=cls.color or "",
         term=cls.term or "",
         year=cls.year,
         start_date=cls.start_date,
@@ -142,6 +143,7 @@ async def create_class(
         meeting_schedule=schedule,
         location=body.location,
         capacity=body.capacity,
+        icon=body.icon, color=body.color,
     )
     db.add(cls)
     await db.flush()

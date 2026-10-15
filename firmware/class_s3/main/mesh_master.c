@@ -59,6 +59,8 @@ typedef struct __attribute__((packed)) {
 
 #define MESH_HEADER_SIZE sizeof(mesh_header_t)
 
+static int broadcast_ttl(msg_type_t type, const uint8_t *payload, uint16_t length, uint8_t ttl);   /* root broadcast with a chosen TTL (#181) */
+
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
 /** Extract enrollment from a protocol payload if the type carries one.
@@ -194,10 +196,12 @@ static void on_espnow_recv(const esp_now_recv_info_t *info,
 
     /* Queue message for SPI transfer to C6 — once, however many relay
      * copies arrive. (The routing-table refresh above still counts them.) */
+    bool queued = false;
     if (valid && !duplicate) {
         xSemaphoreTake(s_queue_mutex, portMAX_DELAY);
         int next = (s_msg_queue_tail + 1) % MSG_QUEUE_SIZE;
         if (next != s_msg_queue_head) {
+            queued = true;
             s_msg_queue[s_msg_queue_tail].length = consumed + 4;
             /* Prepend sender_id so C6 can identify the relay node */
             memcpy(s_msg_queue[s_msg_queue_tail].data, &hdr->sender_id, 4);
@@ -213,6 +217,24 @@ static void on_espnow_recv(const esp_now_recv_info_t *info,
             s_recv_callback(&msg, hdr->sender_id);
         }
     }
+
+#if CONFIG_MESH_ANSWER_ACK
+    /* Confirm what is on its way to the server (#181): a new frame once it is
+     * queued, a resent one because its first ACK may have been lost. Not when
+     * the queue was full: the module's resend is the retry. */
+    if ((queued || duplicate) && (msg.type == MSG_STUDENT_JOIN || msg.type == MSG_QUIZ_ANSWER ||
+                                  msg.type == MSG_POLL_VOTE)) {
+        static uint16_t s_ack_seq;
+        payload_ack_t ack = {
+            .msg_id    = mesh_msg_id(hdr->sender_id, msg_data, consumed),
+            .device_id = hdr->sender_id,
+            .seq       = ++s_ack_seq,
+        };
+        broadcast_ttl(MSG_ACK, (const uint8_t *)&ack, sizeof(ack), ack_ttl(hdr->hops, MESH_RELAY_TTL));
+    }
+#else
+    (void)queued;
+#endif
 
     /* If this was a JOIN, broadcast a heartbeat (TTL=MAX) so the student
      * hears it and flips IS_CONNECTED (student mesh_espnow.c:112). */
@@ -291,6 +313,11 @@ _Static_assert(MESH_HEADER_SIZE == MESH_HDR_BYTES, "protocol.h MESH_HDR_BYTES mu
 
 int mesh_master_broadcast(msg_type_t type, const uint8_t *payload, uint16_t length)
 {
+    return broadcast_ttl(type, payload, length, MESH_RELAY_TTL);
+}
+
+static int broadcast_ttl(msg_type_t type, const uint8_t *payload, uint16_t length, uint8_t ttl)
+{
     if (length > MESH_MAX_PAYLOAD) {        /* would exceed ESP-NOW's 250 bytes with the headers (#170) */
         ESP_LOGE(TAG, "mesh payload %u > %u bytes", (unsigned)length, (unsigned)MESH_MAX_PAYLOAD);
         return -1;
@@ -302,7 +329,7 @@ int mesh_master_broadcast(msg_type_t type, const uint8_t *payload, uint16_t leng
 
     /* Prepend mesh header (from root) */
     mesh_header_t hdr = {
-        .ttl       = MESH_RELAY_TTL,
+        .ttl       = ttl,
         .sender_id = 0,  /* root has ID 0 */
         .hops      = 0,
     };
@@ -321,7 +348,9 @@ int mesh_master_broadcast(msg_type_t type, const uint8_t *payload, uint16_t leng
         return -1;
     }
 
-    ESP_LOGI(TAG, "Broadcast: %s (%d bytes)", msg_type_name(type), length);
+    if (type != MSG_ACK) {                     /* one per answer: too many to log */
+        ESP_LOGI(TAG, "Broadcast: %s (%d bytes)", msg_type_name(type), length);
+    }
     return 0;
 }
 

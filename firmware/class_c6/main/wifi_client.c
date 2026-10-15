@@ -260,6 +260,14 @@ int http_register_device(const char *mac_address, const char *device_type)
                        "{\"mac_address\":\"%s\",\"device_type\":\"%s\","
                        "\"device_name\":\"imPress C6\",\"firmware_version\":\"%s\"",
                        mac_address, device_type, FIRMWARE_VERSION);
+#ifdef CONFIG_CLASSROOM_CODE
+    if (CONFIG_CLASSROOM_CODE[0] && len > 0 && (size_t)len < sizeof(json)) {      /* room auto-link */
+        int n = snprintf(json + len, sizeof(json) - (size_t)len,
+                         ",\"classroom_code\":\"%s\"", CONFIG_CLASSROOM_CODE);
+        if (n > 0 && (size_t)(len + n) < sizeof(json)) len += n;
+        else json[len] = '\0';
+    }
+#endif
     len = device_caps_append(json, sizeof(json), len);          /* what this board is (#129) */
     snprintf(json + len, sizeof(json) - (size_t)len, "}");
 

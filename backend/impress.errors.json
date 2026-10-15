@@ -1,0 +1,1010 @@
+{
+  "_readme": [
+    "imPress error catalogue: every error code, in categories, each with a description and what to do.",
+    "HTTP responses carry the code in `error.code` (and the X-Impress-Error header); the console and start-up use the same names.",
+    "`http` is 0 for things that are not HTTP responses (exit codes, hardware faults).",
+    "The tests keep it complete: a code raised anywhere in the backend that is not listed here fails the build.",
+    "Reference: docs/reference/errors.md (generated)."
+  ],
+  "categories": {
+    "http": {
+      "about": "Generic HTTP outcomes, used when a route gives no more specific code.",
+      "errors": [
+        {
+          "code": "BAD_REQUEST",
+          "http": 400,
+          "title": "The request could not be understood",
+          "description": "The request was malformed or a value was not acceptable.",
+          "fix": "Read the message, correct the request and send it again."
+        },
+        {
+          "code": "UNAUTHENTICATED",
+          "http": 401,
+          "title": "Not signed in",
+          "description": "The request carries no valid session or token, or the session ended (idle limit, hard limit, signed out, server restarted: 1PSID).",
+          "fix": "Sign in again."
+        },
+        {
+          "code": "FORBIDDEN",
+          "http": 403,
+          "title": "Not allowed",
+          "description": "You are signed in, but your role does not hold the permission this needs.",
+          "fix": "Ask an administrator, or use an account with the right role."
+        },
+        {
+          "code": "NOT_FOUND",
+          "http": 404,
+          "title": "Not found",
+          "description": "The thing asked for does not exist, or you may not know that it exists.",
+          "fix": "Check the identifier."
+        },
+        {
+          "code": "METHOD_NOT_ALLOWED",
+          "http": 405,
+          "title": "Method not allowed",
+          "description": "The route exists, but not for this HTTP method.",
+          "fix": "Use the method the API reference lists."
+        },
+        {
+          "code": "CONFLICT",
+          "http": 409,
+          "title": "Conflict with the current state",
+          "description": "The request cannot be done in the state things are in (a duplicate, or someone else changed it first).",
+          "fix": "Reload and try again."
+        },
+        {
+          "code": "GONE",
+          "http": 410,
+          "title": "No longer available",
+          "description": "It existed and was removed (for example a one-time link that was used).",
+          "fix": "Request it again."
+        },
+        {
+          "code": "PAYLOAD_TOO_LARGE",
+          "http": 413,
+          "title": "Too large",
+          "description": "An upload or request body is larger than the limit.",
+          "fix": "Send less data, or split it."
+        },
+        {
+          "code": "VALIDATION_FAILED",
+          "http": 422,
+          "title": "A value is not valid",
+          "description": "A field is missing, has the wrong type or is outside its allowed range. `detail` lists each field.",
+          "fix": "Correct the listed fields."
+        },
+        {
+          "code": "RATE_LIMITED",
+          "http": 429,
+          "title": "Too many requests",
+          "description": "Too many attempts in a short time (sign-in, step-up, an unusually busy client).",
+          "fix": "Wait for the time in the Retry-After header."
+        },
+        {
+          "code": "INTERNAL_ERROR",
+          "http": 500,
+          "title": "Something went wrong inside imPress",
+          "description": "An unexpected fault. Nothing was partly saved: database work is transactional. The server log has the trace under the reference shown.",
+          "fix": "Retry once; if it repeats, give the reference to whoever runs the server."
+        },
+        {
+          "code": "NOT_IMPLEMENTED",
+          "http": 501,
+          "title": "Not implemented",
+          "description": "The server does not support what was asked.",
+          "fix": "Use a supported operation."
+        },
+        {
+          "code": "SERVICE_UNAVAILABLE",
+          "http": 503,
+          "title": "Temporarily unavailable",
+          "description": "The server cannot serve this right now (start-up checks, a lock-down, the database busy).",
+          "fix": "Retry in a few seconds."
+        }
+      ]
+    },
+    "authentication": {
+      "about": "Signing in and out, passwords and sessions.",
+      "errors": [
+        {
+          "code": "INVALID_CREDENTIALS",
+          "http": 401,
+          "title": "Wrong username or password",
+          "description": "The pair does not match an account. The response never says which one is wrong.",
+          "fix": "Check both; after several failures there is a wait (TOO_MANY_ATTEMPTS)."
+        },
+        {
+          "code": "TOO_MANY_ATTEMPTS",
+          "http": 429,
+          "title": "Too many failed sign-ins",
+          "description": "The username or the client address has failed too often in 15 minutes; the wait doubles with each failure (no permanent lock-out).",
+          "fix": "Wait the number of seconds in Retry-After."
+        },
+        {
+          "code": "ACCOUNT_DISABLED",
+          "http": 403,
+          "title": "Account is disabled",
+          "description": "An administrator disabled this account.",
+          "fix": "Ask an administrator to enable it."
+        },
+        {
+          "code": "ALREADY_SIGNED_IN",
+          "http": 409,
+          "title": "Already signed in on another device",
+          "description": "One device per account: another live session exists. The attempt is flagged and administrators are told.",
+          "fix": "Sign out on the other device, wait for it to expire, or ask a super admin to end sessions."
+        },
+        {
+          "code": "PASSWORD_CHANGE_REQUIRED",
+          "http": 403,
+          "title": "Choose your own password first",
+          "description": "The account has temporary credentials (pending set-up); only the first-sign-in steps are allowed.",
+          "fix": "Complete the welcome set-up."
+        },
+        {
+          "code": "PASSWORD_TOO_WEAK",
+          "http": 422,
+          "title": "That password is not acceptable",
+          "description": "It breaks the password rule for the role (length, upper and lower case, a number, a special character, not common, not the username).",
+          "fix": "Choose a stronger password; the strength meter shows what is missing."
+        },
+        {
+          "code": "SESSION_EXPIRED",
+          "http": 401,
+          "title": "The session ended",
+          "description": "Idle limit (15 minutes, 60 for faculty in class), the 6-hour hard limit, a sign-out, a role change or a server restart ended it.",
+          "fix": "Sign in again."
+        },
+        {
+          "code": "HTTPS_REQUIRED",
+          "http": 403,
+          "title": "Use HTTPS",
+          "description": "Staff traffic must arrive over HTTPS unless the client is on the server itself (REQUIRE_HTTPS).",
+          "fix": "Use the https:// address."
+        }
+      ]
+    },
+    "authorization": {
+      "about": "Who may do what.",
+      "errors": [
+        {
+          "code": "FORBIDDEN_ROLE",
+          "http": 403,
+          "title": "Only a super admin can change roles",
+          "description": "Granting or removing an administrative role needs users.assign_role.",
+          "fix": "Ask a super admin."
+        },
+        {
+          "code": "FORBIDDEN_TARGET",
+          "http": 403,
+          "title": "Only a super admin can manage a super admin",
+          "description": "Administrators cannot touch super admin accounts.",
+          "fix": "Ask a super admin."
+        },
+        {
+          "code": "PROTECTED_ACCOUNT",
+          "http": 403,
+          "title": "A protected account",
+          "description": "The default super admin is managed by root: it cannot be deleted, demoted, deactivated or have its password reset through the API.",
+          "fix": "Root uses the console (password reset)."
+        },
+        {
+          "code": "SELF_LOCKOUT",
+          "http": 403,
+          "title": "You cannot do that to your own account",
+          "description": "Deactivating, deleting or demoting yourself would lock you out.",
+          "fix": "Ask another administrator."
+        },
+        {
+          "code": "SUPER_ADMIN_VIA_CONSOLE",
+          "http": 403,
+          "title": "Super admins are created in the console",
+          "description": "The web app and the API cannot create a super admin.",
+          "fix": "Root runs `superadmin create USER` in the console."
+        },
+        {
+          "code": "STUDENT_OUT_OF_SCOPE",
+          "http": 403,
+          "title": "Not a student you teach",
+          "description": "Faculty see and change only students enrolled in their classes.",
+          "fix": "Ask an administrator."
+        },
+        {
+          "code": "DB_WRITE_REFUSED",
+          "http": 403,
+          "title": "The database gateway refused the write",
+          "description": "The signed-in principal may not write that table. It is logged and administrators are alerted.",
+          "fix": "Use the proper feature; if it was legitimate, an administrator should look at the activity log."
+        },
+        {
+          "code": "LAST_SUPER_ADMIN",
+          "http": 409,
+          "title": "That would leave no active super admin",
+          "description": "The database itself refuses to remove the last active super admin.",
+          "fix": "Create or reactivate another super admin first."
+        }
+      ]
+    },
+    "two_step_verification": {
+      "about": "TOTP second factor for super admins' dangerous actions.",
+      "errors": [
+        {
+          "code": "MFA_CODE_REQUIRED",
+          "http": 403,
+          "title": "A code is needed",
+          "description": "Two-step verification applies to this account: enter the authenticator code (or a recovery code) as well as the password.",
+          "fix": "Send `code`."
+        },
+        {
+          "code": "MFA_CODE_WRONG",
+          "http": 403,
+          "title": "That code is not right",
+          "description": "The code does not match the secret, or the phone's clock is off.",
+          "fix": "Use the newest code; check the phone's time."
+        },
+        {
+          "code": "MFA_ENROLLED",
+          "http": 409,
+          "title": "Already set up",
+          "description": "Turn it off before setting it up again.",
+          "fix": "Use disable first."
+        },
+        {
+          "code": "MFA_NOT_PENDING",
+          "http": 409,
+          "title": "No set-up in progress",
+          "description": "Finish needs a started set-up.",
+          "fix": "Call setup first."
+        },
+        {
+          "code": "MFA_ENROLMENT_REQUIRED",
+          "http": 403,
+          "title": "Set up two-step verification first",
+          "description": "Policy dual_control.mfa_required: a super admin who has not enrolled cannot request or approve.",
+          "fix": "Settings > Security > Set up."
+        },
+        {
+          "code": "MFA_REQUIRED_BY_POLICY",
+          "http": 403,
+          "title": "It cannot be turned off",
+          "description": "Policy dual_control.mfa_required makes it mandatory.",
+          "fix": "Only root's policy can change this."
+        }
+      ]
+    },
+    "dual_control": {
+      "about": "Requests that need a second super admin.",
+      "errors": [
+        {
+          "code": "APPROVAL_REQUIRED",
+          "http": 403,
+          "title": "A second super admin's approval is needed",
+          "description": "This action needs an approved request first (policy dual_control.enabled).",
+          "fix": "Request it on the System page; another super admin approves."
+        },
+        {
+          "code": "APPROVAL_MISMATCH",
+          "http": 403,
+          "title": "That approval is not for this action",
+          "description": "The approval is for a different action or parameters, or was requested by someone else.",
+          "fix": "Request a new one for this exact action."
+        },
+        {
+          "code": "NOT_APPROVED",
+          "http": 409,
+          "title": "Not approved yet",
+          "description": "The request is still pending or was denied.",
+          "fix": "Wait for approval."
+        },
+        {
+          "code": "NOT_YET",
+          "http": 409,
+          "title": "The delay has not passed",
+          "description": "Policy dual_control.delay_minutes holds an approved action back.",
+          "fix": "Retry after the time shown."
+        },
+        {
+          "code": "EXPIRED",
+          "http": 409,
+          "title": "The approval expired",
+          "description": "It was not used within dual_control.expiry_minutes.",
+          "fix": "Request it again."
+        },
+        {
+          "code": "NOT_PENDING",
+          "http": 409,
+          "title": "Already decided",
+          "description": "The request is already approved, denied or executed.",
+          "fix": "Nothing to do."
+        },
+        {
+          "code": "SELF_APPROVAL",
+          "http": 403,
+          "title": "A different super admin must approve",
+          "description": "You cannot approve your own request unless you are the only active super admin and policy allows it.",
+          "fix": "Ask another super admin."
+        },
+        {
+          "code": "STEP_UP_FAILED",
+          "http": 403,
+          "title": "Password or code not correct",
+          "description": "The re-entered password, the authenticator code, or an already used code was wrong. Counts towards the lock-out.",
+          "fix": "Try again."
+        },
+        {
+          "code": "STEP_UP_LOCKED",
+          "http": 429,
+          "title": "Step-up is locked for a while",
+          "description": "Five wrong passwords or codes in 15 minutes.",
+          "fix": "Wait 15 minutes."
+        },
+        {
+          "code": "UNKNOWN_ACTION",
+          "http": 422,
+          "title": "Unknown action",
+          "description": "The action name is not one dual control knows.",
+          "fix": "Use one of the listed actions."
+        },
+        {
+          "code": "UNKNOWN_BACKUP",
+          "http": 422,
+          "title": "Choose an existing backup",
+          "description": "The backup named in the request does not exist.",
+          "fix": "List the backups first."
+        },
+        {
+          "code": "POLICY_DISABLED",
+          "http": 403,
+          "title": "Switched off by root's policy",
+          "description": "A policy flag (for example system.reset_everything_allowed) forbids this.",
+          "fix": "Only root's policy can change it."
+        },
+        {
+          "code": "CONFIRM",
+          "http": 422,
+          "title": "Type the confirmation",
+          "description": "A dangerous action needs the exact phrase or name typed.",
+          "fix": "Type it as shown."
+        }
+      ]
+    },
+    "policy_and_flags": {
+      "about": "Global policy control, launch flags and features.",
+      "errors": [
+        {
+          "code": "FEATURE_DISABLED",
+          "http": 403,
+          "title": "Switched off",
+          "description": "A feature (or OTA) was switched off by root or an administrator.",
+          "fix": "Ask who switched it off; root's launch flags cannot be undone from the web."
+        },
+        {
+          "code": "FEATURE_LOCKED",
+          "http": 403,
+          "title": "Locked at a higher level",
+          "description": "Whoever set the feature last has more authority than you, or locked it.",
+          "fix": "Ask someone with that authority."
+        },
+        {
+          "code": "POLICY_UNKNOWN_FLAG",
+          "http": 422,
+          "title": "Unknown policy flag",
+          "description": "No flag has that name.",
+          "fix": "`policy show` lists them."
+        },
+        {
+          "code": "POLICY_BAD_VALUE",
+          "http": 422,
+          "title": "Not a valid value for that flag",
+          "description": "The value has the wrong type or is outside the flag's range.",
+          "fix": "See docs/reference/flags.md."
+        },
+        {
+          "code": "POLICY_FORBIDDEN",
+          "http": 403,
+          "title": "You may not change this flag",
+          "description": "Only root changes policy flags; super admins may change the few marked operational; administrators and faculty none.",
+          "fix": "Ask root."
+        },
+        {
+          "code": "POLICY_LOOSENING",
+          "http": 403,
+          "title": "That would loosen the hardened profile",
+          "description": "In the hardened profile an override may only make a flag safer.",
+          "fix": "Sign a policy file with scripts/gpc.py."
+        },
+        {
+          "code": "POLICY_CONFLICT",
+          "http": 409,
+          "title": "Flags that cannot work together",
+          "description": "Two or more flags contradict each other. At start-up this stops imPress before anything else.",
+          "fix": "Change one of the named flags."
+        },
+        {
+          "code": "POLICY_TAMPERED",
+          "http": 500,
+          "title": "The policy store was edited outside imPress",
+          "description": "The sealed policy file did not verify. It was set aside and the defaults restored; an alert and an audit entry were made.",
+          "fix": "Change policy through the console or the System page only."
+        },
+        {
+          "code": "POLICY_FILE_INVALID",
+          "http": 500,
+          "title": "A signed policy file was refused",
+          "description": "Bad signature, wrong key, an old serial, or an unknown flag. Never half-applied.",
+          "fix": "Re-sign it with scripts/gpc.py."
+        },
+        {
+          "code": "FLAGS_FILE_INVALID",
+          "http": 500,
+          "title": "The flags file cannot be applied",
+          "description": "impress.flags.json is not valid JSON, names an unknown flag, or has a wrong value. imPress does not start.",
+          "fix": "`python -m app.flagsfile check` names the flag."
+        },
+        {
+          "code": "FLAG_IS_POLICY",
+          "http": 422,
+          "title": "That is a policy flag",
+          "description": "Security and integrity flags are kept in the sealed policy store, not in the flags file.",
+          "fix": "Use `policy set NAME VALUE`."
+        }
+      ]
+    },
+    "root": {
+      "about": "The root screen and console.",
+      "errors": [
+        {
+          "code": "ROOT_PASSWORD_REQUIRED",
+          "http": 403,
+          "title": "Root's password is needed",
+          "description": "This is a sensitive root action (rehash, policy change, reset, ...).",
+          "fix": "Enter root's password when asked."
+        },
+        {
+          "code": "ROOT_PASSWORD_WRONG",
+          "http": 403,
+          "title": "Root's password is not correct",
+          "description": "Wrong password. Repeated failures slow down.",
+          "fix": "Try again."
+        },
+        {
+          "code": "ROOT_CONSOLE_CLOSED",
+          "http": 403,
+          "title": "The separate root console is closed here",
+          "description": "Policy root.allow_access is off (TrustedInstaller closes it in a container).",
+          "fix": "Use the console on the container's own screen."
+        },
+        {
+          "code": "ROOT_COMMAND_FAILED",
+          "http": 400,
+          "title": "A console command failed",
+          "description": "The command's message says why; nothing was half-done.",
+          "fix": "Read the message; `help COMMAND`."
+        },
+        {
+          "code": "ROOT_UNKNOWN_COMMAND",
+          "http": 400,
+          "title": "Unknown console command",
+          "description": "No such command.",
+          "fix": "`help` lists them."
+        }
+      ]
+    },
+    "database_integrity": {
+      "about": "Seals, verification, backups and test mode.",
+      "errors": [
+        {
+          "code": "DB_NOT_VERIFIED",
+          "http": 409,
+          "title": "The database does not verify",
+          "description": "A seal does not match: something changed the database outside imPress. It is Degraded.",
+          "fix": "Resolve the Degraded state first (System page)."
+        },
+        {
+          "code": "DB_DEGRADED",
+          "http": 503,
+          "title": "The database is Degraded",
+          "description": "An automatic restore or an unresolved alarm is pending acknowledgement.",
+          "fix": "A super admin acknowledges it on the System page."
+        },
+        {
+          "code": "DB_LOCKED",
+          "http": 503,
+          "title": "The database is busy",
+          "description": "Another process holds a write lock longer than the busy timeout; nothing was saved.",
+          "fix": "Retry."
+        },
+        {
+          "code": "DB_SEAL_KEY_CHANGED",
+          "http": 500,
+          "title": "The sealing key changed",
+          "description": "IMPRESS_JWT_SECRET was rotated; the database is re-sealed as it is and an alert is raised.",
+          "fix": "Check the rotation was intended."
+        },
+        {
+          "code": "BACKUP_DOES_NOT_VERIFY",
+          "http": 409,
+          "title": "That backup does not verify",
+          "description": "The copy's seals do not match: it is never accepted.",
+          "fix": "Choose another backup."
+        },
+        {
+          "code": "BACKUP_UNREADABLE",
+          "http": 409,
+          "title": "That backup cannot be used",
+          "description": "SQLite cannot read it, or its own integrity check failed.",
+          "fix": "Choose another backup."
+        },
+        {
+          "code": "NO_BACKUP",
+          "http": 404,
+          "title": "No such backup",
+          "description": "The id does not exist.",
+          "fix": "List the backups."
+        },
+        {
+          "code": "NOT_DELETABLE",
+          "http": 409,
+          "title": "Only saved backups can be deleted",
+          "description": "Automatic copies manage themselves.",
+          "fix": "Delete only the ones you saved."
+        },
+        {
+          "code": "BAD_NAME",
+          "http": 422,
+          "title": "That name is not allowed",
+          "description": "1-48 letters, digits, spaces, dot, underscore, dash.",
+          "fix": "Choose another name."
+        },
+        {
+          "code": "NAME_TAKEN",
+          "http": 409,
+          "title": "That name exists already",
+          "description": "A backup or dataset has that name.",
+          "fix": "Choose another name."
+        },
+        {
+          "code": "TEST_MODE",
+          "http": 409,
+          "title": "No backups in test mode",
+          "description": "Backups are neither made nor restored while test mode is on.",
+          "fix": "Turn test mode off first."
+        },
+        {
+          "code": "TEST_MODE_OFF",
+          "http": 409,
+          "title": "Test mode is off",
+          "description": "Test data routes need test mode.",
+          "fix": "A super admin turns test mode on."
+        },
+        {
+          "code": "TEST_MODE_FORCED",
+          "http": 403,
+          "title": "Test mode was enabled by root",
+          "description": "It cannot be turned off from the web app.",
+          "fix": "Root removes `test_mode.forced`."
+        },
+        {
+          "code": "ALREADY_ON",
+          "http": 409,
+          "title": "Test mode is already on",
+          "description": "Nothing to do: test mode is already in the state you asked for.",
+          "fix": "Nothing: reload the page."
+        },
+        {
+          "code": "ALREADY_OFF",
+          "http": 409,
+          "title": "Test mode is not on",
+          "description": "Nothing to do: test mode is already in the state you asked for.",
+          "fix": "Nothing: reload the page."
+        },
+        {
+          "code": "SNAPSHOT_CHANGED",
+          "http": 500,
+          "title": "The saved real database was changed",
+          "description": "Its checksum no longer matches; test mode stays on.",
+          "fix": "Restore the real data from a backup."
+        },
+        {
+          "code": "RESTORE_FAILED",
+          "http": 500,
+          "title": "The restore does not verify",
+          "description": "The real database was put back but fails verification: Degraded.",
+          "fix": "See the integrity panel."
+        },
+        {
+          "code": "NO_DATASET",
+          "http": 404,
+          "title": "No such saved dataset",
+          "description": "The name does not exist.",
+          "fix": "List the datasets."
+        },
+        {
+          "code": "NO_PENDING",
+          "http": 404,
+          "title": "No such test data",
+          "description": "Nothing waits under that id.",
+          "fix": "List pending test data."
+        },
+        {
+          "code": "INVALID_ROWS",
+          "http": 422,
+          "title": "Rows are not valid",
+          "description": "Per-cell errors are listed; nothing was imported (all or nothing).",
+          "fix": "Fix the listed cells."
+        }
+      ]
+    },
+    "integrity_protection": {
+      "about": "IIPS: the program's own files, and the device they belong to.",
+      "errors": [
+        {
+          "code": "INTEGRITY_VIOLATION",
+          "http": 503,
+          "title": "imPress is disabled by Root",
+          "description": "The program's files differ from the reference (changed, added, removed or moved).",
+          "fix": "Restore the files, or root restarts with --rehash (root's password)."
+        },
+        {
+          "code": "IIPS_DEVICE_MISMATCH",
+          "http": 503,
+          "title": "The files were made on another device",
+          "description": "The reference was sealed for a different machine: the code or its reference was copied.",
+          "fix": "Root re-hashes on this machine (root's password)."
+        },
+        {
+          "code": "IIPS_BASELINE_EDITED",
+          "http": 503,
+          "title": "The integrity reference was edited",
+          "description": "Its seal does not verify.",
+          "fix": "Root re-hashes (root's password)."
+        },
+        {
+          "code": "IIPS_BYPASSED",
+          "http": 200,
+          "title": "Integrity protection is off",
+          "description": "Started with --bypass-iips or iips.enabled=false: every page shows a warning.",
+          "fix": "Remove the flag."
+        },
+        {
+          "code": "LOCKED_DOWN",
+          "http": 503,
+          "title": "Locked: the host is being verified",
+          "description": "TrustedInstaller has not finished, or a critical requirement fails.",
+          "fix": "`requirements` shows the failing check."
+        },
+        {
+          "code": "MANIFEST_MISMATCH",
+          "http": 500,
+          "title": "The code differs from the signed manifest",
+          "description": "A file does not match MANIFEST.json (policy code.verify_manifest).",
+          "fix": "Reinstall, or root signs a new manifest."
+        }
+      ]
+    },
+    "accounts": {
+      "about": "Users, trash and imports.",
+      "errors": [
+        {
+          "code": "USER_EXISTS",
+          "http": 409,
+          "title": "That username or email is taken",
+          "description": "Usernames and emails are unique.",
+          "fix": "Choose another."
+        },
+        {
+          "code": "USER_NOT_FOUND",
+          "http": 404,
+          "title": "No such account",
+          "description": "The id or name does not exist.",
+          "fix": "List accounts."
+        },
+        {
+          "code": "TRASH_EXPIRED",
+          "http": 410,
+          "title": "Past the 30 days",
+          "description": "A deleted account can be restored for 30 days only.",
+          "fix": "Create it again."
+        },
+        {
+          "code": "IMPORT_INVALID",
+          "http": 422,
+          "title": "The CSV could not be imported",
+          "description": "A header is missing or a row is invalid; nothing was imported.",
+          "fix": "Fix and upload again."
+        }
+      ]
+    },
+    "classroom": {
+      "about": "Classes, courses, students, quizzes and polls.",
+      "errors": [
+        {
+          "code": "CLASS_NOT_FOUND",
+          "http": 404,
+          "title": "No such class",
+          "description": "It does not exist, or you have no access.",
+          "fix": "Check the id / classroom code."
+        },
+        {
+          "code": "CLASS_CODE_TAKEN",
+          "http": 409,
+          "title": "Class code in use",
+          "description": "Class codes are unique.",
+          "fix": "Choose another."
+        },
+        {
+          "code": "CLASS_NOT_ACTIVE",
+          "http": 409,
+          "title": "The class is not active",
+          "description": "Quizzes, polls and device traffic need an activated class.",
+          "fix": "Activate it."
+        },
+        {
+          "code": "STUDENT_NOT_FOUND",
+          "http": 404,
+          "title": "No such student",
+          "description": "The id or roll number does not exist.",
+          "fix": "Check it."
+        },
+        {
+          "code": "ROLL_NUMBER_TAKEN",
+          "http": 409,
+          "title": "Roll number in use",
+          "description": "Roll numbers are unique.",
+          "fix": "Check it."
+        },
+        {
+          "code": "QUIZ_NOT_FOUND",
+          "http": 404,
+          "title": "No such quiz",
+          "description": "Does not exist or not yours.",
+          "fix": "Check the id."
+        },
+        {
+          "code": "QUIZ_STATE",
+          "http": 409,
+          "title": "The quiz is not in that state",
+          "description": "For example starting a quiz that is already running or finished.",
+          "fix": "Reload."
+        },
+        {
+          "code": "POLL_STATE",
+          "http": 409,
+          "title": "The poll is not in that state",
+          "description": "For example voting on a closed poll.",
+          "fix": "Reload."
+        },
+        {
+          "code": "ALREADY_ANSWERED",
+          "http": 409,
+          "title": "Already answered",
+          "description": "One press is one stored answer.",
+          "fix": "-"
+        },
+        {
+          "code": "SCHEDULE_UNKNOWN",
+          "http": 503,
+          "title": "The timetable is unknown or stale",
+          "description": "Room-occupancy questions fail closed when the timetable is older than SCHEDULE_MAX_AGE_HOURS.",
+          "fix": "Re-import the timetable."
+        }
+      ]
+    },
+    "devices_and_firmware": {
+      "about": "Gateways, hubs, student modules, firmware and OTA.",
+      "errors": [
+        {
+          "code": "DEVICE_KEY_INVALID",
+          "http": 401,
+          "title": "Bad device key",
+          "description": "A device presented a wrong or unknown key.",
+          "fix": "Re-register the device."
+        },
+        {
+          "code": "DEVICE_KEYS_REQUIRED",
+          "http": 403,
+          "title": "The shared device key may only enrol",
+          "description": "Policy device.keys_required.",
+          "fix": "Re-enrol the device to get its own key."
+        },
+        {
+          "code": "DEVICE_HTTPS_ONLY",
+          "http": 403,
+          "title": "Devices must use TLS",
+          "description": "Policy device.https_required.",
+          "fix": "Flash firmware built with BACKEND_TLS."
+        },
+        {
+          "code": "FIRMWARE_NOT_SIGNED",
+          "http": 422,
+          "title": "Image is not signed with the site key",
+          "description": "A site signing key is configured and the image lacks a valid signature.",
+          "fix": "Sign it (scripts/firmware_key.sh)."
+        },
+        {
+          "code": "NOT_QUALIFIED",
+          "http": 409,
+          "title": "TrustedInstaller has not qualified this image",
+          "description": "Only qualified images can be approved or deployed.",
+          "fix": "Run qualification."
+        },
+        {
+          "code": "SEPARATION_OF_DUTIES",
+          "http": 403,
+          "title": "The uploader cannot approve",
+          "description": "Another administrator must approve (unless FIRMWARE_SINGLE_APPROVER).",
+          "fix": "Ask another administrator."
+        },
+        {
+          "code": "SOURCE_MANAGED",
+          "http": 409,
+          "title": "Managed by an authoritative source",
+          "description": "The timetable source owns that data.",
+          "fix": "Change it at the source."
+        },
+        {
+          "code": "OTA_DISABLED",
+          "http": 403,
+          "title": "Over-the-air updates are off",
+          "description": "Policy ota.enabled is false (--no-ota).",
+          "fix": "Root turns it on."
+        },
+        {
+          "code": "OTA_WINDOW_CLOSED",
+          "http": 409,
+          "title": "Outside the maintenance window",
+          "description": "S3/C6 updates wait for classroom downtime unless a super admin overrides.",
+          "fix": "Wait, or override."
+        },
+        {
+          "code": "DEPLOYMENT_STATE",
+          "http": 409,
+          "title": "The deployment is not in that state",
+          "description": "For example pausing a finished deployment.",
+          "fix": "Reload."
+        }
+      ]
+    },
+    "transport_and_traffic": {
+      "about": "Network-level protections.",
+      "errors": [
+        {
+          "code": "TRAFFIC_ALERT",
+          "http": 200,
+          "title": "Unusual traffic",
+          "description": "A rate limit per endpoint, address or account was exceeded; administrators are alerted. Nobody is blocked.",
+          "fix": "Check the alert on the System page."
+        },
+        {
+          "code": "WS_UNAUTHORIZED",
+          "http": 401,
+          "title": "WebSocket refused",
+          "description": "A live connection without a valid token or device key (close code 4401).",
+          "fix": "Reconnect with credentials."
+        },
+        {
+          "code": "WS_CLASS_FORBIDDEN",
+          "http": 403,
+          "title": "WebSocket not allowed for that class",
+          "description": "A live connection is bound to classes you may access (close code 4403).",
+          "fix": "Connect to your own class."
+        }
+      ]
+    },
+    "startup": {
+      "about": "Why imPress did not start. Exit codes of `python -m app.serve`.",
+      "errors": [
+        {
+          "code": "EXIT_2_CONFIG",
+          "http": 0,
+          "title": "Exit code 2: configuration refused",
+          "description": "A flag, the flags file or the policy cannot be applied; a conflict between flags; default secrets outside debug mode; the hardened profile below its floor.",
+          "fix": "Read the message printed before exit; fix and restart."
+        },
+        {
+          "code": "EXIT_3_INTEGRITY",
+          "http": 0,
+          "title": "Exit code 3: integrity lock",
+          "description": "The program's files changed, were copied from another device, or the reference was edited.",
+          "fix": "Root restarts with --rehash and enters root's password."
+        },
+        {
+          "code": "EXIT_4_CONSOLE_CLOSED",
+          "http": 0,
+          "title": "Exit code 4: the console is closed",
+          "description": "Policy root.allow_access is off here.",
+          "fix": "Use the console on the container's screen."
+        },
+        {
+          "code": "FLAG_CONFLICT",
+          "http": 0,
+          "title": "Flags that conflict",
+          "description": "Two or more flags contradict each other. This is checked before anything else; nothing else is verified or started.",
+          "fix": "Change one of the named flags."
+        },
+        {
+          "code": "HARDENED_FLOOR",
+          "http": 0,
+          "title": "Below the hardened floor",
+          "description": "The hardened profile refuses to start with debug on, default secrets, no HTTPS, an unsigned-firmware allowance, no audit sink and so on.",
+          "fix": "Fix the listed items or run the standard profile."
+        },
+        {
+          "code": "DEFAULT_SECRETS",
+          "http": 0,
+          "title": "Default secrets",
+          "description": "IMPRESS_JWT_SECRET or IMPRESS_DEVICE_API_KEY is still the public default.",
+          "fix": "Run the launcher (it generates them) or set your own."
+        },
+        {
+          "code": "PORT_IN_USE",
+          "http": 0,
+          "title": "Port 8000 is busy",
+          "description": "Another process listens there.",
+          "fix": "The launcher shows it and asks before stopping it."
+        },
+        {
+          "code": "MIGRATION_FAILED",
+          "http": 0,
+          "title": "A schema migration could not apply",
+          "description": "Start-up stops rather than run on a half-migrated database; a copy was made first.",
+          "fix": "Restore the copy named in the log."
+        },
+        {
+          "code": "HOST_REQUIREMENT",
+          "http": 0,
+          "title": "The host does not meet a requirement",
+          "description": "Python, SQLite or a writable data folder are critical; memory, disk, cores switch features off.",
+          "fix": "`requirements` shows the check."
+        }
+      ]
+    },
+    "hardware": {
+      "about": "Faults reported by gateways, hubs and student modules (shown on the Devices page and in diagnostics).",
+      "errors": [
+        {
+          "code": "HW_LINK_LOST",
+          "http": 0,
+          "title": "S3-C6 link lost",
+          "description": "The SPI link between hub and gateway stopped answering.",
+          "fix": "Check wiring and power; the gateway reports reset reasons."
+        },
+        {
+          "code": "HW_BROWNOUT",
+          "http": 0,
+          "title": "Brown-out reset",
+          "description": "The supply dipped below the brown-out threshold.",
+          "fix": "Use a better supply or cable."
+        },
+        {
+          "code": "HW_WATCHDOG",
+          "http": 0,
+          "title": "Watchdog reset",
+          "description": "The firmware did not feed the watchdog.",
+          "fix": "Report the boot counter and reset reason."
+        },
+        {
+          "code": "HW_OTA_ROLLBACK",
+          "http": 0,
+          "title": "An OTA image was rolled back",
+          "description": "The new image did not report healthy within 120 s.",
+          "fix": "Check the image; try again."
+        },
+        {
+          "code": "HW_MESH_FRAME_TOO_BIG",
+          "http": 0,
+          "title": "Mesh frame over the payload budget",
+          "description": "ESP-NOW payload limit (238 bytes) exceeded.",
+          "fix": "Shorten the message."
+        },
+        {
+          "code": "HW_FLASH_FAILED",
+          "http": 0,
+          "title": "Flashing failed",
+          "description": "esptool could not write the image (port busy, wrong chip, a boot-mode button).",
+          "fix": "Hold BOOT, check the port with `ports`, retry."
+        }
+      ]
+    }
+  }
+}

@@ -27,6 +27,16 @@ os.environ.update({
     # The in-process test client is neither HTTPS nor loopback; test_transport.py
     # checks the HTTPS rule itself (#152).
     "IMPRESS_REQUIRE_HTTPS": "false",
+    # TrustedInstaller's minimum hardware: a CI runner may be small, test_boot_verify.py checks the rule itself
+    "IMPRESS_MIN_CORES": "1", "IMPRESS_MIN_MEMORY_MB": "1", "IMPRESS_MIN_DISK_MB": "1",
+    "IMPRESS_TEMP_BACKUP_DIR": str(_TMP / "backups"),
+    # v2.2 files that live next to the program in a real install: tests use their own
+    "IMPRESS_GPC_STORE": str(_TMP / "impress.gpc.json"),
+    "IMPRESS_SESSION_FLAGS": str(_TMP / "impress.session.flags.json"),
+    "IMPRESS_FLAGS_FILE": str(_TMP / "impress.flags.json"),
+    # root's password in tests (never the shipped one): sha512("Test-Root-Password-1!")
+    "IMPRESS_ROOT_PASSWORD_SHA512": __import__("hashlib").sha512(b"Test-Root-Password-1!").hexdigest(),
+    "IMPRESS_ROOT_PASSWORD": "Test-Root-Password-1!",
 })
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -54,12 +64,20 @@ async def _reset_db():
     (_TMP / "test.db").unlink(missing_ok=True)
     # uploaded firmware is state too: a file left by one test must not exist in the next
     shutil.rmtree(_TMP / "firmware_bins", ignore_errors=True)
+    # v2.2 state next to the database: Degraded / debug-mode flags, test data, temporary backups
+    (_TMP / "test.state.json").unlink(missing_ok=True)
+    shutil.rmtree(_TMP / "test-data", ignore_errors=True)
+    shutil.rmtree(_TMP / "backups", ignore_errors=True)
+    for name in ("impress.gpc.json", "impress.session.flags.json", "impress.flags.json"):
+        (_TMP / name).unlink(missing_ok=True)
+    for stale in _TMP.glob("impress.gpc.json.tampered-*"):
+        stale.unlink(missing_ok=True)
 
 
 # Fire-and-forget DB tasks the app spawns (presence pushes, WS presence
 # refresh). If one outlives a test, its open SQLite connection makes the next
 # test's _reset_db() fail with "database is locked".
-_BACKGROUND_TASKS = {"_push_after_commit", "_touch_device_on_message"}
+_BACKGROUND_TASKS = {"_push_after_commit", "_touch_device_on_message", "_persist"}
 
 
 async def _drain_background_tasks(timeout=5.0):
@@ -75,6 +93,17 @@ def client():
     from app.main import app
     asyncio.run(_reset_db())
     with TestClient(app) as c:
+        _post = c.post
+
+        def post(url, *args, **kwargs):
+            """New accounts start with temporary credentials (v2.2); most tests are not about that, so the first
+            sign-in's work is done for them. A test of the first-sign-in flow sends {"keep_pending": true}."""
+            keep = bool((kwargs.get("json") or {}).pop("keep_pending", False)) if isinstance(kwargs.get("json"), dict) else False
+            r = _post(url, *args, **kwargs)
+            if url == "/api/admin/users" and r.status_code == 201 and not keep:
+                finish_setup(c, r.json()["id"])
+            return r
+        c.post = post
         yield c
         c.portal.call(_drain_background_tasks)
 
@@ -94,14 +123,62 @@ def db(client):
     return run
 
 
-def login(client, username="admin", password="admin123"):
+def login(client, username="impress.default.superAdmin", password="admin123"):
     r = client.post("/api/auth/login", json={"username": username, "password": password})
     assert r.status_code == 200, r.text
+    client.cookies.clear()      # tests authenticate with the bearer token; the cookie path has its own tests
     return r.json()["access_token"]
 
 
 def auth(token):
     return {"Authorization": f"Bearer {token}"}
+
+
+def approved(client, headers, action, password="admin123", approver=None, approver_password=None):
+    """Dual control (v2.2): request `action`, have it approved (by `approver` headers, or by the
+    requester when they are the only super admin), return the approval id. The default
+    profile has no delay."""
+    r = client.post("/api/admin/approvals", headers=headers, json={"action": action, "params": {}, "password": password})
+    assert r.status_code == 201, r.text
+    aid = r.json()["id"]
+    r = client.post(f"/api/admin/approvals/{aid}/approve", headers=approver or headers,
+                    json={"password": approver_password or password})
+    assert r.status_code == 200, r.text
+    return aid
+
+
+@pytest.fixture
+def policy():
+    """Change global-policy flags for one test: policy({"dual_control.delay_minutes": 10}). Root does this
+    with a signed file or inline flags; a test sets the loaded values directly. Use after `client`."""
+    from app import gpc
+    saved = dict(gpc.current().values)
+
+    def setter(flags: dict):
+        for name, value in flags.items():
+            assert name in gpc.FLAGS, name
+            gpc.current().values[name] = value
+    yield setter
+    gpc.current().values.clear()
+    gpc.current().values.update(saved)
+
+
+def finish_setup(client, user_id):
+    """New accounts start with temporary credentials (v2.2: 'pending setup'). Most tests are not about that:
+    this is the first sign-in's work already done. Tests of the first-sign-in flow don't call it."""
+    from sqlalchemy import update
+
+    from app.database import async_session
+    from app.dbgateway import SYSTEM, act_as
+    from app.models import User
+    from app.timeutil import istnow
+
+    async def go():
+        act_as(SYSTEM)
+        async with async_session() as s:
+            await s.execute(update(User).where(User.id == user_id).values(must_change_password=False, onboarded_at=istnow()))
+            await s.commit()
+    client.portal.call(go)
 
 
 # ── Domain helpers (keep tests short and intention-revealing) ───────────────
@@ -110,7 +187,22 @@ PASSWORD = "Passw0rd!x"
 
 
 def make_user(client, admin_headers, username, role="teacher", password=PASSWORD):
-    """Create a user through the admin API; returns (user_id, auth headers)."""
+    """Create a user through the admin API; returns (user_id, auth headers). A super admin is created the way
+    root creates one (the console's function): the API refuses to."""
+    if role == "super_admin":
+        from sqlalchemy import select
+
+        from app.database import async_session
+        from app.models import User
+        from app.services import rootops
+        client.portal.call(rootops.create_account, username, "super_admin", f"{username}@example.edu", username.title(), password)
+
+        async def find():
+            async with async_session() as s:
+                return (await s.execute(select(User.id).where(User.username == username))).scalar_one()
+        uid = client.portal.call(find)
+        finish_setup(client, uid)
+        return uid, auth(login(client, username, password))
     r = client.post("/api/admin/users", headers=admin_headers, json={
         "username": username, "email": f"{username}@example.edu", "password": password,
         "full_name": username.title(), "role": role})

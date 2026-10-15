@@ -25,6 +25,7 @@ from fastapi import Depends, Header, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from . import gpc
 from .config import api_key_ok, settings
 from .database import get_db
 from .models import EspDevice
@@ -71,6 +72,9 @@ async def caller_for_key(db: AsyncSession, key: str | None) -> DeviceCaller | No
 
 async def device_caller(x_api_key: str = Header(...), db: AsyncSession = Depends(get_db)) -> DeviceCaller:
     caller = await caller_for_key(db, x_api_key)
+    if caller is not None:
+        from .dbgateway import act_as, as_device
+        act_as(as_device(caller.device.id if caller.device else None))   # v2.2 database gateway
     if caller is None:
         # 401, not 403: the firmware drops a device key on 401 (it was reset)
         # and registers again; a 403 (disabled, wrong device) keeps it.
@@ -91,7 +95,7 @@ async def denial(db: AsyncSession, caller: DeviceCaller, mac: str | None, *, reg
         return "this device is disabled"
     if target is not None and target.key_confirmed_at is not None:
         return "this device has its own key: use it, or reset it on the Modules page"
-    if settings.DEVICE_KEYS_REQUIRED and not registering:
+    if gpc.device_keys_required(settings) and not registering:
         return "the shared key is accepted for registration only (IMPRESS_DEVICE_KEYS_REQUIRED)"
     return None
 

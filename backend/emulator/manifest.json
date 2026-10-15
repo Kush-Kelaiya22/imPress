@@ -1,0 +1,19 @@
+{
+  "_readme": [
+    "TrustedInstaller's emulator stage (#176): boots the EXACT uploaded image in a pinned, checksum-verified emulator.",
+    "Nothing is downloaded by imPress. An operator installs the runner, then pins it here: its path and SHA-256.",
+    "Until a runner is pinned the stage reports 'not run' (standard profile) or blocks approval (policy ota.require_emulation, on in hardened).",
+    "A target whose 'supported' is false, a runner that does not match its checksum, a time-out and any fail marker all FAIL the stage."
+  ],
+  "runner": {"path": null, "sha256": null, "release": "Espressif ESP-EMU v0.49.0 (not installed)",
+             "args": ["--chip", "{chip}", "--flash-image", "{flash}"]},
+  "limits": {"seconds": 30, "memory_mb": 1024, "output_kb": 512, "cpu_seconds": 60},
+  "pass_markers": ["impress boot ok", "app_main", "Application startup", "mesh", "heartbeat"],
+  "fail_markers": ["abort() was called", "Guru Meditation", "No detected Flash chip", "panic'ed", "Rebooting...", "assert failed", "Brownout"],
+  "targets": {
+    "c6": {"supported": true, "chip": "esp32c6", "flash_mb": 8, "bootloader": null, "partitions": null, "bootloader_sha256": null, "partitions_sha256": null, "bootloader_offset": 0},
+    "s3": {"supported": false, "chip": "esp32s3", "flash_mb": 32, "bootloader": null, "partitions": null, "bootloader_sha256": null, "partitions_sha256": null, "bootloader_offset": 0,
+           "why": "The production hub image needs an octal-flash eFuse fixture and aborts in the emulator with 'Octal Flash: No detected Flash chip' (#176 comment): treated as a failed qualification until the emulator supports it."},
+    "student": {"supported": true, "chip": "esp32", "flash_mb": 4, "bootloader": null, "partitions": null, "bootloader_sha256": null, "partitions_sha256": null, "bootloader_offset": 4096}
+  }
+}

@@ -54,7 +54,7 @@ def test_slot_sizes_match_the_partition_tables():
 # ── Validation ──────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("make,needle", [
-    (lambda: os.urandom(4096), "not an ESP-IDF firmware image"),
+    (lambda: b"\x00" + os.urandom(4095), "not an ESP-IDF firmware image"),
     (lambda: b"\xe9" + b"\x00" * 100, "too small"),
     (lambda: make_image()[:200], "too small"),
     (lambda: make_image(chip_id=5), "chip id 5"),
@@ -178,8 +178,11 @@ def test_real_build_output_parses(project, target, chip):
     path = FIRMWARE_SRC / project / "build" / f"impress_{project}.bin"
     if not path.exists():
         pytest.skip(f"no local build of {project}")
+    version_file = FIRMWARE_SRC / project / "version.txt"
+    if path.stat().st_mtime < version_file.stat().st_mtime:
+        pytest.skip(f"the local build of {project} is older than its version.txt: rebuild it")
     info = parse_image(path.read_bytes())
-    version = (FIRMWARE_SRC / project / "version.txt").read_text().strip()
+    version = version_file.read_text().strip()
     assert (info.target, info.chip, info.version) == (target, chip, version)
 
 

@@ -30,7 +30,7 @@ def test_raw_token_not_stored_anywhere(client, db):
 
 
 def test_legacy_raw_token_rows_revoked_and_scrubbed(client, db):
-    from app.auth import _sha256_hex
+    from app.auth import BOOT_ID, _sha256_hex
     from app.database import _scrub_raw_session_tokens
     from app.models import User, UserSession
     from app.timeutil import istnow
@@ -38,11 +38,11 @@ def test_legacy_raw_token_rows_revoked_and_scrubbed(client, db):
     raw = "impress_legacy-token-from-an-old-db"
 
     async def insert_legacy(s):
-        admin = (await s.execute(select(User).where(User.username == "admin"))).scalar_one()
+        admin = (await s.execute(select(User).where(User.username == "impress.default.superAdmin"))).scalar_one()
         now = istnow()
         s.add(UserSession(user_id=admin.id, token_hash=_sha256_hex(raw), session_token=raw,
                           created_at=now, last_activity_at=now,
-                          expires_at=now + timedelta(hours=6), revoked=False))
+                          expires_at=now + timedelta(hours=6), revoked=False, boot_id=BOOT_ID))
     db(insert_legacy)
     # Before the scrub the leaked token works — that's the exposure.
     assert client.get("/api/auth/me", headers=auth(raw)).status_code == 200

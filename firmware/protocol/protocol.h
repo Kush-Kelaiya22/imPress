@@ -319,6 +319,53 @@ typedef struct {
  */
 bool mesh_dedup_check(mesh_dedup_t *d, uint32_t id, uint32_t now_ms);
 
+/* ── Delivery acknowledgement (#181) ───────────────────────────────────
+ * Broadcast ESP-NOW has no acknowledgement, so the hub confirms each join,
+ * answer and vote it has queued for the server (or already had) with a
+ * MSG_ACK from the root. The module resends an unconfirmed answer or vote
+ * (the identical frame, so the hub's and the server's de-duplication keep
+ * it from counting twice) and tells the student if it never got through.
+ * A module only waits for ACKs once its hub has sent it one (its join is
+ * acknowledged), so a hub without this feature changes nothing.
+ */
+typedef struct __attribute__((packed)) {
+    uint32_t msg_id;               /* mesh_msg_id(sender, frame) of the confirmed frame */
+    uint32_t device_id;            /* the module it is for */
+    uint16_t seq;                  /* hub counter: a repeated ACK is a new frame, so relays pass it on */
+} payload_ack_t;
+
+#define ANSWER_RESENDS      3      /* after the first send; 4 transmissions at most */
+#define ANSWER_RESEND_MS    600    /* wait before a resend, plus 0..jitter so a room doesn't resend in step */
+#define ANSWER_JITTER_MS    400
+
+typedef enum {
+    ANSWER_IDLE = 0,
+    ANSWER_PENDING,                /* sent, no ACK yet */
+    ANSWER_DELIVERED,              /* the hub confirmed it */
+    ANSWER_FAILED,                 /* no ACK after the last resend */
+} answer_state_t;
+
+typedef struct {
+    answer_state_t state;
+    uint32_t msg_id;
+    uint8_t  resends;
+    uint32_t due_ms;
+} answer_tx_t;
+
+/** A frame with this id was just sent; wait for its ACK. */
+void answer_tx_start(answer_tx_t *t, uint32_t msg_id, uint32_t now_ms, uint32_t jitter_ms);
+
+/** @return true when the frame must be sent again now. After the last
+ *  resend's wait it moves to ANSWER_FAILED (and returns false). Wrap-safe. */
+bool answer_tx_poll(answer_tx_t *t, uint32_t now_ms, uint32_t jitter_ms);
+
+/** @return true if this ACK confirms the pending frame (now ANSWER_DELIVERED). */
+bool answer_tx_ack(answer_tx_t *t, const payload_ack_t *ack, uint32_t my_device_id);
+
+/** The hub's ACK for a frame from a module `hops` relays away: just far
+ *  enough to reach it (direct = 1 = not relayed), never above max_ttl. */
+uint8_t ack_ttl(uint8_t hops, uint8_t max_ttl);
+
 /* ── Backend JSON responses ────────────────────────────────────────────
  * The devices read one or two string fields from small backend responses
  * (the device key from /register, #66). No cJSON on the S3.

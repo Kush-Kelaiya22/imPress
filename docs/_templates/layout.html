@@ -1,0 +1,8 @@
+{% extends "!layout.html" %}
+{% block document %}
+<div class="impress-banner" role="note">
+  These pages describe imPress <strong>{{ impress_release }}</strong> (the <code>{{ impress_line }}</code> line).
+  Reading about a different release? Use the version menu, or check the version printed when your server starts.
+</div>
+{{ super() }}
+{% endblock %}

@@ -20,12 +20,15 @@ trusted from the request:
 from __future__ import annotations
 
 import hashlib
+import logging
 
 from ..config import settings
 from ..models import EspDevice, FirmwareArtifact
 from .firmware_signing import site_key_digest
 from .firmware_store import artifact_path
-from .qualification import qualify
+from .qualification import attest, attested, qualify
+
+logger = logging.getLogger(__name__)
 
 # The chip each device type runs (esp_app_desc / image header, #35).
 CHIP = {"c6": "esp32c6", "s3": "esp32s3", "student": "esp32"}
@@ -45,12 +48,21 @@ def _intact_bytes(artifact: FirmwareArtifact) -> bytes | None:
 
 
 def report(artifact: FirmwareArtifact, data: bytes | None = None) -> dict | None:
-    """The qualification report (#154); computed from the stored bytes for an
-    image registered before qualification existed."""
-    if artifact.qualification:
+    """The image's qualification report (#154). A stored report is trusted
+    only if it is attested for exactly this image; anything else (an image
+    registered before attestation, a report edited in the database or copied
+    from another image, a rotated server secret) is recomputed from the
+    stored bytes (and kept if the caller commits)."""
+    if attested(artifact.qualification, artifact):
         return artifact.qualification
     data = data if data is not None else _intact_bytes(artifact)
-    return None if data is None else qualify(data, artifact.target, artifact.version)
+    if data is None:
+        return None
+    if artifact.qualification:
+        logger.warning("firmware %s %s: stored qualification report not attested for this image; recomputed",
+                       artifact.target, artifact.version)
+    artifact.qualification = attest(qualify(data, artifact.target, artifact.version), artifact)
+    return artifact.qualification
 
 
 # esp_image_header_t byte 3, high nibble: the flash size the image was built for.

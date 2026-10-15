@@ -30,14 +30,27 @@ def test_put_can_no_longer_deactivate_anyone(client, su):
     assert client.get("/api/auth/me", headers=su).status_code == 200      # still logged in
 
 
+@pytest.mark.parametrize("call,code", [
+    (lambda c, h, me: c.post(f"/api/admin/users/{me}/deactivate", headers=h), "SELF_LOCKOUT"),
+    (lambda c, h, me: c.delete(f"/api/admin/users/{me}", headers=h), "SELF_LOCKOUT"),
+    # a super admin's role is root's to change (the console), never the web app's
+    (lambda c, h, me: c.post(f"/api/admin/users/{me}/role", headers=h, json={"role": "admin"}), "SUPER_ADMIN_VIA_CONSOLE"),
+])
+def test_no_self_lockout_on_any_route(client, su, call, code):
+    _, mine = make_user(client, su, "root3", role="super_admin")
+    r = call(client, mine, _me(client, mine))
+    assert r.status_code == 403 and r.json()["detail"]["code"] == code
+
+
 @pytest.mark.parametrize("call", [
     lambda c, h, me: c.post(f"/api/admin/users/{me}/deactivate", headers=h),
     lambda c, h, me: c.delete(f"/api/admin/users/{me}", headers=h),
-    lambda c, h, me: c.post(f"/api/admin/users/{me}/role", headers=h, json={"role": "admin"}),
+    lambda c, h, me: c.post(f"/api/admin/users/{me}/reset-password", headers=h, json={}),
 ])
-def test_no_self_lockout_on_any_route(client, su, call):
-    r = call(client, su, _me(client, su))
-    assert r.status_code == 403 and r.json()["detail"]["code"] == "SELF_LOCKOUT"
+def test_the_default_super_admin_is_root_s(client, su, call):
+    _, other = make_user(client, su, "root4", role="super_admin")
+    r = call(client, other, _me(client, su))
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "PROTECTED_ACCOUNT"
 
 
 def test_super_admins_can_still_manage_each_other(client, su):
@@ -63,6 +76,7 @@ def test_trigger_ignores_inactive_and_other_roles(client, db, su):
     async def go(s):
         await s.execute(text("UPDATE users SET is_active = 0, role = 'admin' WHERE id = :i"), {"i": uid})
         await s.execute(text("DELETE FROM user_sessions WHERE user_id = :i"), {"i": uid})
+        await s.execute(text("DELETE FROM activity_logs WHERE user_id = :i"), {"i": uid})
         await s.execute(text("DELETE FROM users WHERE id = :i"), {"i": uid})
     db(go)
 

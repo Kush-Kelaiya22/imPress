@@ -61,7 +61,8 @@ AA 22 00 12 | 03 00 | 01 | 41 42 43 44 45 31 32 33 34 35 00 | B1 C8 3F D5 | 68 9
 | `0x21` | `POLL_OPTIONS` | legacy alias (handled like `POLL_START`) | same | – |
 | `0x22` | `POLL_VOTE` | student → backend | `poll_id u16 · selected_option u8 · enrollment char[11] · device_id u32` | 18 |
 | `0x23` | `POLL_END` | backend → students | `payload_session_end_t { id u16 }` | 2 |
-| `0x30` / `0x31` | `ACK` / `NACK` | diagnostics | – | 0 |
+| `0x30` | `ACK` | root → students (#181) | `payload_ack_t`: `msg_id u32` (the confirmed frame's `mesh_msg_id`) · `device_id u32` (the module it is for) · `seq u16` (hub counter, so a repeated ACK is a new frame that relays pass on) | 10 |
+| `0x31` | `NACK` | unused | – | 0 |
 | `0x40`–`0x42` | `SPI_AGGREGATE` / `SPI_COMMAND` / `SPI_STATUS` | C6 ↔ S3 internal | `SPI_COMMAND` carries a JSON string; `SPI_STATUS` byte 0 = status | ≤ 240 |
 | `0x50` | `OTA_PROMPT` | C6 → S3 | `version char[32] · token char[64]` | 96 |
 | `0x51` | `OTA_APPLIED` | S3 → C6 (SPI record, sender 0) | `payload_ota_result_t`: `version[32] · mac[13] (12 hex) · result u8 (0 applied, 1 rolled_back, 2 failed) · error i32 (esp_err_t)`; the C6 relays it as batch `ota_result` | 50 |
@@ -85,6 +86,21 @@ Strings are NUL-terminated and zero-padded. Writers always use `strncpy(dst, src
 | `hops` | 0 at origin, +1 per relay |
 
 Duplicates are identified by `mesh_msg_id(sender_id, frame)`, an FNV-1a hash over the origin id and the frame, **never** the header. See [mesh design](mesh.md).
+
+### Delivery acknowledgement (#181)
+
+Broadcast ESP-NOW has no acknowledgement. The hub (with `CONFIG_MESH_ANSWER_ACK`, on by default) answers every `STUDENT_JOIN`, `QUIZ_ANSWER` and `POLL_VOTE` it has **queued for the server, or already had**, with an `ACK` naming the frame's `mesh_msg_id`. It does not acknowledge a frame it dropped because its queue was full: the module's resend is the retry. The ACK's TTL is the frame's hop count + 1 (`ack_ttl()`), so it reaches the module without flooding the room; a module next to the hub gets TTL 1 and nobody relays it.
+
+A module waits for ACKs only after its hub has acknowledged its join, so with an older hub nothing changes. Then, for each answer or vote (`answer_tx_*` in `protocol.c`, host-tested in `test_answer_ack.c`):
+
+| State | What the module does |
+|---|---|
+| pending | resends the **identical** frame after 600 ms + 0–400 ms jitter, at most 3 times (the hub and the server de-duplicate it) |
+| delivered | the matching ACK arrived: the display shows *Answer received* / *Vote received* |
+| failed | no ACK after the last resend: the display shows *Not delivered: press again* and the module accepts a new press |
+
+The end of a quiz or poll cancels a pending delivery. In the classroom simulator (`firmware/sim/classroom_sim.py --ack`), 300 modules at 10 % frame loss in each direction deliver every answer (without ACKs, about 26 are lost); at 30 % loss at most 3 are lost and every module whose confirmation never arrived tells its student. On a real radio the loss rate, and the airtime of one ACK per answer, must be measured (#87, #93).
+
 
 ---
 
@@ -110,9 +126,45 @@ One **standard full-duplex** SPI transfer (mode 0, MOSI/MISO, S3 = master) of ex
 **Queues and timing.**
 
 - **Outgoing FIFOs:** each side queues outgoing payloads in an 8-slot FIFO (`spi_slot_fifo_t`). Back-to-back frames are delivered in order instead of overwriting each other.
-- **S3:** clocks one slot every `SPI_POLL_INTERVAL_MS` (50 ms), and immediately when it queues something. It removes a payload from its FIFO only after the transfer succeeded.
+- **S3:** clocks one slot every `SPI_POLL_INTERVAL_MS` (50 ms), and immediately when it queues something. It removes a payload from its FIFO only once it is delivered (below).
 - **C6:** keeps exactly one transaction armed. Every 2 ms, whether Wi-Fi is up or not, it reaps the completed slot, loads the next FIFO entry into the (now free) DMA buffer and re-arms.
-- **Payload size:** a C6 frame therefore reaches the S3 within one poll interval. Payloads up to `SPI_SLOT_PAYLOAD_MAX` (4092 bytes).
+- **Payload size:** a C6 frame therefore reaches the S3 within one poll interval. Payloads up to `SPI_SLOT_PAYLOAD_MAX` − 8 (4084 bytes): the last 8 bytes are kept for the link trailer.
+
+### Acknowledged slots (#182)
+
+A slot that fails its CRC used to be lost with everything in it (up to about 110 answers), and so did a slot the S3 clocked while the C6 had not re-armed yet: both sides dropped a payload as soon as it was clocked. Each side now appends an 8-byte **trailer** to its payload (`firmware/protocol/spi_link.c`, host-tested in `test_spi_link.c`):
+
+```
+┌──────────────────┬───────┬─────┬───────────┬─────┐
+│ FF FF 5A A5      │ epoch │ seq │ ack_epoch │ ack │
+└──────────────────┴───────┴─────┴───────────┴─────┘
+```
+
+| Field | Meaning |
+|---|---|
+| `epoch` | random at every boot, never 0: a peer that rebooted starts a new numbering |
+| `seq` | number of the payload this slot carries (1–255), 0 = trailer only |
+| `ack_epoch`, `ack` | the last `seq` received intact, and the peer epoch it belongs to |
+
+```mermaid
+sequenceDiagram
+    participant S as S3 (master)
+    participant C as C6 (slave, slot armed in advance)
+    S->>C: slot N: records + trailer seq 7
+    Note over C: CRC fails: nothing delivered, no ack
+    C-->>S: (C6's armed slot, ack 6)
+    S->>C: slot N+1: the same records, seq 7 (not acknowledged yet)
+    Note over C: delivered once, rx_last = 7
+    C-->>S: armed before N+1: still ack 6
+    S->>C: slot N+2: seq 7 again
+    Note over C: repeat of 7: acknowledged, not delivered again
+    C-->>S: ack 7
+    Note over S: payload 7 leaves the FIFO
+```
+
+- A side keeps its FIFO head, sending it again in every exchange, until the peer acknowledges its `seq`; the receiver delivers each `seq` once. Because the C6 prepares its slot one exchange ahead, a payload normally crosses the link twice before it is retired (stop-and-wait: throughput halves, far above classroom rates).
+- **Compatibility:** the S3 always sends trailers; the C6 sends them only after it has received one, so an old S3 never gets one. Old firmware ignores the trailer: it starts with `FF FF`, which an old C6's record parser reads as an over-long record and an old S3's frame decoder rejects. Until a side has heard its peer's trailer it keeps the old rule (drop once clocked), so a slot corrupted in the first exchanges after boot, while both queues are normally still empty, can still be lost.
+- **Simulation:** `firmware/sim/classroom_sim.py` runs `spi_link.c` on both ends: with a third of the slots in each direction corrupted, 300 answers arrive exactly once (`--old-spi` shows the losses without it).
 
 ---
 

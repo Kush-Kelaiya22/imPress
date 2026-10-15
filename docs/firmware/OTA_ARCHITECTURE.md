@@ -74,6 +74,12 @@ docker run --rm -v "$PWD":/repo -w /repo espressif/idf:v6.1 bash -lc '. $IDF_PAT
 
 For the student module use `firmware/student`, `--machine esp32 --flash-mb 4` and `--expect "imPress Student Module"`. Never flash an emulator build to a board: it skips the radio.
 
+### The report is bound to its image (v2.2)
+
+The TrustedInstaller stores each report **attested**: it adds the report's subject (the image's SHA-256, size, target, chip, project, version, ESP-IDF version, the ELF hash the build embedded, and the signing key) and the qualifier revision (`impress-ti/2`), and seals the whole report with an HMAC-SHA256 key derived from `IMPRESS_JWT_SECRET`, which never leaves the server. Before trusting a stored report, approval, offers and downloads check that the seal matches, the subject is this image, and the qualifier is current. Anything else (an image registered before v2.2, a report edited in the database or copied from another image, a rotated secret, changed stages) is **recomputed from the stored bytes**; the stored bytes are themselves checked against the registered SHA-256 first. So a report can only ever describe the exact bytes a device receives, and nobody can mark a failing image qualified, including a super admin with database access, without the server secret.
+
+What the report does not bind: the source commit. The image carries its ESP-IDF version and ELF hash, and release images are built by CI from the release's commit with a GitHub build-provenance attestation (see [releases](../guides/releases.md)); an image uploaded from elsewhere can't be traced to its source from its bytes alone.
+
 ## Per-device state machine
 
 ```mermaid

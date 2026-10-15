@@ -6,6 +6,7 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from .manager import manager
+from .. import gpc
 from ..config import settings
 from ..database import async_session
 from ..models import EspDevice, ClassSession
@@ -31,7 +32,7 @@ async def _device_refusal(key: str | None, class_id: int) -> tuple[int, str] | N
         if caller is None:
             return 4401, "invalid device api_key"
         if caller.shared:
-            return (4401, "per-device key required") if settings.DEVICE_KEYS_REQUIRED else None
+            return (4401, "per-device key required") if gpc.device_keys_required(settings) else None
         if caller.device.is_active is False:
             return 4401, "device disabled"
         await db.commit()                       # first use activates the key
@@ -108,6 +109,16 @@ async def _ws_user_from_token(token: str):
     return user if error is None else None
 
 
+def _same_origin(websocket: WebSocket) -> bool:
+    """A browser sends Origin on every WebSocket handshake; it must name this
+    server. Non-browser clients (scripts, tests) send none."""
+    origin = websocket.headers.get("origin")
+    if origin is None:
+        return True
+    from urllib.parse import urlsplit
+    return urlsplit(origin).netloc.lower() == (websocket.headers.get("host") or "").lower()
+
+
 async def _refuse(websocket: WebSocket, role: str, code: int, reason: str) -> None:
     """Refuse a socket so that its client can tell why (#160).
 
@@ -126,10 +137,10 @@ async def class_websocket(websocket: WebSocket, class_id: int):
     """
     WebSocket endpoint for real-time class communication.
 
-    Connect with: ws://host/ws/class/{class_id}?role=teacher|device&api_key=...&token=...
+    Connect with: wss://host/ws/class/{class_id}?role=teacher|device
 
     Roles:
-      - teacher   (browser): must present ?token=<login session token> of a user with
+      - teacher   (browser): the login session (HttpOnly cookie, or a bearer header) of a user with
                              access to this class (primary teacher, co-faculty, admin)
       - device    (C6):      must present the device key as an X-API-Key header
                              (or ?api_key= for older firmware); a per-device key
@@ -153,7 +164,7 @@ async def class_websocket(websocket: WebSocket, class_id: int):
     # follow IMPRESS_DEVICE_HTTPS_ONLY.
     client = websocket.client.host if websocket.client else None
     if (https_required() and websocket.url.scheme != "wss" and not is_loopback(client)
-            and (role != "device" or settings.DEVICE_HTTPS_ONLY)):
+            and (role != "device" or gpc.device_https_only(settings))):
         await _refuse(websocket, role, 4403, "wss:// required")
         return
 
@@ -166,8 +177,14 @@ async def class_websocket(websocket: WebSocket, class_id: int):
                 await _refuse(websocket, role, refusal[0], refusal[1])
                 return
         elif role == "teacher":
-            token = websocket.query_params.get("token", "")
-            user = await _ws_user_from_token(token)
+            # The browser's session cookie (or a bearer header from a script),
+            # never a URL parameter. Browsers send cookies on cross-site
+            # WebSocket handshakes too, so the page must be one of ours.
+            if not _same_origin(websocket):
+                await _refuse(websocket, role, 4403, "cross-site WebSocket refused")
+                return
+            from ..auth import session_token_from
+            user = await _ws_user_from_token(session_token_from(websocket))
             if not is_staff(user):
                 await _refuse(websocket, role, 4401, "unauthorized teacher token")
                 return
@@ -182,6 +199,8 @@ async def class_websocket(websocket: WebSocket, class_id: int):
         await _refuse(websocket, role, 4400, "invalid role")
         return
 
+    from ..dbgateway import ANONYMOUS, act_as, as_device, as_user
+    act_as(as_user(user) if user is not None else as_device(None) if role == "device" else ANONYMOUS)
     await manager.connect(websocket, class_id, role, user_id=user.id if user is not None else None)
     logger.info(f"WS connected: class={class_id}, role={role}")
 
