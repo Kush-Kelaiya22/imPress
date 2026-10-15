@@ -13,10 +13,12 @@ ROOT_PW = "Test-Root-Password-1!"
 
 @pytest.fixture(autouse=True)
 def _fresh(client):
-    gpcstore.store_path().unlink(missing_ok=True)
+    """An empty store, put in place atomically. Deleting the file instead would let the running app's own reload and the
+    test both create it at once, and one write would silently replace the other."""
+    gpcstore._write(gpcstore._fresh())
     gpcstore.session_clear()
     yield
-    gpcstore.store_path().unlink(missing_ok=True)
+    gpcstore._write(gpcstore._fresh())
     gpcstore.session_clear()
 
 
