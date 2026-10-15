@@ -47,7 +47,20 @@ async def purge_activity() -> int:
     return deleted
 
 
+async def purge_deleted_accounts() -> int:
+    """Permanently remove deleted accounts older than their 30 days (the trash's undo window)."""
+    async with async_session() as db:
+        n = (await db.execute(text("DELETE FROM deleted_users WHERE purge_after < :n"),
+                              {"n": istnow().isoformat(sep=" ")})).rowcount or 0
+        if n:
+            await log_activity(db, "system.deleted_accounts_purged", None, "system", None, {"count": n})
+        await db.commit()
+    return n
+
+
 async def maintenance_once(tick: int) -> None:
+    from . import deadlock
+    await deadlock.check("periodic check")
     reloaded, error = gpc.reload_if_changed(settings)
     if error:
         await report(f"A changed policy file was refused and the previous policy stays in force: {error}")
@@ -59,6 +72,7 @@ async def maintenance_once(tick: int) -> None:
         events.alert("The global policy was updated by root.", "info")
     if tick % SWEEP_EVERY == 0:
         await purge_activity()
+        await purge_deleted_accounts()
         old = await asyncio.to_thread(integrity.sweep_old_copies)
         if old:
             async with async_session() as db:

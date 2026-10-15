@@ -21,7 +21,7 @@ def _https(client):
 
 
 def test_login_over_plain_http_is_refused_with_a_reason(strict):
-    r = strict.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
+    r = strict.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "admin123"})
     assert r.status_code == 403 and r.json()["detail"]["code"] == "HTTPS_REQUIRED"
     page = strict.get("/")
     assert page.status_code == 403 and "https://" in page.text
@@ -29,7 +29,7 @@ def test_login_over_plain_http_is_refused_with_a_reason(strict):
 
 def test_https_works_and_gets_hsts(strict):
     c = _https(strict)
-    r = c.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
+    r = c.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "admin123"})
     assert r.status_code == 200
     assert r.headers["strict-transport-security"].startswith("max-age=")
 

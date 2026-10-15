@@ -2,16 +2,25 @@
 
 Use a personal administrator account for routine work. The application checks permissions on the server; hiding a button in the browser is not a permission boundary. A `super_admin` can manage administrator accounts and installation-wide settings; an `admin` manages day-to-day teaching data and devices within the permissions the server grants.
 
-## Users and account lifecycle
+## Accounts and the account lifecycle
 
-1. Open **Users** and choose **+ New User**.
-2. Enter a unique username, full name, email address and a strong initial password. Choose **Teacher** for an instructor. Give **Admin** only to staff who need to administer courses, students, classrooms or devices.
-3. Submit the form and ask the person to sign in with their own account and change the initial password in **Settings**.
-4. Use the account's status/actions to deactivate an account when access should stop. Deactivation prevents future sign-in and revokes active sessions; preserve the account when its records must remain attached to classes or activity history.
+Open **User access** (the *Accounts* tab). Full detail, including the password rule and the welcome set-up, is in [accounts, first sign-in and the default super admin](../guides/accounts-and-onboarding.md).
 
-Expected: the account appears with its role and active status. Duplicate usernames/emails, weak passwords and attempts to remove the last active super administrator are refused with an explanation. Do not put passwords in CSV files that are stored or shared after import. For CSV user import, follow the UI's required columns and its preview/validation result.
+1. Choose **Add account**. Enter the full name, an optional display name, a unique username and the e-mail address. Choose **Faculty** for an instructor (and *Teaching assistant* if you want the account shown that way: the permissions are the same). Give **Administrator** only to staff who need to administer classrooms, students or devices (only a super admin can).
+2. Choose the first password: **generate one** (shown once, with a copy button) or type one. The strength meter and the rule (8+ characters with upper and lower case, a number and a special character) apply as you type.
+3. Give the person the temporary password in person or through a private channel. They sign in, **choose their own password**, say what to call them, pick a look and are offered a short tour.
+4. Use the row's buttons: **Disable** (signs the person out at once; if they are using imPress they see a clear notice) or **Enable**; the **⋯** menu has *Edit details*, *Activity history*, *Make faculty / administrator*, *Make teaching assistant / faculty*, *Reset password*, *Sign out everywhere* (super admins) and *Delete account*.
+5. **Delete** moves an account to **Deleted**, where it can be restored for **30 days** before it is removed permanently.
 
-If every super administrator is unavailable, use the server-side [administrator recovery procedure](../guides/deployment.md#recovering-administrator-access). There is intentionally no public recovery API.
+Other tabs: **Active now** (who is signed in, from where, and their last activity, with a history chart per person) and **Deleted**. Each account has a **safety badge**: *Safe*, *Potentially Unsafe* or *Likely Compromised* (hover for the score and reasons); see the [traffic monitor](../design/traffic-monitor.md). Switching a person between faculty and administrator asks you to confirm; between faculty and TA it shows a warning that only the label changes.
+
+Expected: the account appears with its role and status (*Pending setup* until the person has chosen a password). Duplicate usernames and e-mails, weak passwords and attempts to remove the last active super administrator are refused with an explanation. Super admin accounts cannot be created here: root creates them in the [console](../guides/console.md).
+
+If every super administrator is somehow unavailable, imPress's own [deadlock prevention](../guides/accounts-and-onboarding.md#global-deadlock-prevention) restores the database and creates a recovery account; the server-side [recovery procedure](../guides/deployment.md#recovering-administrator-access) is the manual way.
+
+## Features, backups and the system
+
+*System → Features* switches parts of imPress on or off for everyone (the order of authority and the change log are explained in [launch flags and features](../guides/launch-flags.md#features)); *Requirements* shows what the host was found to have; *Backups* saves and restores the database and system state ([guide](../guides/backups.md)); *Security* shows unusual-traffic alerts. Your own look and layout are in [Settings](../guides/personalization.md); *Advanced mode* there shows more detail on the dashboard.
 
 ## Courses
 

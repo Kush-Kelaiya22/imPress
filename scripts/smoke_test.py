@@ -48,7 +48,7 @@ def env_value(name):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--base", default="http://127.0.0.1:8000")
-    ap.add_argument("--username", default="admin")
+    ap.add_argument("--username", default="impress.default.superAdmin")
     ap.add_argument("--password", required=True)
     ap.add_argument("--device-key")
     ap.add_argument("--cafile", help="CA certificate to trust for an https:// base (#66)")

@@ -5,6 +5,10 @@
 #   ./launcher.sh                       # http://127.0.0.1:8000, this computer only
 #   IMPRESS_HOST=0.0.0.0 ./launcher.sh  # reachable by classroom gateways
 #   IMPRESS_PORT=9000 ./launcher.sh
+#   ./launcher.sh --test-mode      test mode forced on, nobody can turn it off (a lab)
+#   ./launcher.sh --no-test-mode   no test-data menu at all
+#   ./launcher.sh --no-ota         over-the-air updates off
+#   ./launcher.sh --feature dual_control.delay_minutes=30     any policy flag (docs/guides/launch-flags.md)
 #
 # 1. finds Python 3.12+ (installs it with Homebrew, apt or dnf when missing)
 # 2. creates backend/.venv and installs the dependencies (pip skips what is there)
@@ -102,4 +106,4 @@ fi
 
 # ── 5. start ───────────────────────────────────────────────────────────
 say "Starting imPress on http://${IMPRESS_HOST:-127.0.0.1}:$PORT  (Ctrl+C stops it)"
-exec "$ROOT/scripts/start.sh"
+exec "$ROOT/scripts/start.sh" "$@"

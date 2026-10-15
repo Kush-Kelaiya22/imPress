@@ -17,13 +17,12 @@ import asyncio
 import json
 import logging
 import time
-from datetime import timedelta
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import gpc, signing
@@ -34,8 +33,7 @@ from ..database import async_session, get_db
 from ..dbgateway import SYSTEM, act_as
 from ..models import User
 from ..policy import allowed, require
-from ..services import approvals, auditsink, events, integrity
-from ..timeutil import istnow
+from ..services import approvals, auditsink, events, integrity, rootops
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["system"])
@@ -45,11 +43,29 @@ RECHECK_S = 30
 
 
 @router.get("/api/system/status")
-async def system_status():
+async def system_status(db: AsyncSession = Depends(get_db)):
+    from ..config import APP_RELEASE
+    from ..models import FirmwareDeployment
+    from ..services import boot_verify, features, iips
     st = integrity.status()
     tm = st.get("test_mode") or {}
+    running = (await db.execute(select(func.count()).select_from(FirmwareDeployment)
+                                .where(FirmwareDeployment.state == "running"))).scalar_one() if features.enabled("update_overlay") else 0
+    # banners shown above every page, in this order (test mode and the integrity warning can both be on)
+    banners = []
+    if not iips.state()["enabled"]:
+        banners.append({"id": "iips", "level": "danger", "text": "imPress Integrity Protection Service is disabled. Proceed with caution."})
+    if tm.get("on"):
+        banners.append({"id": "test_mode", "level": "warning", "since": tm.get("since"),
+                        "text": "Test mode: you are working on test data, not the real database."})
     # no database state here: the integrity state is for administrators (/api/events, System page)
-    return {"version": APP_VERSION, "test_mode": bool(tm.get("on")), "test_mode_since": tm.get("since")}
+    return {"version": APP_VERSION, "release": APP_RELEASE, "test_mode": bool(tm.get("on")), "test_mode_since": tm.get("since"),
+            "test_mode_forced": bool(gpc.get("test_mode.forced")), "banners": banners,
+            "integrity_protection": iips.state()["status"], "locked": boot_verify.locked() or iips.locked(),
+            "updating": {"active": bool(running), "deployments": running,
+                         "message": "We are updating the system. Please wait a moment: this page will return as soon as the update has finished."},
+            "feature_flags": features.snapshot(),
+            "features": {"ota": bool(gpc.get("ota.enabled")), "test_data": bool(gpc.get("test_mode.allowed"))}}
 
 
 @router.get("/api/events")
@@ -60,6 +76,8 @@ async def event_stream(request: Request, token: str = Depends(oauth2_scheme)):
         _session, user, error = await validate_session(db, token, refresh_activity=False)
     if error or user is None:
         raise HTTPException(401, "SESSION_EXPIRED")
+    if user.must_change_password:                        # temporary credentials: no live alerts yet
+        raise HTTPException(403, {"code": "PASSWORD_CHANGE_REQUIRED", "message": "Choose your own password first"})
     return StreamingResponse(stream_events(token, user, request.is_disconnected), media_type="text/event-stream",
                              headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
@@ -80,6 +98,8 @@ async def stream_events(token: str, user: User, is_disconnected):
             try:
                 data = await asyncio.wait_for(sub.queue.get(), timeout=KEEPALIVE_S)
                 yield f"data: {data}\n\n"
+                if '"type": "session_ended"' in data:
+                    return
             except asyncio.TimeoutError:
                 yield ": keepalive\n\n"
             now = asyncio.get_running_loop().time()
@@ -168,42 +188,14 @@ async def clear_data(body: ClearRequest, request: Request, user: User = Depends(
                                   "message": "A full reset is switched off by policy (system.reset_everything_allowed)"})
     async with async_session() as adb:                  # the approval is spent first, in its own transaction
         await approvals.require(adb, user, f"system.clear.{body.scope}", {}, body.approval_id)
-    backup = integrity.backup_dir() / f"before-clear-{istnow():%Y%m%d-%H%M%S}.db"
-    await integrity.copy_live_to(backup)
     keep_session = getattr(request.state, "session", None)
-    act_as(SYSTEM)
-    class_tables = ["quiz_answers", "quiz_questions", "quizzes", "poll_votes", "polls", "attendance",
-                    "class_occurrence_exceptions", "student_enrollments", "class_faculty", "class_sessions",
-                    "students", "courses", "schedule_sources"]
-    async with async_session() as db:
-        await db.execute(text("PRAGMA defer_foreign_keys = ON"))
-        await db.execute(text("UPDATE esp_devices SET student_enrollment_id = NULL"))
-        await db.execute(text("UPDATE student_modules SET class_session_id = NULL"))
-        for t in class_tables:
-            await db.execute(text(f"DELETE FROM {t}"))
-        if body.scope == "everything":
-            for t in ("student_modules", "deployment_targets", "firmware_deployments", "firmware_artifacts",
-                      "esp_devices", "login_throttle"):
-                await db.execute(text(f"DELETE FROM {t}"))
-            keep_days = gpc.get("audit.min_retention_days")       # policy: recent audit entries survive a reset
-            if keep_days:
-                await db.execute(text("DELETE FROM activity_logs WHERE timestamp < :c"),
-                                 {"c": (istnow() - timedelta(days=keep_days)).isoformat(sep=" ")})
-                await db.execute(text("UPDATE activity_logs SET user_id = NULL WHERE user_id IS NOT NULL AND user_id != :u"),
-                                 {"u": user.id})
-            else:
-                await db.execute(text("DELETE FROM activity_logs"))
-            await db.execute(text("DELETE FROM approvals WHERE requested_by != :u OR (approved_by IS NOT NULL AND approved_by != :u)"),
-                             {"u": user.id})
-            await db.execute(text("DELETE FROM user_sessions WHERE id != :k"),
-                             {"k": keep_session.id if keep_session else -1})
-            await db.execute(text("DELETE FROM users WHERE id != :u"), {"u": user.id})
-        await log_activity(db, f"system.clear_{body.scope}", user.id, "system", None,
-                           {"flag": True, "backup": backup.name})
-        await db.commit()
+    backup = await rootops.clear_data(body.scope, keep_user_id=user.id, keep_session_id=keep_session.id if keep_session else None)
+    if body.scope == "everything":
+        from ..services import bootstrap
+        await bootstrap.after_reset(user.username)
     events.alert(f"{user.username} cleared the database ({body.scope.replace('_', ' ')}). "
-                 f"A copy was saved first ({backup.name}).", "warning", "all")
-    return {"status": "ok", "backup": backup.name}
+                 f"A copy was saved first ({backup}).", "warning", "all")
+    return {"status": "ok", "backup": backup}
 
 
 @router.get("/api/admin/system/policy")

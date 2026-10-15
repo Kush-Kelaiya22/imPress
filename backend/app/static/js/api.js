@@ -34,6 +34,12 @@ async function apiRequest(path, options = {}) {
   const res = await fetch(url, { ...options, headers });
 
   if (res.status === 401) {
+    // the server says why the session ended: a disabled account and a restart get a proper notice, not a redirect
+    const why = res.headers.get('X-Session-Code');
+    if (typeof Overlays !== 'undefined' && (why === 'disabled' || why === 'restart') && !path.startsWith('/auth/login')) {
+      Overlays.sessionEnded(why);
+      throw new Error('Unauthorized');
+    }
     clearToken();
     window.location.hash = '#/login';
     throw new Error('Unauthorized');
@@ -42,6 +48,10 @@ async function apiRequest(path, options = {}) {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     const d = err.detail;
+    if (res.status === 403 && d && d.code === 'PASSWORD_CHANGE_REQUIRED' && typeof Onboarding !== 'undefined') {
+      Onboarding.required();                 // temporary credentials: the welcome flow, not an error page
+      throw new Error('Unauthorized');
+    }
     // {"detail": {"code", "message"}} (#116) or FastAPI's string / validation list
     const msg = typeof d === 'string' ? d : (d && d.message) || 'Request failed';
     throw Object.assign(new Error(msg), { status: res.status, code: d && d.code, detail: d });
@@ -97,11 +107,13 @@ const authApi = {
   async me() {
     return apiRequest('/auth/me');
   },
-  async updateProfile(fullName) {
-    return apiRequest('/auth/me', {
-      method: 'PUT',
-      body: JSON.stringify({ full_name: fullName }),
-    });
+  async updateProfile(fullName, displayName) {
+    const body = { full_name: fullName };
+    if (displayName !== undefined) body.display_name = displayName;
+    return apiRequest('/auth/me', { method: 'PUT', body: JSON.stringify(body) });
+  },
+  async onboard(displayName, theme) {                       // the welcome set-up (v2.2)
+    return apiRequest('/auth/onboarding', { method: 'POST', body: JSON.stringify({ display_name: displayName, theme }) });
   },
   async changePassword(currentPassword, newPassword) {
     return apiRequest('/auth/change-password', {
@@ -166,12 +178,32 @@ const adminApi = {
     return apiRequest(`/admin/users/${userId}/end-sessions`, { method: 'POST' });
   },
   async studentsSummary() { return apiRequest('/admin/students/summary'); },
-  async resetPassword(userId, newPassword) {
+  async resetPassword(userId, newPassword) {               // no password given: one is generated and returned once
     return apiRequest(`/admin/users/${userId}/reset-password`, {
       method: 'POST',
-      body: JSON.stringify({ new_password: newPassword }),
+      body: JSON.stringify(newPassword ? { new_password: newPassword } : {}),
     });
   },
+  setDesignation(userId, designation) { return apiRequest(`/admin/users/${userId}/designation`, { method: 'POST', body: JSON.stringify({ designation }) }); },
+  presence() { return apiRequest('/admin/presence'); },
+  activitySummary(userId, days = 30) { return apiRequest(`/admin/users/${userId}/activity-summary?days=${days}`); },
+  trash() { return apiRequest('/admin/users/deleted'); },
+  restoreUser(id) { return apiRequest(`/admin/users/deleted/${id}/restore`, { method: 'POST' }); },
+  purgeUser(id) { return apiRequest(`/admin/users/deleted/${id}`, { method: 'DELETE' }); },
+  risk() { return apiRequest('/admin/risk'); },
+  traffic() { return apiRequest('/admin/traffic'); },
+  features() { return apiRequest('/admin/features'); },
+  setFeature(name, body) { return apiRequest(`/admin/features/${name}`, { method: 'PUT', body: JSON.stringify(body) }); },
+  featureLog(flag = '') { return apiRequest(`/admin/features/log${flag ? `?flag=${encodeURIComponent(flag)}` : ''}`); },
+  requirements() { return apiRequest('/admin/system/requirements'); },
+  backups() { return apiRequest('/admin/backups'); },
+  saveBackup(name, note = '') { return apiRequest('/admin/backups', { method: 'POST', body: JSON.stringify({ name, note }) }); },
+  describeBackup(id) { return apiRequest(`/admin/backups/${id}`); },
+  restoreBackup(id, password, confirm, approvalId = null) {
+    return apiRequest(`/admin/backups/${id}/restore`, { method: 'POST', body: JSON.stringify({ password, confirm, approval_id: approvalId }) });
+  },
+  deleteBackup(id) { return apiRequest(`/admin/backups/${id}`, { method: 'DELETE' }); },
+  search(q) { return apiRequest(`/search?q=${encodeURIComponent(q)}`); },
   async importUsersCsv(file) {
     const form = new FormData();
     form.append('file', file);
@@ -595,9 +627,16 @@ class ClassSocket {
       // The server closed it on purpose (#160): retrying would fail forever.
       if (ev.code === 4401) {                      // session revoked or expired (#118)
         this.classId = null;
-        clearToken();
-        if (typeof showToast === 'function') showToast('Your session ended. Please log in again.', 'error');
-        window.location.hash = '#/login';
+        const leave = () => {
+          clearToken();
+          if (typeof showToast === 'function') showToast('Your session ended. Please log in again.', 'error');
+          window.location.hash = '#/login';
+        };
+        // ask why: a disabled account or a restart gets its notice, not just the sign-in page
+        fetch(`${API_BASE}/auth/me`, { headers: CSRF }).then((r) => {
+          const why = r.headers.get('X-Session-Code');
+          if (typeof Overlays !== 'undefined' && (why === 'disabled' || why === 'restart')) Overlays.sessionEnded(why); else leave();
+        }).catch(leave);
         return;
       }
       if (ev.code === 4403 || ev.code === 4404) {  // no access to this class, or HTTPS required (#121, #152)

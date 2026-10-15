@@ -34,7 +34,7 @@ def _shift_session(db, **cols):
 # ── Login ───────────────────────────────────────────────────────────────────
 
 def test_login_returns_opaque_token_and_timeouts(client):
-    r = client.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
+    r = client.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "admin123"})
     assert r.status_code == 200
     body = r.json()
     assert body["token_type"] == "bearer"
@@ -42,7 +42,7 @@ def test_login_returns_opaque_token_and_timeouts(client):
     assert body["idle_timeout_s"] == 5 * 60 and body["hard_timeout_s"] == 360 * 60      # v2.2: 5-minute idle limit
 
 
-@pytest.mark.parametrize("username,password", [("admin", "wrong"), ("nobody", "admin123"), ("", "")])
+@pytest.mark.parametrize("username,password", [("impress.default.superAdmin", "wrong"), ("nobody", "admin123"), ("", "")])
 def test_login_rejects_bad_credentials(client, username, password):
     r = client.post("/api/auth/login", json={"username": username, "password": password})
     assert r.status_code == 401
@@ -84,8 +84,8 @@ def test_change_password_requires_current_and_takes_effect(client):
     ok = client.post("/api/auth/change-password", headers=h,
                      json={"current_password": "admin123", "new_password": "N3w-password"})
     assert ok.status_code == 200
-    assert client.post("/api/auth/login", json={"username": "admin", "password": "admin123"}).status_code == 401
-    assert client.post("/api/auth/login", json={"username": "admin", "password": "N3w-password"}).status_code == 200
+    assert client.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "admin123"}).status_code == 401
+    assert client.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "N3w-password"}).status_code == 200
 
 
 # ── Expiry ──────────────────────────────────────────────────────────────────
@@ -156,7 +156,7 @@ def test_session_status_counts_down_and_warns_near_hard_limit(client, db):
 
 def test_session_info_identifies_the_user(client):
     info = client.get("/api/auth/session", headers=auth(login(client))).json()
-    assert info["username"] == "admin" and info["role"] == "super_admin"
+    assert info["username"] == "impress.default.superAdmin" and info["role"] == "super_admin"
     assert info["idle_remaining_s"] > 0 and info["hard_remaining_s"] > 0
 
 

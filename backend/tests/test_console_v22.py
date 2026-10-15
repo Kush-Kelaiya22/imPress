@@ -1,0 +1,153 @@
+"""The root console and the launch flags, run the way root runs them: as separate processes on a database of their own."""
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+BACKEND = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture
+def box(tmp_path):
+    env = {**os.environ, "IMPRESS_DATABASE_URL": f"sqlite+aiosqlite:///{tmp_path / 'c.db'}", "IMPRESS_TEMP_BACKUP_DIR": str(tmp_path / "b"),
+           "IMPRESS_FIRMWARE_DIR": str(tmp_path / "fw"), "IMPRESS_GPC": "", "PYTHONPATH": str(BACKEND)}
+    env.pop("IMPRESS_IN_CONTAINER", None)
+
+    def run(*cmds, module="app.console", extra=(), stdin=None, env_extra=None):
+        args = [sys.executable, "-m", module, *extra]
+        for c in cmds:
+            args += ["-c", c]
+        p = subprocess.run(args, cwd=BACKEND, env={**env, **(env_extra or {})}, capture_output=True, text=True, timeout=120, input=stdin)
+        return p.returncode, p.stdout + p.stderr
+    run.env = env
+    return run
+
+
+def test_status_and_version(box):
+    rc, out = box("status", "version")
+    assert rc == 0 and "profile" in out.lower() and "2.2" in out
+
+
+def test_creating_accounts_and_the_pending_setup_state(box):
+    rc, out = box("users create ann --role teacher --name 'Ann Lee'", "users list")
+    assert rc == 0 and "temporary password:" in out and "pending" in out.lower()
+    pw = next(l for l in out.splitlines() if l.startswith("temporary password:")).split(": ")[1]
+    assert len(pw) >= 12
+    rc, out = box("users create ann --role teacher")
+    assert rc == 1 and "taken" in out.lower()
+
+
+def test_super_admins_exist_only_from_the_console_and_start_pending(box):
+    rc, out = box("superadmin create root2 --password Temp-root2-Pass1", "users list --role super_admin")
+    assert rc == 0 and "root2" in out and "pending" in out.lower() and "super_admin" in out
+    rc, out = box("users create x --role super_admin")
+    assert rc == 1
+
+
+def test_ta_designation_and_user_lifecycle(box):
+    rc, out = box("users create tia --role teacher --ta", "users deactivate tia", "users activate tia", "users delete tia", "users trash",
+                  "users restore tia", "users list")
+    assert rc == 0 and "restorable for 30 days" in out and "ta" in out
+
+
+def _seed_default(box):
+    code = ("import asyncio; from app.database import init_db; from app.services import bootstrap;"
+            "asyncio.run(init_db()); asyncio.run(bootstrap.ensure_default_superadmin())")
+    subprocess.run([sys.executable, "-c", code], cwd=BACKEND, env=box.env, check=True, capture_output=True)
+
+
+def test_the_default_super_admin_is_protected(box):
+    _seed_default(box)
+    rc, out = box("users deactivate impress.default.superAdmin")
+    assert rc == 1 and "default" in out.lower()
+    rc, out = box("users delete impress.default.superAdmin")
+    assert rc == 1
+
+
+def test_features_are_switched_as_root_and_can_be_locked(box):
+    rc, out = box("feature search off --lock", "features", "policylog search")
+    assert rc == 0 and "search" in out and "root (console)" in out
+    rc, out = box("feature nope on")
+    assert rc == 1 and "no feature" in out.lower()
+
+
+def test_requirements_and_iips_and_release_commands(box):
+    rc, out = box("requirements", "iips status", "iips rehash", "iips status", env_extra={"IMPRESS_MIN_CORES": "1"})
+    assert rc == 0 and "Python" in out and "baseline_created" in out and "ok" in out
+
+
+def test_the_console_reads_commands_from_a_pipe(box):
+    _seed_default(box)
+    rc, out = box(stdin="version\nusers list\nexit\n")
+    assert rc == 0 and "impress.default.superAdmin" in out
+
+
+def test_unknown_commands_fail_with_a_hint(box):
+    rc, out = box("frobnicate")
+    assert rc == 1 and "unknown command" in out
+
+
+def test_the_separate_console_is_closed_in_a_container_but_the_root_screen_is_not(box):
+    rc, out = box("version", env_extra={"IMPRESS_IN_CONTAINER": "1"})
+    assert rc == 4 and "container" in out
+    rc, out = box("version", env_extra={"IMPRESS_IN_CONTAINER": "1", "IMPRESS_ROOT_SCREEN": "1"})
+    assert rc == 0
+
+
+def test_system_reset_needs_the_exact_confirmation(box):
+    rc, out = box("system reset")
+    assert rc == 1
+    rc, out = box("users create keep1 --role admin", 'system reset --confirm "RESET EVERYTHING"', "users list")
+    assert rc == 0 and "keep1" not in out.split("the system was reset")[-1]
+
+
+def test_backups_from_the_console(box):
+    rc, out = box("backup save before-term", "backup list")
+    assert rc == 0 and "saved/before-term" in out
+
+
+# ── launch flags ────────────────────────────────────────────────────────
+
+def test_serve_flags_become_policy_overrides():
+    from app import serve
+    args = serve.build_parser().parse_args(["--test-mode", "--no-ota", "--bypass-iips", "--feature", "features.disabled=search"])
+    assert serve.overrides(args) == ["test_mode.forced=true", "ota.enabled=false", "iips.enabled=false", "features.disabled=search"]
+
+
+def test_serve_refuses_contradictory_flags(box):
+    rc, out = box(module="app.serve", extra=["--test-mode", "--no-test-mode"])
+    assert rc == 2 and "contradict" in out
+    rc, out = box(module="app.serve", extra=["--rehash", "--bypass-iips"])
+    assert rc == 2 and "contradict" in out
+    rc, out = box(module="app.serve", extra=["--feature", "nope.nothing=1"])
+    assert rc == 2
+
+
+def test_serve_stops_with_the_integrity_message_when_files_changed(box, tmp_path):
+    from app.services import iips
+    base = tmp_path / "c.iips.json"
+    doc = {"baseline": {**iips.snapshot(), "created_at": "x"}}
+    doc["baseline"]["files"]["backend/app/main.py"] = "0" * 64                  # as if main.py had been edited
+    # a baseline signed with the box's own secret: the console computes it exactly as the server would
+    code = ("import json,sys; sys.path.insert(0,'.'); from app.services import iips; doc=iips.snapshot();"
+            "doc['files']['backend/app/main.py']='0'*64; doc['created_at']='x';"
+            f"open({str(base)!r},'w').write(json.dumps({{'baseline':doc,'seal':iips._seal(doc)}}))")
+    env = {**os.environ, "IMPRESS_DATABASE_URL": f"sqlite+aiosqlite:///{tmp_path / 'c.db'}", "IMPRESS_GPC": ""}
+    subprocess.run([sys.executable, "-c", code], cwd=BACKEND, env=env, check=True)
+    p = subprocess.run([sys.executable, "-m", "app.serve", "--plain", "--port", "0"], cwd=BACKEND, env=env, capture_output=True, text=True, timeout=60)
+    assert p.returncode == 3 and "disabled by Root" in p.stderr and "--rehash" in p.stderr and "backend/app/main.py" in p.stderr
+    assert json.loads(base.read_text())["baseline"]["files"]["backend/app/main.py"] == "0" * 64          # not silently repaired
+
+
+def test_the_root_screen_wraps_by_visible_width_and_colours_by_level():
+    from app import rootscreen
+    lines = rootscreen.wrap_ansi("\033[31m" + "y" * 25 + "\033[0m", 10, indent=2)
+    visible = [__import__("re").sub(r"\x1b\[[0-9;]*m", "", ln) for ln in lines]
+    assert all(len(v) <= 10 for v in visible) and "".join(v.strip() for v in visible) == "y" * 25
+    assert rootscreen.wrap_ansi("short", 80) == ["short"]
+    assert "ERROR" in rootscreen.style_line("ERROR:    boom") and "\033[" in rootscreen.style_line("WARNING: careful")
+    assert rootscreen.style_line("just text").endswith("just text")

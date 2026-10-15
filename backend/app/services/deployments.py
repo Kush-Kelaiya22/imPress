@@ -344,6 +344,9 @@ async def deployments_loop():
     while True:
         try:
             await asyncio.sleep(SWEEP_INTERVAL_S)
+            from .. import gpc
+            if not gpc.get("ota.enabled"):             # root switched OTA off: nothing advances or is offered
+                continue
             async with async_session() as db:
                 if await advance_all(db):
                     await db.commit()

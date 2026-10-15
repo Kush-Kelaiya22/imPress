@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..activity import log_activity
 
 from ..config import settings
-from ..policy import allowed, require
+from ..policy import allowed, ota_enabled, require
 from ..services import trusted_installer
 from ..database import commit_or_conflict, get_db
 from ..models import ActivityLog, EspDevice, FirmwareArtifact, User
@@ -24,7 +24,7 @@ from ..timeutil import istnow
 
 from ..services.firmware_signing import site_key_digest
 
-router = APIRouter(prefix="/api/admin/firmware", tags=["firmware"])
+router = APIRouter(prefix="/api/admin/firmware", tags=["firmware"], dependencies=[Depends(ota_enabled)])
 
 
 class FirmwareUpdate(BaseModel):

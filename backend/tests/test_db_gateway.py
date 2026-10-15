@@ -49,7 +49,7 @@ def test_the_applications_own_writes_keep_it_verifying(client):
 
 
 @pytest.mark.parametrize("sql,kind", [
-    ("UPDATE users SET full_name = 'Mallory' WHERE username = 'admin'", "changed"),
+    ("UPDATE users SET full_name = 'Mallory' WHERE username = 'impress.default.superAdmin'", "changed"),
     ("INSERT INTO courses (code, name) VALUES ('EVIL1', 'Injected')", "added"),
 ])
 def test_a_change_outside_the_application_is_found(client, sql, kind):
@@ -73,10 +73,10 @@ def test_tampering_is_repaired_from_the_rolling_backup_and_flagged(client, monke
     from app.services import events, integrity
     alerts = []
     monkeypatch.setattr(events, "alert", lambda m, level="warning", audience="admins": alerts.append(m))
-    _outside("UPDATE users SET role = 'super_admin', full_name = 'Mallory' WHERE username = 'admin'")
+    _outside("UPDATE users SET role = 'super_admin', full_name = 'Mallory' WHERE username = 'impress.default.superAdmin'")
     client.portal.call(integrity.check_and_backup)
     with sqlite3.connect(_db_file()) as c:
-        assert c.execute("SELECT full_name FROM users WHERE username = 'admin'").fetchone()[0] == "Super Admin"
+        assert c.execute("SELECT full_name FROM users WHERE username = 'impress.default.superAdmin'").fetchone()[0] == "Default Super Admin"
     st = integrity.status()
     assert st["db"] == "degraded" and "restored" in st["degraded"]["message"]
     assert alerts and "outside imPress" in alerts[0]
@@ -151,7 +151,7 @@ def test_a_teacher_changes_only_their_own_name_and_password(client):
         (await get(s, "tch3")).role = "super_admin"
 
     async def rename_admin(s):
-        (await get(s, "admin")).full_name = "Hijacked"
+        (await get(s, "impress.default.superAdmin")).full_name = "Hijacked"
 
     _try_as(client, as_user(t), rename_self)
     for bad in (promote_self, rename_admin):

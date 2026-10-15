@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import gpc
 from ..database import commit_or_conflict, get_db
 from ..models import EspDevice, ClassSession, Attendance, StudentEnrollment, Student, StudentModule, ActivityLog, \
     Quiz, QuizAnswer, Poll, PollVote
@@ -224,7 +225,7 @@ async def firmware_check(body: DeviceFirmwareCheck, db: AsyncSession = Depends(g
     update_available = bool(
         device.pending_version
         and device.pending_version != device.firmware_version
-    )
+    ) and gpc.get("ota.enabled")           # root switched OTA off: the device is simply offered nothing
     sha256, size, dep_id = "", 0, None
     if update_available:
         target = await deployment_engine.active_target(db, device)
@@ -291,12 +292,15 @@ async def ota_status(body: DeviceOtaStatus, db: AsyncSession = Depends(get_db), 
 async def firmware_download(mac_address: str, version: str,
                             db: AsyncSession = Depends(get_db), caller: DeviceCaller = Depends(device_caller)):
     """Stream the firmware image for a device's pending OTA update (R8).
+    Refused when root switched OTA off (nothing is offered then, so a device doesn't ask).
 
     Only the version an admin pushed to this device is served, and only from
     the registry (#35): a validated image for the device's own type. The
     image's SHA-256 is sent as X-Firmware-SHA256 for the device to verify.
     """
     await authorize(db, caller, mac_address)
+    if not gpc.get("ota.enabled"):
+        raise HTTPException(403, "Over-the-air updates are switched off by root")
     result = await db.execute(
         select(EspDevice).where(EspDevice.mac_address == mac_address)
     )

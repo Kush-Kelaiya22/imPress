@@ -183,7 +183,13 @@ async function router() {
 
   if (typeof Motion !== 'undefined') Motion.reset(document.getElementById('app'));
   try {
-    await handler(app, getParams());
+    const slow = setTimeout(() => {              // a page that takes a moment shows its outline, not a blank screen
+      if (seq !== routeSeq) return;
+      const c = document.querySelector('#app > .container');
+      if (c && path !== '#/login' && !c.classList.contains('page-skeleton')) c.innerHTML = '<div class="page-skeleton"><div class="skeleton" style="height:34px;width:260px"></div><div class="skeleton" style="height:96px"></div><div class="skeleton" style="height:240px"></div></div>';
+    }, 220);
+    try { await handler(app, getParams()); } finally { clearTimeout(slow); }
+    document.querySelector('#app > .container')?.setAttribute('id', 'main');
     if (seq === routeSeq && typeof Motion !== 'undefined') Motion.enter(document.getElementById('app'));   // the route changed: play the entry
   } catch (err) {
     if (err instanceof StaleRender || seq !== routeSeq) return;   // superseded navigation
@@ -671,64 +677,62 @@ async function renderAdminClassForm(app, params) {
     if (!cls) { navigate('#/admin/classes'); return; }
   }
 
-  const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const DAYS = Prefs.weekdays();
   const scheduleInitial = cls ? (cls.meeting_schedule || []).map(s => ({ day: s.day, start: s.start, end: s.end })) : [];
 
   app.innerHTML = `
     ${renderNavbar(user, '#/admin/classes')}
     <div class="container mt-2">
-      <a href="#/admin/classes" class="btn btn-sm btn-outline mb-1">← Back to Classrooms</a>
+      <a href="#/admin/classes" class="btn btn-sm btn-outline mb-1">${icon('arrowLeft', 'sm')} Classrooms</a>
       <div class="page-header">
-        <h1>${editId ? `Edit Classroom — ${escHtml(cls.name)}` : 'New Classroom'}</h1>
+        <h1>${editId ? `Edit classroom: ${escHtml(cls.name)}` : 'New classroom'}</h1>
       </div>
 
       <div class="card mt-2">
         <form id="class-form" style="padding:1rem">
           <div class="form-section">
-            <div class="form-section-title">Classroom Details</div>
+            <div class="form-section-title">Classroom</div>
             <div class="form-grid-3">
               <div class="form-group">
-                <label>Classroom Name *</label>
+                <label for="cls-name">Name</label>
                 <input type="text" id="cls-name" required maxlength="128" placeholder="e.g. CS101 Sec A" value="${cls ? escHtml(cls.name) : ''}" />
               </div>
               <div class="form-group">
-                <label>Classroom Code *</label>
+                <label for="cls-code">Code</label>
                 <input type="text" id="cls-code" required maxlength="32" placeholder="e.g. CS101-A" value="${cls ? escHtml(cls.code) : ''}" />
               </div>
               <div class="form-group">
-                <label>Room Label (device code)</label>
-                <input type="text" id="cls-room-label" maxlength="32" placeholder="e.g. RM-201" title="Physical room label the C6 node reports; enables auto-assignment" value="${cls ? escHtml(cls.classroom_code || '') : ''}" />
+                <label for="cls-room-label">Room label <span class="text-muted">(optional)</span></label>
+                <input type="text" id="cls-room-label" maxlength="32" placeholder="e.g. RM-201" title="The label the classroom's hub reports; it links the hub to this classroom automatically" value="${cls ? escHtml(cls.classroom_code || '') : ''}" />
               </div>
             </div>
-            <div class="form-grid-2">
-              <div class="form-group">
-                <label>Location</label>
-                <input type="text" id="cls-location" maxlength="64" placeholder="e.g. Room 301, Block B" value="${cls ? escHtml(cls.location || '') : ''}" />
+            <div class="form-group">
+              <label>Icon and colour</label>
+              <div class="flex gap-2" style="align-items:flex-start;flex-wrap:wrap">
+                <span id="cls-preview" class="class-glyph" style="width:52px;height:52px;border-radius:14px"></span>
+                <div style="flex:1;min-width:260px"><div class="icon-grid" id="cls-icons" role="radiogroup" aria-label="Icon"></div>
+                  <div class="color-dots mt-1" id="cls-colors" role="radiogroup" aria-label="Colour"></div></div>
               </div>
-              <div class="form-group">
-                <label>Capacity</label>
-                <input type="number" id="cls-capacity" min="0" max="9999" value="${cls ? (cls.capacity || 0) : 0}" />
-              </div>
+              <p class="form-hint">Shown on the classroom's card so it is easy to spot. Leave it unset to choose from the name.</p>
             </div>
           </div>
 
           <div class="form-section">
-            <div class="form-section-title">Course & Term</div>
+            <div class="form-section-title">Course and term</div>
             <div class="form-grid-3">
               <div class="form-group">
-                <label>Course</label>
+                <label for="cls-course">Course</label>
                 <select id="cls-course">
-                  <option value="">— Select Course —</option>
+                  <option value="">— Select course —</option>
                   ${courses.map(c => `<option value="${c.id}" ${cls && cls.course_id === c.id ? 'selected' : ''}>${escHtml(c.code)} — ${escHtml(c.name)}</option>`).join('')}
                 </select>
-                <p class="form-hint">Exam date/time come from the selected course.</p>
               </div>
               <div class="form-group">
-                <label>Section</label>
+                <label for="cls-section">Section</label>
                 <input type="text" id="cls-section" maxlength="8" placeholder="e.g. A" value="${cls ? escHtml(cls.course_section || '') : ''}" />
               </div>
               <div class="form-group">
-                <label>Semester (Academic calendar)</label>
+                <label for="cls-term">Semester</label>
                 <select id="cls-term">
                   <option value="">— Select —</option>
                   <option value="Monsoon" ${cls && cls.term === 'Monsoon' ? 'selected' : ''}>Monsoon</option>
@@ -737,20 +741,17 @@ async function renderAdminClassForm(app, params) {
                 </select>
               </div>
             </div>
-            <div class="form-grid-3">
-              <div class="form-group">
-                <label>Year</label>
-                <input type="number" id="cls-year" min="2020" max="2099" value="${cls ? (cls.year || 2026) : 2026}" />
+            <details class="test-more"><summary>${icon('chevronRight', 'sm')} Dates, location and capacity (optional)</summary>
+              <div class="form-grid-3 mt-1">
+                <div class="form-group"><label for="cls-year">Year</label><input type="number" id="cls-year" min="2020" max="2099" value="${cls ? (cls.year || 2026) : 2026}" /></div>
+                <div class="form-group"><label for="cls-start-date">First class</label><input type="date" id="cls-start-date" value="${cls ? (cls.start_date || '') : ''}" /></div>
+                <div class="form-group"><label for="cls-end-date">Last class</label><input type="date" id="cls-end-date" value="${cls ? (cls.end_date || '') : ''}" /></div>
               </div>
-              <div class="form-group">
-                <label>Class Start Date</label>
-                <input type="date" id="cls-start-date" value="${cls ? (cls.start_date || '') : ''}" />
+              <div class="form-grid-2">
+                <div class="form-group"><label for="cls-location">Location</label><input type="text" id="cls-location" maxlength="64" placeholder="e.g. Block B, room 301" value="${cls ? escHtml(cls.location || '') : ''}" /></div>
+                <div class="form-group"><label for="cls-capacity">Capacity</label><input type="number" id="cls-capacity" min="0" max="9999" value="${cls ? (cls.capacity || 0) : 0}" /></div>
               </div>
-              <div class="form-group">
-                <label>Class End Date</label>
-                <input type="date" id="cls-end-date" value="${cls ? (cls.end_date || '') : ''}" />
-              </div>
-            </div>
+            </details>
           </div>
 
           <div class="form-section">
@@ -762,7 +763,7 @@ async function renderAdminClassForm(app, params) {
           </div>
 
           <div class="form-section">
-            <div class="form-section-title">Meeting Schedule</div>
+            <div class="form-section-title">Timetable</div>
             <div class="form-group">
               <div id="schedule-rows"></div>
               <button type="button" class="btn btn-sm btn-outline mt-1" id="btn-add-schedule">${icon('plus', 'sm')} Add Time Slot</button>
@@ -904,6 +905,37 @@ async function renderAdminClassForm(app, params) {
   };
   document.addEventListener('click', window.formFacultyOutsideClick);
 
+  // icon and colour (an empty icon or colour means "chosen from the name", as before)
+  const CLASS_ICONS = ['book', 'code', 'flask', 'chart', 'zap', 'activity', 'cpu', 'database', 'globe', 'calculator', 'palette', 'music', 'heart', 'leaf',
+    'rocket', 'camera', 'school', 'poll', 'radio', 'sparkles', 'shield', 'crown', 'calendar', 'pin'];
+  const CLASS_COLORS = ['#5b4ee5', '#2563eb', '#0d9488', '#16a34a', '#d97706', '#e11d48', '#7c3aed', '#475569'];
+  const pick = { icon: cls?.icon || '', color: cls?.color || '' };
+  const drawPicker = () => {
+    document.getElementById('cls-icons').innerHTML = CLASS_ICONS.map(n => `<button type="button" role="radio" aria-checked="${pick.icon === n}" class="${pick.icon === n ? 'active' : ''}" data-ic="${n}" title="${n}" aria-label="${n}">${icon(n)}</button>`).join('');
+    document.getElementById('cls-colors').innerHTML = CLASS_COLORS.map(c => `<button type="button" role="radio" aria-checked="${pick.color === c}" class="${pick.color === c ? 'active' : ''}" style="background:${c}" data-co="${c}" aria-label="${c}"></button>`).join('');
+    const pv = document.getElementById('cls-preview');
+    pv.style.background = pick.color ? `color-mix(in srgb, ${pick.color} 16%, var(--surface))` : '';
+    pv.style.color = pick.color || '';
+    pv.innerHTML = icon(pick.icon || 'book', 'lg');
+  };
+  drawPicker();
+  document.getElementById('cls-icons').onclick = (e) => { const b = e.target.closest('[data-ic]'); if (b) { pick.icon = pick.icon === b.dataset.ic ? '' : b.dataset.ic; drawPicker(); } };
+  document.getElementById('cls-colors').onclick = (e) => { const b = e.target.closest('[data-co]'); if (b) { pick.color = pick.color === b.dataset.co ? '' : b.dataset.co; drawPicker(); } };
+  // a new classroom suggests its name and code from the course and section
+  if (!editId) {
+    const suggest = () => {
+      const opt = document.getElementById('cls-course').selectedOptions[0], sec = document.getElementById('cls-section').value.trim();
+      const code = opt && opt.value ? opt.textContent.split(' — ')[0].trim() : '';
+      const nameEl = document.getElementById('cls-name'), codeEl = document.getElementById('cls-code');
+      if (!code) return;
+      if (!nameEl.dataset.touched) nameEl.value = sec ? `${code} Sec ${sec}` : code;
+      if (!codeEl.dataset.touched) codeEl.value = sec ? `${code}-${sec}` : code;
+    };
+    ['cls-name', 'cls-code'].forEach(id => document.getElementById(id).addEventListener('input', (e) => { e.target.dataset.touched = '1'; }));
+    document.getElementById('cls-course').addEventListener('change', suggest);
+    document.getElementById('cls-section').addEventListener('input', suggest);
+  }
+
   document.getElementById('btn-add-schedule').onclick = () => {
     scheduleSlots.push({ day: 'Monday', start: '09:00', end: '10:00' });
     renderScheduleRows();
@@ -926,6 +958,8 @@ async function renderAdminClassForm(app, params) {
         location: document.getElementById('cls-location').value.trim(),
         capacity: parseInt(document.getElementById('cls-capacity').value) || 0,
         meeting_schedule: scheduleSlots.map(s => ({ day: s.day, start: s.start, end: s.end })),
+        icon: pick.icon,
+        color: pick.color,
       };
       if (editId) {
         await adminApi.updateClass(editId, payload);
@@ -3284,6 +3318,8 @@ function istParseToEpoch(s) {
 function istFormat(value, opts) {
   const epoch = value instanceof Date ? value.getTime() : (value ?? null);
   if (epoch === null || Number.isNaN(epoch)) return '—';
+  const mine = typeof Prefs !== 'undefined' ? Prefs.istFormat(epoch, opts || {}) : null;   // the person's date and time formats
+  if (mine !== null) return mine;
   const o = Object.assign({ timeZone: IST_TZ }, opts);
   return new Intl.DateTimeFormat('en-IN', o).format(new Date(epoch));
 }

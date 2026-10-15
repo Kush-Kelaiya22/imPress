@@ -1,6 +1,6 @@
-# Debug mode and test data
+# Test mode and test data
 
-Debug mode lets a super admin try imPress with realistic data (demos, training, load tests) **without touching the real database**. The real database is copied aside and verified; everything happens on a copy; turning debug mode off puts the real data back exactly as it was.
+Test mode lets a super admin try imPress with realistic data (demos, training, load tests) **without touching the real database**. The real database is copied aside and verified; everything happens on a copy; turning test mode off puts the real data back exactly as it was.
 
 Page: **Administration → Test data** (super admins only). API: `/api/admin/test-mode` and `/api/admin/test-data` ([REST API](../api/rest-api.md)).
 
@@ -22,11 +22,11 @@ stateDiagram-v2
 1. **Turn on.** imPress verifies the live database first: a Degraded or unverifiable database must be resolved before testing starts. It then copies the database to `test-data/snapshots/` and records the copy's SHA-256. Starting from a saved dataset swaps that dataset in; your own account and session come along, so you stay signed in.
 2. **While on**, everyone sees this banner on every page:
 
-   > **Debug mode is on.** This application is under testing: you are working on test data, and you may experience degraded performance.
+   > **Test mode** Test mode: you are working on test data, not the real database.
 
    Everything works normally (classes, quizzes, devices), but on the test copy.
-3. **Turn off.** The snapshot's SHA-256 is checked: if the saved real database is missing or changed, debug mode stays on and administrators are alerted, so you never switch back to a wrong file. The real database goes back live, and the test database is set aside under `test-data/pending/`.
-4. **Decide** what happens to the test data: **Save** it under a name (it can be loaded the next time debug mode is turned on), **Export** it as a zip of CSV files (one per table), or **Delete** it.
+3. **Turn off.** The snapshot's SHA-256 is checked: if the saved real database is missing or changed, test mode stays on and administrators are alerted, so you never switch back to a wrong file. The real database goes back live, and the test database is set aside under `test-data/pending/`.
+4. **Decide** what happens to the test data: **Save** it under a name (it can be loaded the next time test mode is turned on), **Export** it as a zip of CSV files (one per table), or **Delete** it.
 
 `test-data/` sits next to the database file. It is git-ignored and readable by the server's user only.
 
@@ -95,11 +95,11 @@ Generated teachers sign in with the password shown on the page. It is random, ne
 
 ## Safety rules and policy
 
-Debug mode starts from a **copy of the real database**, so the copies it makes can contain real student records. The hardened profile therefore treats them as sensitive data:
+Test mode starts from a **copy of the real database**, so the copies it makes can contain real student records. The hardened profile therefore treats them as sensitive data:
 
 | Rule | What it does |
 |---|---|
-| `test_mode.allowed` | root can switch debug mode and all test-data routes off (the hardened profile does). Leaving, saving, deleting and exporting what already exists stay possible so nothing is stranded |
+| `test_mode.allowed` | root can switch test mode and all test-data routes off (the hardened profile does). Leaving, saving, deleting and exporting what already exists stay possible so nothing is stranded |
 | `test_mode.export_allowed` | root can forbid CSV exports of test data |
 | `test_mode.pending_ttl_hours` | a finished test database is deleted after this many hours (168 in the standard profile, 24 hardened; `0` = keep) |
 | `test_mode.dataset_ttl_days` | a saved dataset is deleted after this many days (`0` = keep in the standard profile, 30 hardened) |
@@ -123,6 +123,11 @@ It proves the files are exactly what this server exported and that nobody change
 
 ## Notes
 
-- Only super admins see the page and the endpoints (`users.assign_role`). Generating, checking and importing require debug mode to be on (`409 TEST_MODE_OFF` otherwise).
-- The integrity checks (see [data integrity](../design/data-integrity.md)) keep running in debug mode, against the test database and its own backups.
-- Turn debug mode off before upgrading or restarting for maintenance. A restart keeps debug mode on (the state is saved next to the database), so nothing is lost, but the banner stays until you turn it off.
+- Only super admins see the page and the endpoints (`users.assign_role`). Generating, checking and importing require test mode to be on (`409 TEST_MODE_OFF` otherwise).
+- The integrity checks (see [data integrity](../design/data-integrity.md)) keep running in test mode, against the test database and its own backups.
+- Turn test mode off before upgrading or restarting for maintenance. A restart keeps test mode on (the state is saved next to the database), so nothing is lost, but the banner stays until you turn it off.
+
+
+## Forced by root (`--test-mode`)
+
+Root can start imPress with `--test-mode` ([launch flags](launch-flags.md)). Test mode is then **on from the start and cannot be turned off** by anyone from the web app, super admins included: the *Turn off* button is replaced by an *Enabled by root* note, and the API refuses with *Test mode was enabled by root and cannot be disabled. This is intentional application design.* The default super admin signs in with the fixed lab password `imPress@2026`. It is meant for labs and demonstrations; the hardened profile refuses to start with it. `--no-test-mode` is the opposite: the Test data page and its routes do not exist.

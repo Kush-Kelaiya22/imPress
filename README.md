@@ -1,6 +1,6 @@
 <div align="center">
 
-<h1>imPress</h1>
+<h1><img alt="imPress" src="docs/images/logo-wordmark.svg" height="64"></h1>
 
 <p><strong>A classroom response system on ESP32 hardware</strong><br/>
 Live quizzes and polls with one-tap answers over an ESP-NOW mesh. No Wi-Fi on the student devices.</p>
@@ -25,7 +25,7 @@ Live quizzes and polls with one-tap answers over an ESP-NOW mesh. No Wi-Fi on th
 <a href="#documentation">Docs</a>
 </p>
 
-<img alt="The imPress overview page" src="docs/images/overview.png" width="860">
+<img alt="The imPress overview page" src="docs/images/overview.png" width="880">
 
 </div>
 
@@ -62,13 +62,15 @@ cd imPress
 launcher.bat           # Windows: double-click it, or run it in cmd
 ```
 
-Open **http://127.0.0.1:8000** and sign in as `admin`. The first password is printed once in the terminal (or set `IMPRESS_INITIAL_ADMIN_PASSWORD` first). Run the launcher again any time to start the server.
+The terminal then shows the **imPress logo and version**, the live log, and a prompt for root's commands (the [root screen](docs/guides/console.md)). Open **http://127.0.0.1:8000** and sign in as **`impress.default.superAdmin`**. Its password is **new at every start** and is printed once on that screen (or fix it with `IMPRESS_DEFAULT_SUPERADMIN_PASSWORD`). Run the launcher again any time to start the server.
 
 | To… | Do |
 |---|---|
 | let classroom gateways reach the server | `IMPRESS_HOST=0.0.0.0 ./launcher.sh` and allow the port in your firewall |
 | use another port | `IMPRESS_PORT=9000 ./launcher.sh` |
-| try it with realistic data | sign in, open **Test data**, turn on debug mode, **Generate**, **Import**: [guide](docs/guides/test-mode.md) |
+| try it with realistic data | sign in, open **Test data**, turn on test mode, **Generate**, **Import**: [guide](docs/guides/test-mode.md) |
+| start in a special way | launch flags: `--test-mode` (forced, cannot be turned off), `--no-test-mode`, `--no-ota`, `--rehash`, `--bypass-iips`, `--feature NAME=VALUE`: [launch flags](docs/guides/launch-flags.md) |
+| run it in the background | no terminal means no screen: the log is plain lines (`--plain` forces it) |
 | run it with Docker | [Container guide](docs/deployment/container.md) |
 
 > [!WARNING]
@@ -88,24 +90,34 @@ Open **http://127.0.0.1:8000** and sign in as `admin`. The first password is pri
 
 <table>
 <tr>
-<td width="50%"><a href="docs/images/classrooms.png"><img alt="Classrooms" src="docs/images/classrooms.png"></a><br/><sub><b>Classrooms</b>: filter, search, start a session</sub></td>
-<td width="50%"><a href="docs/images/students.png"><img alt="Students" src="docs/images/students.png"></a><br/><sub><b>Students</b>: attendance and participation per student</sub></td>
+<td width="50%"><a href="docs/images/login.png"><img alt="Sign-in page" src="docs/images/login.png"></a><br/><sub><b>Sign in</b>: one centred card</sub></td>
+<td width="50%"><a href="docs/images/dashboard-customise.png"><img alt="Customising the dashboard" src="docs/images/dashboard-customise.png"></a><br/><sub><b>Dashboard</b>: widgets you add, resize and drag</sub></td>
 </tr>
 <tr>
-<td><a href="docs/images/user-access.png"><img alt="User access" src="docs/images/user-access.png"></a><br/><sub><b>User access</b> and the activity log</sub></td>
-<td><a href="docs/images/system.png"><img alt="System" src="docs/images/system.png"></a><br/><sub><b>System</b>: integrity, the policy root set, approvals</sub></td>
+<td><a href="docs/images/classrooms.png"><img alt="Classrooms" src="docs/images/classrooms.png"></a><br/><sub><b>Classrooms</b>: each with its own icon and colour</sub></td>
+<td><a href="docs/images/accounts.png"><img alt="Accounts" src="docs/images/accounts.png"></a><br/><sub><b>Accounts</b>: roles, TAs, safety badges, pending setup</sub></td>
 </tr>
 <tr>
-<td><a href="docs/images/test-data.png"><img alt="Test data" src="docs/images/test-data.png"></a><br/><sub><b>Test data</b>: a spreadsheet editor and a seeded generator</sub></td>
-<td><a href="docs/images/devices.png"><img alt="Devices" src="docs/images/devices.png"></a><br/><sub><b>Devices</b>: health of every gateway and hub</sub></td>
+<td><a href="docs/images/search.png"><img alt="Search and quick settings" src="docs/images/search.png"></a><br/><sub><b>Search</b> everything; change settings in place</sub></td>
+<td><a href="docs/images/settings.png"><img alt="Settings" src="docs/images/settings.png"></a><br/><sub><b>Settings</b>: appearance, accessibility, dates and times</sub></td>
 </tr>
 <tr>
-<td><a href="docs/images/overview-dark.png"><img alt="Dark mode" src="docs/images/overview-dark.png"></a><br/><sub><b>Dark mode</b></sub></td>
-<td align="center"><a href="docs/images/phone-classrooms.png"><img alt="On a phone" src="docs/images/phone-classrooms.png" width="170"></a><br/><sub><b>On a phone</b></sub></td>
+<td><a href="docs/images/system-features.png"><img alt="Features" src="docs/images/system-features.png"></a><br/><sub><b>Features</b>: who switched what, and when</sub></td>
+<td><a href="docs/images/system-requirements.png"><img alt="TrustedInstaller requirements" src="docs/images/system-requirements.png"></a><br/><sub><b>Requirements</b> TrustedInstaller checked at start-up</sub></td>
+</tr>
+<tr>
+<td><a href="docs/images/activity-history.png"><img alt="Activity history of an account" src="docs/images/activity-history.png"></a><br/><sub><b>Activity history</b>: charts per account</sub></td>
+<td><a href="docs/images/overview-dark.png"><img alt="Dark mode" src="docs/images/overview-dark.png"></a><br/><sub><b>Dark mode</b>, accent colours, colour-vision modes</sub></td>
+</tr>
+<tr>
+<td><a href="docs/images/update-notice.png"><img alt="Update notice" src="docs/images/update-notice.png"></a><br/><sub><b>Notices</b>: updating, or an account disabled</sub></td>
+<td align="center"><a href="docs/images/phone.png"><img alt="On a phone" src="docs/images/phone.png" width="170"></a><br/><sub><b>On a phone</b></sub></td>
 </tr>
 </table>
 
-The interface follows Apple's Human Interface Guidelines for layout and materials and Material 3 Expressive for motion; pages update live without reloading. [Design notes](docs/design/ui-design.md).
+<p align="center"><a href="docs/images/root-screen.svg"><img alt="The root screen: logo, live log and a command line" src="docs/images/root-screen.svg" width="760"></a><br/><sub><b>The root screen</b>: what root sees when imPress starts in a terminal (or <code>docker run -it</code>)</sub></p>
+
+The interface is deliberately minimal: flat surfaces, hairline borders, one typeface (Inter) and one accent colour. It follows Apple's Human Interface Guidelines for layout and Material 3 Expressive for motion; pages update live without reloading. [Design notes](docs/design/ui-design.md).
 
 ## Features
 
@@ -114,12 +126,16 @@ The interface follows Apple's Human Interface Guidelines for layout and material
 | **Live participation** | Quizzes (planned or impromptu, per-question or total timing) and polls (live or planned), with per-option results as they arrive |
 | **Mesh networking** | Multi-hop ESP-NOW relaying (TTL 5) with de-duplication at the student, hub and server layers: one press is one answer. Lost answers are re-sent until the hub confirms them |
 | **Classrooms** | Courses and sections, timetables with clash warnings, co-faculty, enrolment, attendance, CSV import and export ([guide](docs/guides/csv-imports.md)) |
-| **People and access** | `super_admin` › `admin` › `teacher`; class-scoped permissions everywhere; accounts you can deactivate, reactivate and delete safely; **one device per account**; 5-minute idle limit (30 minutes for a teacher during their class) |
+| **People and access** | `super_admin` › `admin` › `teacher` (and teaching assistants); faculty see **only the classes they manage**; temporary first passwords and a welcome set-up; a password rule with a strength meter; accounts you can disable, enable and delete (restorable for 30 days); who is active now with activity charts; **one device per account**; 5-minute idle limit for everyone (30 minutes for faculty during their class) ([guide](docs/guides/accounts-and-onboarding.md)) |
 | **Devices** | Live presence, health states with reasons, diagnostics, and an inventory of every student module a gateway has seen |
 | **Firmware and OTA** | A validated, immutable registry; qualification before approval; staged deployments (canary, batches, retries, timeouts); automatic rollback; operator rollback; per-family views |
-| **Live web app** | Sidebar workspace, light and dark themes, pages that refresh as data changes, with no glitches while you type |
-| **Test data** | Debug mode works on a copy of the database: a spreadsheet editor (paste from Google Sheets or Excel, upload CSV), a seeded generator of consistent, natural-looking data, simulated activity; save, export or delete the result |
+| **Live web app** | A collapsible sidebar, light and dark themes with an animated change, pages that refresh as data changes without glitches while you type, a guided tour, a notification tray, and notices that blur the page when your account is disabled or an update is running |
+| **Search and personalization** | One search over classrooms, students, quizzes, accounts and devices (Ctrl/⌘ K) with settings as live widgets; accent colours, date and time formats, dashboards you arrange, advanced mode for administrators; accessibility: reduced motion, high contrast, text size, colour-vision modes, screen-reader support ([guide](docs/guides/personalization.md)) |
+| **Features** | Every small capability is a switch that administrators, super admins, root and TrustedInstaller can set, in that order of authority, with a change log of who and when ([guide](docs/guides/launch-flags.md)) |
+| **Backups** | Save, view and restore backups of the database and the system state; reset the system ([guide](docs/guides/backups.md)) |
+| **Test data** | Test mode works on a copy of the database: a spreadsheet editor (paste from Google Sheets or Excel, upload CSV), a seeded generator of consistent, natural-looking data, simulated activity; save, export or delete the result |
 | **Security and integrity** | A database gateway, sealed rows, automatic repair, dual control, an external audit trail, signed policy, code and exports, a hardened profile: [below](#security-and-integrity) |
+| **Root's tools** | A root screen (logo, live log, command line), a root console for accounts and policy, launch flags such as `--test-mode` and `--no-ota` ([guide](docs/guides/console.md)) |
 | **Privacy toolkit** | Data inventory, notice template, retention schedule, rights-request runbook, incident response: [below](#privacy-and-compliance) |
 
 ## How it works
@@ -211,17 +227,21 @@ flowchart TB
 
 | Layer | What it gives you | What it does not |
 |---|---|---|
-| **Sessions and passwords** | salted bcrypt over SHA-256, 5 min idle (30 for a teacher in class), one device per account, strict Content-Security-Policy, HttpOnly cookies | no multi-factor authentication yet ([#211](https://github.com/Kush-Kelaiya22/imPress/issues/211)) |
+| **Sessions and passwords** | salted bcrypt over SHA-256, a password rule with a strength meter, temporary first passwords, 5 min idle for everyone (30 for faculty in class), one device per account, strict Content-Security-Policy, HttpOnly cookies | no multi-factor authentication yet ([#211](https://github.com/Kush-Kelaiya22/imPress/issues/211)) |
 | **Database gateway** | every write is checked against the acting account's permission for that table; DDL is for the server only | it guards writes made *through* the application |
 | **Sealed rows** | a row changed outside imPress (a shell, a hex editor) is found within 5 minutes and repaired from a temporary backup; Degraded is flagged to administrators only | the seal key is derived from `IMPRESS_JWT_SECRET`: protect `.env` like the database |
 | **Dual control** | accepting a changed database, or clearing or resetting data, needs a *second* super admin's approval, a password re-entry at each step, a delay, an expiry and a single use | one person holding two super-admin accounts defeats it |
 | **External audit trail** | every event is also written to a hash-chained file or webhook that the application cannot rewrite; `audit-verify` checks the chain; it never holds students' personal data | put it on append-only storage, administered by someone else |
 | **Global policy control** | the switches belong to **root**: a signed policy file and inline overrides; the web app can show them but not change them; two profiles, *standard* and *hardened*, the second refusing to start insecurely | root on the host is outside what the application can defend |
+| **Host verification (TrustedInstaller)** | imPress is locked at start until the operating system, Python, SQLite, data folder, clock, processor, memory and disk are checked against the minimum; features the host cannot carry are switched off and come back when it can; in a container the separate root console is closed ([design](docs/design/trusted-boot.md)) | it trusts what the operating system reports |
+| **File integrity (IIPS)** | the program's own files and folder structure are hashed at first start; any change, addition, removal or move disables imPress until root accepts it (`--rehash`); `--bypass-iips` starts anyway with a red warning on every page ([design](docs/design/integrity-protection.md)) | it checks files at start, not a running process |
+| **Traffic monitor and account safety** | per-endpoint rate limits per origin and account; a DoS or DDoS suspicion alerts administrators with the origin, pages and account (nothing is blocked); each account has a *Safe* / *Potentially Unsafe* / *Likely Compromised* badge and a 0 to 100 score ([design](docs/design/traffic-monitor.md)) | it informs people; it does not defend against an attack by itself |
+| **Session identifier (1PSID)** | a session id is bound to the server run that issued it: a restart ends every session and a copied token is dead | |
 | **Signing** | signed policy, signed code manifest, signed exports (verify with `scripts/verify_export.py`), signed firmware | device messages themselves are not authenticated (below) |
 
 **Known limits.** ESP-NOW frames between student modules and the hub are not authenticated, so a nearby device could forge or replay an answer ([proposal](docs/design/mesh-authentication.md), [#187](https://github.com/Kush-Kelaiya22/imPress/issues/187)): run pilots in a controlled room until it ships. Boards do not use secure boot or flash encryption. Hardware checks for TLS, signed OTA and rollback are still open. The [risk register](docs/compliance/risk-register.md) lists every finding of the v2.2 security audit with its status.
 
-Read more: [security model](docs/design/security-model.md) · [data integrity](docs/design/data-integrity.md) · [global policy control](docs/design/gpc.md).
+Read more: [security model](docs/design/security-model.md) · [data integrity](docs/design/data-integrity.md) · [global policy control](docs/design/gpc.md) · [trusted boot](docs/design/trusted-boot.md) · [integrity protection](docs/design/integrity-protection.md) · [traffic monitor](docs/design/traffic-monitor.md).
 
 ## Privacy and compliance
 
@@ -308,9 +328,9 @@ More: [troubleshooting guide](docs/guides/troubleshooting.md) · [known issues](
 | Area | Pages |
 |---|---|
 | **Guides for people** | [First 30 minutes](docs/user-guide/README.md) · [Administrator](docs/user-guide/administrator.md) · [Teacher](docs/user-guide/teacher.md) · [Glossary](docs/user-guide/glossary.md) · [FAQ](docs/user-guide/faq.md) |
-| **Install and operate** | [Platforms](docs/install/platforms.md) · [Flashing](docs/install/flashing.md) · [Deployment](docs/guides/deployment.md) · [Production hardening](docs/guides/production-hardening.md) · [Configuration](docs/guides/configuration.md) · [CSV imports](docs/guides/csv-imports.md) · [Debug mode and test data](docs/guides/test-mode.md) · [OTA updates](docs/guides/ota-updates.md) · [Troubleshooting](docs/guides/troubleshooting.md) |
+| **Install and operate** | [Platforms](docs/install/platforms.md) · [Flashing](docs/install/flashing.md) · [Deployment](docs/guides/deployment.md) · [Production hardening](docs/guides/production-hardening.md) · [Configuration](docs/guides/configuration.md) · [CSV imports](docs/guides/csv-imports.md) · [Test mode and test data](docs/guides/test-mode.md) · [Accounts and first sign-in](docs/guides/accounts-and-onboarding.md) · [Personalization and accessibility](docs/guides/personalization.md) · [Backups](docs/guides/backups.md) · [Root console and screen](docs/guides/console.md) · [Launch flags and features](docs/guides/launch-flags.md) · [OTA updates](docs/guides/ota-updates.md) · [Troubleshooting](docs/guides/troubleshooting.md) |
 | **Architecture and design** | [System overview](docs/architecture/overview.md) · [Backend](docs/architecture/backend.md) · [Firmware](docs/architecture/firmware.md) · [Data flows](docs/architecture/data-flows.md) · [Protocols](docs/design/protocols.md) · [Mesh](docs/design/mesh.md) · [Mesh authentication (proposal)](docs/design/mesh-authentication.md) · [Authorization](docs/design/authorization.md) · [Scheduling](docs/design/scheduling.md) · [Web app design](docs/design/ui-design.md) · [Decisions](docs/design/decisions.md) |
-| **Security and privacy** | [Security model](docs/design/security-model.md) · [Data integrity](docs/design/data-integrity.md) · [Global policy control](docs/design/gpc.md) · [Privacy and compliance toolkit](docs/compliance/README.md) · [Risk register](docs/compliance/risk-register.md) |
+| **Security and privacy** | [Security model](docs/design/security-model.md) · [Data integrity](docs/design/data-integrity.md) · [Global policy control](docs/design/gpc.md) · [Trusted boot](docs/design/trusted-boot.md) · [Integrity protection](docs/design/integrity-protection.md) · [Traffic monitor](docs/design/traffic-monitor.md) · [Privacy and compliance toolkit](docs/compliance/README.md) · [Risk register](docs/compliance/risk-register.md) |
 | **API** | [REST](docs/api/rest-api.md) · [WebSocket](docs/api/websocket-api.md) · [Device and gateway](docs/api/device-api.md) |
 | **Hardware and firmware** | [Node requirements](docs/hardware/CLASSROOM_NODE_REQUIREMENTS.md) · [Compatibility](docs/hardware/DEVICE_COMPATIBILITY.md) · [OTA architecture](docs/firmware/OTA_ARCHITECTURE.md) · [Versioning](docs/firmware/FIRMWARE_VERSIONING.md) · [Recovery](docs/firmware/RECOVERY_PROCEDURE.md) · [Wiring](docs/reference/hardware.md) |
 | **Reference and engineering** | [Data model](docs/reference/data-model.md) · [Known issues](docs/reference/known-issues.md) · [Placeholders](docs/reference/placeholders.md) · [System audit](docs/engineering/SYSTEM_AUDIT.md) · [Migrations](docs/engineering/DATABASE_MIGRATIONS.md) · [v2.2 plan](docs/engineering/V2.2_PLAN.md) |
@@ -322,10 +342,10 @@ The [documentation index](docs/README.md) says when to read each page, and the [
 ```text
 imPress/
 ├── backend/                FastAPI application, web app (static/), tests, requirements, .env.example
-│   └── app/                gpc.py (policy), dbgateway.py (writes and seals), services/, routers/, static/
+│   └── app/                gpc.py (policy), dbgateway.py (writes and seals), serve.py and rootscreen.py (launch flags, root screen), console.py (root console), services/ (boot_verify, iips, traffic, features, …), routers/, static/
 ├── firmware/               protocol/ (shared), class_c6/ (gateway), class_s3/ (hub), student/, contract/, sim/ (simulator)
 ├── docs/                   architecture, design, API, guides, compliance, install, user guides, images
-├── scripts/                install.sh, start.sh, gpc.py (root's tool), backup.sh, verify_export.py, smoke_test.py, …
+├── scripts/                install.sh, start.sh, console.sh (root console), gpc.py (policy tool), backup.sh, verify_export.py, smoke_test.py, screenshots.py, …
 ├── tests/ ui_tests/        repository checks; Playwright browser checks
 ├── launcher.sh/.bat        one-step setup and start for macOS, Linux and Windows
 ├── frontend/               optional React reference dashboard (not shipped)
@@ -339,7 +359,7 @@ Every push to an integration line that passes CI becomes its next patch release,
 
 | Line | Branch | Summary |
 |---|---|---|
-| **2.2** | `varun/v2.2` | New web app (live pages, HIG and Material 3 Expressive design), one device per account, a database gateway with sealed rows and self-repair, dual control, signed policy and an external audit trail, debug mode and test data, one-step launchers, the privacy toolkit |
+| **2.2** | `varun/v2.2` | New web app (live pages, search, personalization, accessibility, dashboards you arrange, a guided tour), accounts with temporary passwords, TAs and a trash, a root screen and console, launch flags and features, TrustedInstaller host checks, file integrity protection, a traffic monitor, one device per account, a database gateway with sealed rows and self-repair, dual control, signed policy and an external audit trail, test mode and test data, backups, one-step launchers, the privacy toolkit |
 | 2.1 | `varun/v2.1` | CSV imports, firmware registry and staged OTA with rollback, gateway OTA client, diagnostics, module inventory, migrations, timed quizzes, container image |
 | 2.0 | `v2` | the October 2026 audit fixes, test suite, CI and documentation |
 

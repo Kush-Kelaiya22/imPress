@@ -78,6 +78,23 @@ FLAGS: dict[str, Flag] = {f.name: f for f in [
          "Days the full copy taken before a clear or reset is kept (0 = never deleted). It is your way back, and a copy of the data."),
     Flag("test_mode.allowed", "bool", True, False, "false",
          "Debug mode and test data (copies of the database) may be used at all."),
+    Flag("test_mode.forced", "bool", False, False, "false",
+         "Test mode is forced on by root (launch flag --test-mode) and nobody can turn it off; the default super admin then signs in with a fixed lab password."),
+    Flag("ota.enabled", "bool", True, True, "locked",
+         "Over-the-air firmware updates exist at all (off with --no-ota): uploads, deployments and pushes are refused and devices are offered nothing."),
+    Flag("features.disabled", "str", "", "", "set",
+         "Comma-separated features switched off by root; administrators cannot switch them on (see the System page for the list)."),
+    Flag("root.allow_access", "bool", True, True, "false",
+         "Whether the separate root console may be opened (ssh, docker exec). TrustedInstaller switches it off inside a container: "
+         "use the console attached to the container instead."),
+    Flag("iips.enabled", "bool", True, True, "true",
+         "imPress Integrity Protection Service: refuse to start when the program's own files changed since the last baseline."),
+    Flag("traffic.monitor", "bool", True, True, "true",
+         "Watch request rates per endpoint, address and account and alert administrators to unusual traffic."),
+    Flag("deadlock_prevention.enabled", "bool", True, True, "true",
+         "If no active super admin exists, roll the database back and create a recovery account (global_deadlock_prevention)."),
+    Flag("backups.restore_requires_approval", "bool", False, True, "true",
+         "Restoring a backup needs a second super admin's approval (so only a super admin can request it)."),
     Flag("test_mode.export_allowed", "bool", True, False, "false",
          "Test-data copies may be exported as CSV files."),
     Flag("test_mode.pending_ttl_hours", "int", 168, 24, "lower0",
@@ -261,6 +278,10 @@ def build(profile_env: str, inline: str, file_doc: dict | None, file_error: str 
                               "only a root-signed policy file may do that (scripts/gpc.py)")
         pol.values[name] = value
         pol.sources[name] = "inline"
+    if pol.values["test_mode.forced"] and not pol.values["test_mode.allowed"]:
+        raise PolicyError("test_mode.forced contradicts test_mode.allowed=false (--test-mode with --no-test-mode)")
+    if pol.profile == "hardened" and pol.values["test_mode.forced"]:
+        raise PolicyError("the hardened profile cannot force test mode (--test-mode is for labs)")
     return pol
 
 

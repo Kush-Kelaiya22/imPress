@@ -32,6 +32,7 @@ ACTIONS = {
     "integrity.accept_current": "Accept the database as it is now as the new trusted baseline",
     "system.clear.class_data": "Delete all class data (courses, classes, students, quizzes, polls, results)",
     "system.clear.everything": "Reset the whole system (class data, devices, firmware records, accounts)",
+    "backups.restore": "Restore the system from a backup",
 }
 STEP_UP_MAX_FAILURES = 5          # wrong passwords in 15 minutes before step-up is refused for a while
 
@@ -77,6 +78,14 @@ async def create(db: AsyncSession, user: User, action: str, params: dict, passwo
         raise _err(422, "UNKNOWN_ACTION", "Unknown action: " + ", ".join(ACTIONS))
     if action == "system.clear.everything" and not gpc.get("system.reset_everything_allowed"):
         raise _err(403, "POLICY_DISABLED", "A full reset is switched off by policy (system.reset_everything_allowed)")
+    if action == "backups.restore":
+        from . import backups as _backups
+        wanted = str((params or {}).get("backup", ""))
+        try:
+            _backups.resolve(wanted)
+        except _backups.BackupError:
+            raise _err(422, "UNKNOWN_BACKUP", "Choose an existing backup") from None
+        params = {"backup": wanted}
     await step_up(db, user, password)
     a = Approval(action=action, params=params or {}, requested_by=user.id, status="pending")
     db.add(a)

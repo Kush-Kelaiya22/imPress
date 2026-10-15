@@ -3,6 +3,7 @@ rem imPress launcher for Windows: everything from a fresh checkout to a running
 rem server, without Docker. Safe to run every time (double-click or from cmd).
 rem
 rem   launcher.bat                          http://127.0.0.1:8000, this computer only
+rem   launcher.bat --test-mode              test mode forced on (a lab); --no-test-mode; --no-ota; --feature name=value
 rem   set IMPRESS_HOST=0.0.0.0 ^& launcher.bat   reachable by classroom gateways
 rem   set IMPRESS_PORT=9000 ^& launcher.bat
 rem
@@ -90,10 +91,10 @@ if "%IMPRESS_HOST%"=="127.0.0.1" (
 echo ==^> Starting imPress on http://%IMPRESS_HOST%:%IMPRESS_PORT%  (Ctrl+C stops it)
 cd /d "%BACKEND%"
 rem One worker: the presence sweep, the schedulers and the WebSocket rooms live in the process.
-set "TLS="
-if defined IMPRESS_SSL_CERTFILE set "TLS=--ssl-certfile "%IMPRESS_SSL_CERTFILE%" --ssl-keyfile "%IMPRESS_SSL_KEYFILE%""
+rem Launch flags after the command (launcher.bat --test-mode ^| --no-test-mode ^| --no-ota ^| --feature name=value)
+rem go to app.serve; TLS comes from IMPRESS_SSL_CERTFILE / IMPRESS_SSL_KEYFILE.
 if not defined IMPRESS_FORWARDED_ALLOW_IPS set "IMPRESS_FORWARDED_ALLOW_IPS=127.0.0.1"
-"%VPY%" -m uvicorn app.main:app --host %IMPRESS_HOST% --port %IMPRESS_PORT% --workers 1 --proxy-headers --forwarded-allow-ips %IMPRESS_FORWARDED_ALLOW_IPS% %TLS%
+"%VPY%" -m app.serve --host %IMPRESS_HOST% --port %IMPRESS_PORT% %*
 exit /b %errorlevel%
 
 :find_python

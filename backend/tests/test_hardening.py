@@ -209,12 +209,12 @@ def test_a_failed_database_is_kept_before_it_is_replaced(client):
     client.portal.call(integrity.check_and_backup)
     db = integrity.db_path()
     with sqlite3.connect(db) as c:
-        c.execute("UPDATE users SET full_name = 'Forged' WHERE username = 'admin'")
+        c.execute("UPDATE users SET full_name = 'Forged' WHERE username = 'impress.default.superAdmin'")
     client.portal.call(integrity.check_and_backup)                        # detects, keeps, restores
     kept = sorted(integrity.backup_dir().glob("forensic-*.db"))
     assert len(kept) == 1 and oct(kept[0].stat().st_mode & 0o777) == "0o600"
     with sqlite3.connect(kept[0]) as c:
-        assert c.execute("SELECT full_name FROM users WHERE username = 'admin'").fetchone()[0] == "Forged"
+        assert c.execute("SELECT full_name FROM users WHERE username = 'impress.default.superAdmin'").fetchone()[0] == "Forged"
     msg = integrity.status()["degraded"]["message"]
     assert "min ago" in msg and "lost" in msg and kept[0].name in msg
     assert any(b["kind"] == "forensic" for b in integrity.backups_info())

@@ -73,10 +73,95 @@ const ICONS = {
   sparkles: '<path d="m12 3 1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2Z"/><path d="M19 3v4M17 5h4"/>',
   table: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>',
   save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z"/>',
+  calculator: '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01M8 19h.01M12 19h.01M16 19h.01"/>',
+  palette: '<path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.7-.7 1.7-1.6 0-.4-.2-.8-.5-1.1-.3-.3-.5-.7-.5-1.1 0-.9.7-1.7 1.7-1.7H16c3 0 6-2.2 6-6 0-4.9-4.5-8.5-10-8.5Z"/><path d="M6.5 12.5h.01M8.5 7.5h.01M13.5 6.5h.01M17.5 10.5h.01"/>',
+  music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  heart: '<path d="M19 14c1.5-1.5 3-3.2 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.8 0-3 .5-4.5 2-1.5-1.5-2.7-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4 3 5.5l7 7Z"/>',
+  leaf: '<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.2 2 8 0 5.5-4.8 10-10 10Z"/><path d="M2 21c0-3 1.9-5.5 6-7"/>',
+  rocket: '<path d="M4.5 16.5c-1.5 1.3-2 5-2 5s3.7-.5 5-2c.7-.8.7-2.1-.1-2.9a2.2 2.2 0 0 0-2.9-.1Z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.9A12.9 12.9 0 0 1 22 2c0 2.7-.8 7.5-6 11a22 22 0 0 1-4 2Z"/><path d="M9 12H4s.6-3 2-4c1.6-1.1 5 0 5 0"/><path d="M12 15v5s3-.6 4-2c1.1-1.6 0-5 0-5"/>',
+  camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3"/>',
+  panelLeft: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>',
+  keyboard: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M7 15h10"/>',
+  compass: '<circle cx="12" cy="12" r="10"/><path d="m16.2 7.8-2.1 6.3-6.3 2.1 2.1-6.3Z"/>',
+  sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+  type: '<path d="M4 7V4h16v3M9 20h6M12 4v16"/>',
+  contrast: '<circle cx="12" cy="12" r="10"/><path d="M12 2v20"/><path d="M12 6a6 6 0 0 1 0 12"/>',
+  accessibility: '<circle cx="12" cy="4.5" r="1.7"/><path d="M5 8.5c4.3 1.4 9.7 1.4 14 0M12 8.5V14m0 0-3 6.5M12 14l3 6.5"/>',
+  trendUp: '<path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/>',
+  pie: '<path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10Z"/>',
+  layout: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>',
+  lifebuoy: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><path d="m4.9 4.9 4.3 4.3M14.8 14.8l4.3 4.3M14.8 9.2l4.3-4.3M9.2 14.8l-4.3 4.3"/>',
+  userCheck: '<circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="m16 11 2 2 4-4"/>',
+  userX: '<circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="m17 8 5 5M22 8l-5 5"/>',
+  undo: '<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>',
+  archive: '<rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+  hardDrive: '<path d="M22 12H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1Z"/><path d="M6 16h.01M10 16h.01"/>',
+  gauge: '<path d="m12 14 4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9Z"/>',
+  grip: '<circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>',
+  maximize: '<path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>',
+  terminal: '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>',
+  fingerprint: '<path d="M12 11c0 3.5-.5 6-1.5 8.5"/><path d="M8 14c0 2.6-.5 4.5-1 6"/><path d="M16 11.5c0 2.5-.3 5-1.2 7.5"/><path d="M5 10a7 7 0 0 1 14 0c0 1 0 2.4-.2 4"/><path d="M12 7a3 3 0 0 0-3 3"/>',
+  bellRing: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/><path d="M2 8a10 10 0 0 1 3-6M22 8a10 10 0 0 0-3-6"/>',
+  mapPin: '<path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1Z"/>',
+  unlock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
+  swap: '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
 };
 
 function icon(name, cls = '') {
   return `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ICONS.info}</svg>`;
+}
+
+// ── Passwords: the same rules as the server (passwords.py), for the strength meter ──
+const COMMON_PASSWORDS = new Set(["0000000000", "0123456789", "1111111111", "1234567890", "12345678910", "1234abcd12", "1q2w3e4r5t", "abc1234567", "abcd123456", "abcdefghij", "admin12345", "admin@123", "admin@1234", "administrator", "asdfghjkl1", "changeme123", "changeme1234", "classroom1", "classroom123", "iloveyou12", "impress123", "impress1234", "letmein123", "p@ssw0rd", "p@ssword", "passw0rd", "passw0rd1", "password", "password1", "password12", "password123", "qwerty1234", "qwerty12345", "qwertyuiop", "rootroot12", "school1234", "student123", "student1234", "superadmin", "superadmin1", "teacher123", "teacher1234", "trustno1234", "welcome123", "welcome1234"]);
+
+function passwordStrength(pw, username = '') {
+  const checks = [['8 or more characters', pw.length >= 8], ['a lower-case letter', /[a-z]/.test(pw)], ['an upper-case letter', /[A-Z]/.test(pw)],
+    ['a number', /[0-9]/.test(pw)], ['a special character', /[^A-Za-z0-9]/.test(pw)]];
+  const missing = checks.filter(c => !c[1]).map(c => c[0]);
+  const lowered = pw.toLowerCase();
+  const bad = COMMON_PASSWORDS.has(lowered) || (username && lowered === username.trim().toLowerCase());
+  const met = checks.length - missing.length;
+  let score;
+  if (!pw || bad) score = 0;
+  else if (missing.length) score = met <= 2 ? 0 : 1;
+  else score = 2 + (pw.length >= 12 ? 1 : 0) + (pw.length >= 16 ? 1 : 0);
+  return { score, label: ['Too weak', 'Weak', 'Fair', 'Good', 'Strong'][score], missing, checks, common: !!bad };
+}
+
+/** Why a password is not acceptable for this role (null when it is): the server decides, this saves a round trip. */
+function passwordProblem(pw, username = '', role = 'teacher') {
+  const lowered = pw.toLowerCase();
+  if (COMMON_PASSWORDS.has(lowered)) return 'is too common';
+  if (username && lowered === username.trim().toLowerCase()) return 'must not be the username';
+  if (role === 'super_admin') return pw.length < 10 ? 'must be at least 10 characters' : (new Set(pw).size < 4 ? 'uses too few different characters' : null);
+  if (pw.length < 8) return 'must be at least 8 characters';
+  if (!/[a-z]/.test(pw)) return 'needs a lower-case letter';
+  if (!/[A-Z]/.test(pw)) return 'needs an upper-case letter';
+  if (!/[0-9]/.test(pw)) return 'needs a number';
+  if (!/[^A-Za-z0-9]/.test(pw)) return 'needs a special character (for example ! @ # $ %)';
+  return null;
+}
+
+/** The meter under a password field: a bar that fills and recolours, the label, and the rules still to meet. */
+function passwordMeterHtml(id) {
+  return `<div class="pw-meter" id="${id}-meter" data-level="0" aria-hidden="true"><i></i></div>
+    <div class="pw-hint"><span id="${id}-label" aria-live="polite"></span><span id="${id}-miss"></span></div>`;
+}
+function wirePasswordMeter(input, id, username = '', role = 'teacher') {
+  const draw = () => {
+    const pw = input.value, r = passwordStrength(pw, typeof username === 'function' ? username() : username);
+    const meter = document.getElementById(`${id}-meter`);
+    if (!meter) return;
+    meter.dataset.level = pw ? String(Math.max(1, r.score)) : '0';
+    meter.firstElementChild.style.width = pw ? `${Math.max(1, r.score) * 25}%` : '0';
+    document.getElementById(`${id}-label`).textContent = pw ? (r.common ? 'Too common' : r.label) : '';
+    document.getElementById(`${id}-miss`).textContent = pw && r.missing.length && role !== 'super_admin' ? `Needs ${r.missing.slice(0, 2).join(', ')}${r.missing.length > 2 ? '…' : ''}` : '';
+  };
+  input.addEventListener('input', draw);
+  draw();
 }
 
 // ── Small components ──────────────────────────────────────────────────
@@ -114,6 +199,7 @@ function pageHeader(title, sub = '', actions = '', eyebrow = '') {
 
 function timeAgo(epoch) {
   if (!epoch) return '—';
+  if (typeof Prefs !== 'undefined' && !Prefs.cur.relative_times) return istFormat(epoch, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   const s = Math.max(0, (Date.now() - epoch) / 1000);
   if (s < 45) return 'just now';
   if (s < 3600) return `${Math.round(s / 60)} min ago`;
@@ -151,44 +237,82 @@ function showToast(message, type = 'info', { keep = false } = {}) {
   if (!keep) setTimeout(close, type === 'error' ? 7000 : 3500);
 }
 
-function addNotice(message, level = 'info') {
-  _notices.unshift({ message, level, at: Date.now() });
-  _notices.length = Math.min(_notices.length, 30);
-  const dot = document.getElementById('bell-dot');
-  if (dot) dot.classList.remove('hidden');
-}
+// ── Notification tray ─────────────────────────────────────────────────
+// Alerts from the server and from this page, newest first, grouped by day, with an unread count.
+// Kept for the browser session (sessionStorage) so a page reload does not lose them.
+
+const Tray = {
+  items: [], tab: 'all',
+  load() { try { this.items = JSON.parse(sessionStorage.getItem('impress_tray') || '[]'); } catch { this.items = []; } },
+  save() { try { sessionStorage.setItem('impress_tray', JSON.stringify(this.items.slice(0, 60))); } catch { /* storage unavailable */ } },
+  unread() { return this.items.filter(n => !n.read).length; },
+  add(message, level = 'info', extra = {}) {
+    this.items.unshift({ id: Date.now() + Math.random(), message, level, at: Date.now(), read: false, ...extra });
+    this.items.length = Math.min(this.items.length, 60);
+    this.save(); this.badge();
+    if (document.getElementById('notice-pop') && !document.getElementById('notice-pop').classList.contains('hidden')) this.draw();
+  },
+  badge() {
+    const el = document.getElementById('bell-count'), n = this.unread();
+    if (!el) return;
+    el.textContent = n > 9 ? '9+' : String(n);
+    el.classList.toggle('hidden', n === 0);
+  },
+  day(at) {
+    const d = new Date(at), t = new Date();
+    if (d.toDateString() === t.toDateString()) return 'Today';
+    if (d.toDateString() === new Date(t - 864e5).toDateString()) return 'Yesterday';
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  },
+  draw() {
+    const box = document.getElementById('notice-pop');
+    if (!box) return;
+    const list = this.items.filter(n => this.tab === 'all' || n.level === 'error' || n.level === 'warning');
+    let last = '';
+    const rows = list.map(n => {
+      const d = this.day(n.at), head = d !== last ? `<div class="tray-day">${d}</div>` : '';
+      last = d;
+      const tone = n.level === 'error' ? 'red' : n.level === 'warning' ? 'amber' : n.level === 'success' ? 'green' : '';
+      const ic = n.level === 'error' ? 'xCircle' : n.level === 'warning' ? 'alert' : n.level === 'success' ? 'checkCircle' : 'info';
+      return `${head}<div class="tray-item ${n.read ? '' : 'unread'}" data-id="${n.id}"><span class="feed-icon ${tone}">${icon(ic, 'sm')}</span>
+        <div style="flex:1;min-width:0"><p>${escHtml(n.message)}</p><time>${timeAgo(n.at)}</time></div>
+        <button class="tray-x" data-action="tray-dismiss" data-id="${n.id}" aria-label="Dismiss">${icon('x', 'sm')}</button></div>`;
+    }).join('');
+    box.innerHTML = `<div class="tray-head"><b>Notifications</b>
+        <button class="btn btn-ghost btn-sm" data-action="tray-read" ${this.unread() ? '' : 'disabled'}>${icon('check', 'sm')} Mark all read</button></div>
+      <div class="tray-tabs" role="tablist">${[['all', 'All'], ['alerts', 'Alerts']].map(([k, t]) =>
+        `<button role="tab" class="${this.tab === k ? 'active' : ''}" aria-selected="${this.tab === k}" data-action="tray-tab" data-tab="${k}">${t}</button>`).join('')}</div>
+      <div class="tray-list">${rows || emptyState(this.tab === 'all' ? 'You are all caught up' : 'No alerts', 'New updates from imPress appear here.', 'bell')}</div>
+      <div class="tray-foot"><span>${this.items.length} notification${this.items.length === 1 ? '' : 's'}</span>
+        <button data-action="tray-clear" ${this.items.length ? '' : 'disabled'}>Clear all</button></div>`;
+  },
+};
+Tray.load();
+
+function addNotice(message, level = 'info', extra) { Tray.add(message, level, extra); }
 
 window.toggleNotices = function (ev) {
   ev?.stopPropagation();
   const box = document.getElementById('notice-pop');
   if (!box) return;
+  document.getElementById('help-menu')?.classList.add('hidden');
+  document.getElementById('user-menu')?.classList.add('hidden');
   if (!box.classList.contains('hidden')) { box.classList.add('hidden'); return; }
-  document.getElementById('bell-dot')?.classList.add('hidden');
-  box.querySelector('.popover-body').innerHTML = _notices.length
-    ? _notices.map(n => `<div class="notice"><span class="feed-icon ${n.level === 'error' ? 'red' : n.level === 'warning' ? 'amber' : ''}" style="width:30px;height:30px">${icon(n.level === 'error' ? 'xCircle' : n.level === 'warning' ? 'alert' : 'info', 'sm')}</span>
-        <div><div>${escHtml(n.message)}</div><time>${timeAgo(n.at)}</time></div></div>`).join('')
-    : emptyState('No notifications', 'Alerts from the server appear here.', 'bell');
+  Tray.draw();
   box.classList.remove('hidden');
+  setTimeout(() => { Tray.items.forEach(n => { n.read = true; }); Tray.save(); Tray.badge(); }, 1200);
 };
 document.addEventListener('click', (e) => {
-  const box = document.getElementById('notice-pop');
-  if (box && !box.contains(e.target) && !e.target.closest('[data-action="toggle-notices"]')) box.classList.add('hidden');
-  const sr = document.getElementById('search-results');
-  if (sr && !e.target.closest('.searchbox')) sr.classList.add('hidden');
+  for (const [id, trigger] of [['notice-pop', '[data-action="toggle-notices"]'], ['help-menu', '[data-action="toggle-menu"]'], ['user-menu', '[data-action="toggle-menu"]']]) {
+    const box = document.getElementById(id);
+    if (box && !box.classList.contains('hidden') && !box.contains(e.target) && !e.target.closest(trigger)) box.classList.add('hidden');
+  }
 });
 
 // ── Theme ─────────────────────────────────────────────────────────────
 
-window.toggleTheme = function () {
-  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  try { localStorage.setItem('impress_theme', next); } catch { /* storage unavailable */ }
-  document.querySelectorAll('[data-theme-icon]').forEach(el => { el.innerHTML = icon(next === 'dark' ? 'sun' : 'moon'); });
-};
+window.toggleTheme = function (ev) { Prefs.toggleTheme(ev); };
 
-function themeIcon() {
-  return icon(document.documentElement.getAttribute('data-theme') === 'dark' ? 'sun' : 'moon');
-}
 
 // ── System state: debug-mode banner, database status ──────────────────
 
@@ -202,6 +326,8 @@ async function loadSystemStatus() {
   renderBanners();
 }
 
+// The banners above every page, stacked: the integrity-protection warning first (it cannot be dismissed), then test mode.
+// The server decides which apply (GET /api/system/status: banners).
 function renderBanners() {
   let el = document.getElementById('sys-banners');
   if (!el) {
@@ -210,14 +336,22 @@ function renderBanners() {
     document.body.prepend(el);
   }
   const parts = [];
-  if (System.test_mode || System.testMode) {
-    parts.push(`<div class="sys-banner test" role="status">${icon('flask')}
-      <span><b>Debug mode is on.</b> This application is under testing: you are working on test data,
-      and you may experience degraded performance.</span></div>`);
+  const iips = (System.banners || []).find(b => b.id === 'iips');
+  if (iips) {
+    parts.push(`<div class="sys-banner integrity" role="alert" data-banner="iips">${icon('shield')}
+      <span><b>Warning</b> &nbsp;${escHtml(iips.text)}</span>
+      <button class="info-btn" data-info aria-label="What this means">${icon('info', 'sm')}<span class="tip" role="tooltip">The program's own files are no longer being checked against the reference made at first start. Root turned this off when starting the server. Restart without the bypass flag, or with the rehash flag, to restore it.</span></button></div>`);
+  }
+  if (System.test_mode) {           // live: the server's status events and the Test data page keep this current
+    parts.push(`<div class="sys-banner test" role="status" data-banner="test">${icon('flask')}
+      <span><b>Test mode</b> &nbsp;You are working on test data, not the real database.</span>
+      <button class="info-btn" data-info aria-label="What this means">${icon('info', 'sm')}<span class="tip" role="tooltip">${System.test_mode_forced
+        ? 'Root enabled test mode when the server was started. It cannot be turned off from the web app.'
+        : 'Changes you make now do not affect the real classes. Turn test mode off, under Test data, to go back to the real data.'}</span></button></div>`);
   }
   if (System.db === 'degraded' && Shell.user && ['admin', 'super_admin'].includes(Shell.user.role)) {
     parts.push(`<div class="sys-banner degraded" role="alert">${icon('alert')}
-      <span><b>Database degraded:</b> it was changed outside imPress and restored automatically. <a href="#/admin/system">Review</a></span></div>`);
+      <span><b>Database restored.</b> It was changed outside imPress and has been repaired automatically. <a href="#/admin/system">Review</a></span></div>`);
   }
   el.innerHTML = parts.join('');
   document.body.classList.toggle('has-banner', parts.length > 0);
@@ -260,6 +394,8 @@ const CRUMBS = {
 
 function isAdminUser(u) { return u && (u.role === 'admin' || u.role === 'super_admin'); }
 
+function brandMark() { return `<span class="brand-mark">${icon('layers')}</span>`; }
+
 function renderNavbar(user, currentHash) {
   Shell.user = user;
   const admin = isAdminUser(user);
@@ -270,23 +406,24 @@ function renderNavbar(user, currentHash) {
     const active = n.match.includes(currentHash);
     const count = n.count && Shell.counts[n.count] ? `<span class="count">${String(Shell.counts[n.count]).padStart(2, '0')}</span>` : '';
     const chip = n.dbChip ? `<span id="db-chip" class="badge badge-danger badge-sm ${System.db === 'degraded' ? '' : 'hidden'}" style="margin-left:auto">Degraded</span>` : '';
-    return `<a href="${href}" class="nav-item${active ? ' active' : ''}"${active ? ' aria-current="page"' : ''}>${icon(n.icon)}<span>${escHtml(n.label)}</span>${count}${chip}</a>`;
+    return `<a href="${href}" class="nav-item${active ? ' active' : ''}" data-tip="${escHtml(n.label)}"${active ? ' aria-current="page"' : ''}>${icon(n.icon)}<span>${escHtml(n.label)}</span>${count}${chip}</a>`;
   }).join('');
   const crumbs = ['Workspace', ...(CRUMBS[currentHash] || [])];
-  const roleLabel = { super_admin: 'Super admin', admin: 'Administrator', teacher: 'Faculty' }[user.role] || user.role;
+  const roleLabel = (typeof roleTitle === 'function') ? roleTitle(user) : ({ super_admin: 'Super admin', admin: 'Administrator', teacher: 'Faculty' }[user.role] || user.role);
+  const name = user.name || user.display_name || user.full_name || user.username;
   document.body.classList.add('shell');          // #app sits beside the sidebar (CSS)
   setTimeout(afterShell, 0);
   return `
     <div class="app-scrim" data-action="nav-close"></div>
-    <aside class="app-sidebar" aria-label="Main navigation">
-      <a href="#/dashboard" class="brand"><span class="brand-mark">${icon('layers')}</span><span class="brand-name">imPress</span></a>
-      <nav>${items}</nav>
-      <div class="nav-spacer"></div>
+    <aside class="app-sidebar" aria-label="Main navigation" id="app-sidebar">
+      <a href="#/dashboard" class="brand" aria-label="imPress home">${brandMark()}<span class="brand-name">imPress</span></a>
+      <nav aria-label="Pages">${items}</nav>
       <div class="nav-foot">
-        <a href="#/settings" class="nav-item${currentHash === '#/settings' ? ' active' : ''}">${icon('settings')}<span>Settings</span></a>
-        <a href="/graph" target="_blank" rel="noopener" class="nav-item">${icon('help')}<span>Help &amp; documentation</span></a>
-        <div class="user-card">${avatar(user.full_name || user.username, 'sm')}
-          <div class="who"><b>${escHtml(user.full_name || user.username)}</b><span>${escHtml(roleLabel)}</span></div>
+        <button type="button" class="nav-item nav-collapse" data-action="sidebar-toggle" aria-controls="app-sidebar" data-tip="Expand sidebar">${icon('panelLeft')}<span>Collapse</span></button>
+        <a href="#/settings" class="nav-item${currentHash === '#/settings' ? ' active' : ''}" data-tip="Settings">${icon('settings')}<span>Settings</span></a>
+        ${admin && System.feature_flags?.help_menu !== false ? `<a href="#" class="nav-item" data-action="open-help" data-tip="Help &amp; documentation">${icon('lifebuoy')}<span>Help &amp; documentation</span></a>` : ''}
+        <div class="user-card">${avatar(name, 'sm')}
+          <div class="who"><b>${escHtml(name)}</b><span>${escHtml(roleLabel)}</span></div>
           <button class="btn btn-ghost btn-icon btn-sm" ${callAttr('handleLogout')} title="Sign out" aria-label="Sign out">${icon('logout')}</button>
         </div>
       </div>
@@ -297,78 +434,46 @@ function renderNavbar(user, currentHash) {
         <nav class="crumbs" aria-label="Breadcrumb">${crumbs.map((c, i) => i === crumbs.length - 1
           ? `<b>${escHtml(c)}</b>` : `<span>${escHtml(c)}</span><span class="sep">/</span>`).join('')}</nav>
         <div class="topbar-right">
-          <label class="searchbox">${icon('search', 'sm')}<span class="sr-only">Search</span>
-            <input id="global-search" type="search" placeholder="Search classes, students…" autocomplete="off" data-input="global-search" data-keydown="global-search-key">
-            <div id="search-results" class="search-results hidden"></div></label>
-          <div style="position:relative">
-            <button class="icon-btn" data-action="toggle-notices" aria-label="Notifications">${icon('bell')}<span id="bell-dot" class="dot ${_notices.length ? '' : 'hidden'}"></span></button>
-            <div id="notice-pop" class="popover hidden"><div class="popover-head"><b>Notifications</b></div><div class="popover-body"></div></div>
-          </div>
-          <button class="icon-btn" data-action="toggle-theme" aria-label="Toggle dark mode" data-theme-icon>${themeIcon()}</button>
-          <a href="#/settings" title="${escHtml(user.full_name || user.username)}">${avatar(user.full_name || user.username)}</a>
+          ${System.feature_flags?.search !== false ? `<button class="search-trigger" data-action="open-palette" aria-label="Search" aria-keyshortcuts="Control+K Meta+K">${icon('search', 'sm')}<span>Search or jump to…</span><kbd>${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'} K</kbd></button>` : ''}
+          ${System.feature_flags?.tutorial !== false ? `<div class="menu-wrap"><button class="icon-btn" data-action="toggle-menu" data-menu="help-menu" aria-haspopup="menu" aria-label="Help and tutorial" title="Help">${icon('help')}</button>
+            <div id="help-menu" class="menu hidden" role="menu">
+              <button role="menuitem" data-action="start-tour">${icon('compass', 'sm')} Take the tour</button>
+              <button role="menuitem" data-action="open-shortcuts">${icon('keyboard', 'sm')} Keyboard shortcuts</button>
+              ${admin && System.feature_flags?.help_menu !== false ? `<button role="menuitem" data-action="open-help">${icon('lifebuoy', 'sm')} Help &amp; documentation</button>` : ''}
+            </div></div>` : ''}
+          ${System.feature_flags?.notifications !== false ? `<div class="menu-wrap">
+            <button class="icon-btn" data-action="toggle-notices" aria-label="Notifications" aria-haspopup="dialog">${icon('bell')}<span id="bell-count" class="count-badge ${Tray.unread() ? '' : 'hidden'}">${Tray.unread() > 9 ? '9+' : Tray.unread()}</span></button>
+            <div id="notice-pop" class="tray hidden" role="dialog" aria-label="Notifications"></div>
+          </div>` : ''}
+          <button class="icon-btn" data-action="toggle-theme" aria-label="Switch between light and dark" data-theme-icon>${themeIcon()}</button>
+          <div class="menu-wrap"><button class="icon-btn" style="border:0;background:none;width:auto" data-action="toggle-menu" data-menu="user-menu" aria-haspopup="menu" aria-label="Your account">${avatar(name)}</button>
+            <div id="user-menu" class="menu hidden" role="menu">
+              <div class="menu-head"><b>${escHtml(name)}</b><span>@${escHtml(user.username)} · ${escHtml(roleLabel)}</span></div>
+              <a role="menuitem" href="#/settings">${icon('settings', 'sm')} Settings</a>
+              <button role="menuitem" data-action="start-tour">${icon('compass', 'sm')} Take the tour</button>
+              <hr><button role="menuitem" class="danger" ${callAttr('handleLogout')}>${icon('logout', 'sm')} Sign out</button>
+            </div></div>
         </div>
       </header>
     </div>`;
 }
 
+function themeIcon() {
+  return icon(typeof Prefs !== 'undefined' && Prefs.resolved() === 'dark' ? 'sun' : 'moon');
+}
+
 function afterShell() {
   renderBanners();
   Live.start();
+  Tray.badge();
+  if (typeof Overlays !== 'undefined') Overlays.refresh();
+  if (typeof Onboarding !== 'undefined') Onboarding.maybeAfterShell();
 }
 
 window.handleLogout = async function () {
   Live.stop();
   await authApi.logout();
   navigate('#/login');
-};
-
-// ── Global search (classes, students, users) ──────────────────────────
-
-let _searchData = null, _searchSeq = 0, _searchSel = -1;
-window.globalSearch = async function (q) {
-  const box = document.getElementById('search-results');
-  if (!box) return;
-  q = q.trim().toLowerCase();
-  if (q.length < 2) { box.classList.add('hidden'); return; }
-  const seq = ++_searchSeq;
-  if (!_searchData) {
-    const admin = isAdminUser(Shell.user);
-    const [classes, students, users] = await Promise.all([
-      (admin ? adminApi.listClasses() : classesApi.list()).catch(() => []),
-      admin ? studentsApi.list('').catch(() => []) : Promise.resolve([]),
-      admin ? adminApi.listUsers().catch(() => []) : Promise.resolve([]),
-    ]);
-    _searchData = { classes, students, users };
-    setTimeout(() => { _searchData = null; }, 60000);
-  }
-  if (seq !== _searchSeq) return;
-  const d = _searchData;
-  const hits = [
-    ...d.classes.filter(c => `${c.name} ${c.code} ${c.course_code || ''} ${c.classroom_code || ''}`.toLowerCase().includes(q))
-      .slice(0, 6).map(c => ({ href: `#/class?id=${c.id}`, label: c.name, sub: c.code, kind: 'Classroom', ic: 'school' })),
-    ...d.students.filter(s => `${s.student_name} ${s.roll_number}`.toLowerCase().includes(q))
-      .slice(0, 6).map(s => ({ href: `#/student?id=${s.id}`, label: s.student_name, sub: s.roll_number, kind: 'Student', ic: 'user' })),
-    ...d.users.filter(u => `${u.full_name || ''} ${u.username}`.toLowerCase().includes(q))
-      .slice(0, 4).map(u => ({ href: '#/admin/users', label: u.full_name || u.username, sub: '@' + u.username, kind: 'Account', ic: 'userCog' })),
-  ];
-  _searchSel = -1;
-  box.innerHTML = hits.length ? hits.map(h => `<a href="${h.href}" data-action="hide" data-target="#search-results">${icon(h.ic, 'sm')}<span>${escHtml(h.label)} <span class="text-muted text-sm">${escHtml(h.sub)}</span></span><span class="kind">${h.kind}</span></a>`).join('')
-    : `<div class="empty" style="padding:16px">No matches</div>`;
-  box.classList.remove('hidden');
-};
-window.globalSearchKey = function (e) {
-  const links = [...document.querySelectorAll('#search-results a')];
-  if (!links.length) return;
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    e.preventDefault();
-    _searchSel = (_searchSel + (e.key === 'ArrowDown' ? 1 : -1) + links.length) % links.length;
-    links.forEach((a, i) => a.classList.toggle('sel', i === _searchSel));
-  } else if (e.key === 'Enter') {
-    (links[_searchSel] || links[0]).click();
-    location.hash = (links[_searchSel] || links[0]).getAttribute('href');
-  } else if (e.key === 'Escape') {
-    document.getElementById('search-results').classList.add('hidden');
-  }
 };
 
 // ── Live updates (Server-Sent Events) ─────────────────────────────────
@@ -404,15 +509,14 @@ const Live = {
       try { ev = JSON.parse(m.data); } catch { return; }
       if (ev.type === 'changed') this.changed(ev.topics || []);
       else if (ev.type === 'alert') { showToast(ev.message, ev.level === 'error' ? 'error' : ev.level, { keep: ev.level === 'error' }); addNotice(ev.message, ev.level); }
+      else if (ev.type === 'update') { loadSystemStatus(); }
       else if (ev.type === 'status') {
         if ('test_mode' in ev) { System.test_mode = ev.test_mode; }
         if ('db' in ev) System.db = ev.db;
         renderBanners();
       } else if (ev.type === 'session_ended') {
         this.stop();
-        clearToken();
-        showToast('Your session ended. Please sign in again.', 'error');
-        navigate('#/login');
+        Overlays.sessionEnded(ev.reason);
       }
     };
     this.es.onerror = () => {               // the browser reconnects by itself; stop if signed out
@@ -422,6 +526,8 @@ const Live = {
   stop() { if (this.es) { this.es.close(); this.es = null; } },
   changed(topics) {
     const want = ROUTE_TOPICS[getRoute()];
+    if (topics.some(t => ['firmware_deployments', 'deployment_targets'].includes(t))) loadSystemStatus();   // an update may have started or finished
+    if (topics.includes('feature_flags')) loadSystemStatus();
     if (!want || !topics.some(t => want.includes(t))) return;
     this.pending = true;
     this.schedule(600);
@@ -434,7 +540,7 @@ const Live = {
     if (Date.now() - this.lastUser < 4000) return true;
     if (document.querySelector('.modal:not(.hidden)')) return true;
     const a = document.activeElement;
-    if (a && (a.matches('input, textarea, select, [contenteditable]') && !a.matches('#global-search'))) return true;
+    if (a && (a.matches('input, textarea, select, [contenteditable]'))) return true;
     if (String(window.getSelection?.() || '').length) return true;
     return [...document.querySelectorAll('#app input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=file]), #app textarea')]
       .some(el => el.value !== el.defaultValue && !el.dataset.live);
@@ -507,10 +613,8 @@ Object.assign(Actions, {
   'goto': (el) => { location.hash = el.dataset.href; },
   'back': (el, e) => { e.preventDefault(); history.back(); },
   'scroll-to': (el) => _target(el)?.scrollIntoView({ behavior: 'smooth' }),
-  'toggle-theme': () => toggleTheme(),
+  'toggle-theme': (el, e) => toggleTheme(e),
   'toggle-notices': (el, e) => toggleNotices(e),
-  'global-search': (el) => globalSearch(el.value),
-  'global-search-key': (el, e) => globalSearchKey(e),
   'slot-remove': (el) => { window.formScheduleSlots.splice(Number(el.dataset.i), 1); window.formRenderScheduleRows(); },
   'slot-field': (el) => { window.formScheduleSlots[Number(el.dataset.i)][el.dataset.field] = el.value; },
   'td-export': (el) => testModeApi.download('dataset', el.dataset.name).catch(e => showToast(e.message, 'error')),
@@ -525,7 +629,7 @@ function askDialog({ title, body = '', fields = [], confirm = 'Confirm', danger 
     m.innerHTML = `<div class="modal-backdrop"></div>
       <form class="modal-content card" novalidate role="dialog" aria-modal="true" aria-label="${escHtml(title)}">
         <h2>${escHtml(title)}</h2>
-        ${body ? `<p class="text-muted">${body}</p>` : ''}
+        ${body ? `<div class="text-muted" style="margin-bottom:12px">${body}</div>` : ''}
         ${fields.map((f, i) => `<div class="form-group"><label for="dlg-${i}">${escHtml(f.label)}</label>
           <input id="dlg-${i}" name="${escHtml(f.name)}" type="${escHtml(f.type || 'text')}" autocomplete="${escHtml(f.autocomplete || 'off')}"
             placeholder="${escHtml(f.placeholder || '')}"></div>`).join('')}

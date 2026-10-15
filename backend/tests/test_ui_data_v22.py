@@ -10,7 +10,7 @@ def test_users_list_shows_activity_classes_and_sign_in(client):
     uid, _ = make_user(client, h, "prof9")
     make_class(client, h, teacher_ids=[uid])
     rows = {u["username"]: u for u in client.get("/api/admin/users", headers=h).json()}
-    assert rows["admin"]["signed_in"] is True and rows["admin"]["last_active_at"]
+    assert rows["impress.default.superAdmin"]["signed_in"] is True and rows["impress.default.superAdmin"]["last_active_at"]
     assert rows["prof9"]["class_count"] == 1
 
 

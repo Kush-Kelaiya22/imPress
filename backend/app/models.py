@@ -22,6 +22,13 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=istnow)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # v2.2: what people see (the username is what they sign in with), faculty or TA (a visual
+    # distinction only), a first-sign-in flag, when onboarding was completed, saved preferences.
+    display_name = Column(String(64), default="")
+    designation = Column(String(8), default="faculty")           # "faculty" | "ta" (teacher accounts)
+    must_change_password = Column(Boolean, default=False)        # temporary credentials: "Pending setup"
+    onboarded_at = Column(DateTime, nullable=True)
+    preferences = Column(JSON, default=dict)
 
     # Relationships
     classes = relationship("ClassSession", back_populates="teacher", lazy="raise", foreign_keys="ClassSession.teacher_id")
@@ -82,6 +89,8 @@ class ClassSession(Base):
     meeting_schedule = Column(JSON, default=list)  # [{day, start, end}, ...]
     location = Column(String(128), default="")  # "Room 301, Block B"
     capacity = Column(Integer, default=0)
+    icon = Column(String(24), default="")                        # v2.2: one of CLASS_ICONS
+    color = Column(String(7), default="")                        # v2.2: "#RRGGBB"
     classroom_code = Column(String(32), unique=True, nullable=True, index=True)  # physical room label, e.g. "RM-201"
 
     teacher = relationship("User", back_populates="classes", foreign_keys=[teacher_id], lazy="selectin")
@@ -504,6 +513,29 @@ class ActivityLog(Base):
     user = relationship("User")
 
 
+# ── Deleted accounts (v2.2): a trash with a 30-day undo ──────────────────
+
+class DeletedUser(Base):
+    """A deleted account, kept so it can be restored until `purge_after` (30 days).
+    A snapshot, not a foreign key: the account's row is really gone from `users`."""
+    __tablename__ = "deleted_users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    original_id = Column(Integer, nullable=True)
+    username = Column(String(64), nullable=False, index=True)
+    email = Column(String(128), nullable=False)
+    hashed_password = Column(String(256), nullable=False)
+    full_name = Column(String(128), default="")
+    display_name = Column(String(64), default="")
+    role = Column(String(16), default="teacher")
+    designation = Column(String(8), default="faculty")
+    preferences = Column(JSON, default=dict)
+    created_at = Column(DateTime, nullable=True)
+    deleted_at = Column(DateTime, default=istnow)
+    deleted_by = Column(String(64), default="")                  # a name, not a key: the deleter may be deleted too
+    purge_after = Column(DateTime, nullable=False)
+
+
 # ── Dual control (v2.2) ────────────────────────────────────────────────
 
 class Approval(Base):
@@ -551,4 +583,36 @@ class UserSession(Base):
     ip = Column(String(45), default="")
     user_agent = Column(String(255), default="")
     revoked = Column(Boolean, default=False)
+    boot_id = Column(String(16), default="")               # the server run that issued it (1PSID)
+    end_reason = Column(String(16), default="")            # disabled | signed_out, once revoked
     user = relationship("User")
+
+
+# ── Feature flags and the policy log (v2.2) ───────────────────────────
+
+class FeatureFlag(Base):
+    """A feature an administrator can switch on or off at run time (services/features.py). Absent row = the default."""
+    __tablename__ = "feature_flags"
+
+    name = Column(String(64), primary_key=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+    min_rank = Column(Integer, nullable=False, default=1)       # the least authority that may change it again
+    set_rank = Column(Integer, nullable=False, default=1)       # authority of whoever set it last
+    set_by = Column(String(96), default="")
+    set_at = Column(DateTime, default=istnow)
+    prev = Column(JSON, nullable=True)                           # what TrustedInstaller replaced, to restore it later
+
+
+class PolicyLog(Base):
+    """Who changed which policy or feature, when, and from what to what (administrator, super admin, root,
+    TrustedInstaller). Append-only."""
+    __tablename__ = "policy_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    at = Column(DateTime, default=istnow, index=True)
+    flag = Column(String(64), nullable=False, index=True)
+    old = Column(String(64), default="")
+    new = Column(String(64), default="")
+    actor = Column(String(96), default="")
+    actor_rank = Column(Integer, default=1)
+    note = Column(String(240), default="")

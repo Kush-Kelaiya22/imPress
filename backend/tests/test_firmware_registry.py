@@ -54,7 +54,7 @@ def test_slot_sizes_match_the_partition_tables():
 # ── Validation ──────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("make,needle", [
-    (lambda: os.urandom(4096), "not an ESP-IDF firmware image"),
+    (lambda: b"\x00" + os.urandom(4095), "not an ESP-IDF firmware image"),
     (lambda: b"\xe9" + b"\x00" * 100, "too small"),
     (lambda: make_image()[:200], "too small"),
     (lambda: make_image(chip_id=5), "chip id 5"),

@@ -418,6 +418,67 @@ Super admins only (`users.assign_role`). See [debug mode and test data](../guide
 
 The `test-data` routes answer `409 TEST_MODE_OFF` while debug mode is off.
 
+## Accounts, preferences and platform (v2.2)
+
+Accounts start with a **temporary password** and are *pending setup* until their owner chooses their own: until then every
+route except `/api/auth/me`, `change-password`, `logout`, `preferences`, `onboarding`, `session` and `session-status`
+answers `403 PASSWORD_CHANGE_REQUIRED`. The password rule for administrators and faculty: at least 8 characters, one
+lower-case and one upper-case letter, one number and one special character; super admins need 10 characters and may keep a
+simpler rule otherwise. A session that has ended says why in the `X-Session-Code` header: `idle`, `hard`, `disabled`
+(the account was disabled while signed in) or `restart` (the server restarted; session ids carry the identity of the server
+run that issued them, called the 1PSID).
+
+### Own account: `/api/auth`
+
+| Method & path | Guard | Body / params | Notes |
+|---|---|---|---|
+| `GET /api/auth/preferences` | session | – | the saved preferences, defaults filled in (theme, accent, motion, contrast, scale, colour-vision mode, density, sidebar, advanced mode, dashboard layout, date and time formats, week start, number format, landing page) |
+| `PUT /api/auth/preferences` | session | any subset | validated; unknown keys or values → 422. `advanced` is kept only for administrators |
+| `POST /api/auth/onboarding` | session | `{display_name, theme}` | finishes the welcome set-up; needs the password to have been changed first (`409 PASSWORD_CHANGE_REQUIRED`) |
+
+### Accounts: `/api/admin/users` (additions)
+
+| Method & path | Guard | Body / params | Notes |
+|---|---|---|---|
+| `POST /api/admin/users` | admin | `{username, email, password?, full_name, display_name, role, designation}` | no `password`: one is generated and returned once as `temporary_password`. `role` is `teacher` or `admin` (granting `admin` needs a super admin); `super_admin` → 403 `SUPER_ADMIN_VIA_CONSOLE`. `designation` is `faculty` or `ta` |
+| `POST /api/admin/users/{id}/designation` | admin | `{designation: faculty\|ta}` | a teaching assistant has faculty permissions; only faculty accounts can be TAs |
+| `GET /api/admin/users/deleted` | admin | – | the trash: `{retention_days: 30, accounts: [{id, username, deleted_at, deleted_by, days_left, ...}]}` |
+| `POST /api/admin/users/deleted/{id}/restore` | admin | – | restores the account (administrator accounts need a super admin); the name must still be free (`409`) |
+| `DELETE /api/admin/users/deleted/{id}` | admin | – | removes it for good → `204` |
+| `GET /api/admin/presence` | admin | – | who is signed in now, last activity, recently active accounts and the number of accounts |
+| `GET /api/admin/users/{id}/activity-summary` | admin | `?days=30` (1-180) | per-day counts, counts by kind, a 7x24 heat map, sign-in count and the latest events: what the activity graphs draw |
+
+### Features, requirements, traffic and risk: `/api/admin`
+
+| Method & path | Guard | Notes |
+|---|---|---|
+| `GET /api/admin/features` | features.manage | every feature with `enabled`, `set_by`, `set_at`, `set_rank` and `min_rank` (the least authority that may change it) |
+| `PUT /api/admin/features/{name}` | features.manage | `{enabled?, min_rank?}`. A change needs at least the authority of whoever set it last and of `min_rank`; `min_rank` can only be raised up to the caller's own level. Refused → `403 FEATURE_LOCKED` |
+| `GET /api/admin/features/log` | features.manage | `?flag=&limit=`: who changed what, when (administrator, super admin, root, TrustedInstaller) |
+| `GET /api/admin/system/requirements` | features.manage | what TrustedInstaller found at start-up: each check, its minimum, and which features it switched off |
+| `GET /api/admin/traffic` | sessions.read | unusual-traffic alerts (DoS or DDoS: origin, pages, rate, limit, account), the busiest origins and the limits per kind of endpoint. Nothing is blocked |
+| `GET /api/admin/risk` | sessions.read | `{account id: {score 0-100, label, reasons}}`; labels *Safe*, *Potentially Unsafe*, *Likely Compromised* |
+| `POST /api/admin/users/{id}/end-sessions` | **super_admin** | signs the account out everywhere (administrators cannot) |
+
+### Search and backups
+
+| Method & path | Guard | Notes |
+|---|---|---|
+| `GET /api/search` | session | `?q=` (2+ characters): results grouped by kind, limited to what the caller may see (faculty: their own classes and the students they registered; administrators: accounts and devices too) |
+| `GET /api/admin/backups` | admin | named and rolling backups of the database and system state |
+| `POST /api/admin/backups` | admin | `{name}`: save one now |
+| `GET /api/admin/backups/{kind}/{name}` | admin | what is in it |
+| `POST /api/admin/backups/{kind}/{name}/restore` | admin | restore it (the current database is kept aside; the hardened profile needs an approval) |
+| `DELETE /api/admin/backups/{kind}/{name}` | admin | delete a saved backup |
+
+### Status for the web app
+
+`GET /api/system/status` (public) also returns `release` (with the patch number), `banners` (the integrity-protection and test-mode
+banners to show, in order), `integrity_protection`, `locked`, `updating` (`active` while a firmware rollout is running, with the message to show),
+and `feature_flags` (every feature, on or off).
+
+---
+
 ## Misc
 
 | Method & path | Guard | Notes |

@@ -7,7 +7,7 @@ import pytest
 from conftest import PASSWORD, auth, login, make_user
 
 
-def _try(client, username="admin", password="wrong-password"):
+def _try(client, username="impress.default.superAdmin", password="wrong-password"):
     return client.post("/api/auth/login", json={"username": username, "password": password})
 
 
@@ -82,9 +82,12 @@ def test_wrong_current_password_is_throttled_too(client, clock):
 
 
 @pytest.mark.parametrize("password,why", [
-    ("Short-1", "at least 10"),
+    ("Short-1", "at least 8"),
     ("password123", "too common"),
-    ("aaaaaaaaaaaa", "too few"),
+    ("aaaaaaaaaaaa", "upper-case"),
+    ("AAAAAAAAAAAA", "lower-case"),
+    ("Aaaaaaaaaaaa", "number"),
+    ("Aaaaaaaaaaa1", "special character"),
 ])
 def test_weak_new_passwords_are_refused(client, password, why):
     su = auth(login(client))

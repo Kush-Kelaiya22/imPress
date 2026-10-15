@@ -51,6 +51,8 @@ A lower ring number does **not** inherit everything automatically: each role hol
 | `students.manage` | ✓ | ✓ | ✓ | register, import and enrol students (rosters of classes they may access: primary teacher or co-faculty, #146); **edit or deactivate** a student only within the *student scope* below |
 | `students.read` | ✓ | ✓ | ✓ | look up students |
 | `audit.read` | – | ✓ | ✓ | activity log |
+| `features.manage` | – | ✓ | ✓ | switch features on and off, read the policy log |
+| `sessions.read` | – | ✓ | ✓ | traffic alerts and account risk badges |
 | `classes.manage_all` | – | ✓ | ✓ | every class: create for others, assign faculty, import/export, delete |
 | `courses.manage` | – | ✓ | ✓ | create, edit, delete courses; see inactive ones |
 | `devices.manage` | – | ✓ | ✓ | device access, keys, links and verification |
@@ -63,6 +65,7 @@ A lower ring number does **not** inherit everything automatically: each role hol
 | `users.manage` | – | ✓ | ✓ | create, edit, deactivate, reactivate, reset password, delete staff accounts |
 | `users.read` | – | ✓ | ✓ | list staff accounts |
 | `firmware.override_window` | – | – | ✓ | deploy to hubs and gateways outside classroom maintenance windows (#128) |
+| `sessions.end_any` | – | – | ✓ | sign any account out of every session |
 | `users.assign_role` | – | – | ✓ | grant or remove any role |
 | `users.manage_privileged` | – | – | ✓ | manage super admin accounts |
 

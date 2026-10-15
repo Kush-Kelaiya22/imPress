@@ -126,6 +126,8 @@ USER_TABLE_PERMISSION = {
     "firmware_deployments": "firmware.deploy",
     "deployment_targets": "firmware.deploy",
     "schedule_sources": "classes.manage_all",
+    "feature_flags": "features.manage",
+    "policy_log": "features.manage",
 }
 SYSTEM_ONLY = frozenset(SEAL_TABLES) | {"schema_migrations"}
 
@@ -453,7 +455,8 @@ def install(engine, metadata, session_class) -> None:
             _check_user_rows(session, p)
 
 
-ACCOUNT_SELF_FIELDS = frozenset({"full_name", "hashed_password", "updated_at"})
+ACCOUNT_SELF_FIELDS = frozenset({"full_name", "display_name", "hashed_password", "must_change_password", "preferences",
+                                 "onboarded_at", "updated_at"})
 
 
 def _check_user_rows(session, p: Principal) -> None:

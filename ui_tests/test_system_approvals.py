@@ -7,10 +7,7 @@ from conftest import login
 
 def test_clear_data_needs_a_second_super_admin(server, page):
     base, api = server
-    api("/api/admin/users", {"username": "boss2", "email": "boss2@example.edu", "password": "Passw0rd!x",
-                             "full_name": "Boss Two", "role": "teacher"})
-    boss = next(u["id"] for u in api("/api/admin/users") if u["username"] == "boss2")
-    api(f"/api/admin/users/{boss}/role", {"role": "super_admin"})
+    api.make_super_admin("boss2", "Passw0rd!x")
     api("/api/admin/classes", {"name": "Doomed class", "code": "DOOM101"})
 
     login(page, base)
@@ -19,9 +16,11 @@ def test_clear_data_needs_a_second_super_admin(server, page):
     expect(page.locator("h1", has_text="System")).to_be_visible()
 
     # the policy is shown, and there is nothing to edit
+    page.click('[data-tab="policy"]')
     expect(page.locator("code", has_text="dual_control.enabled")).to_be_visible()
     assert page.locator("input[name*=flag]").count() == 0
 
+    page.click('[data-tab="approvals"]')
     # request: step-up with the password
     page.click('[data-action="sys-request"][data-kind="system.clear.class_data"]')
     page.fill('input[name="password"]', "wrong")

@@ -110,9 +110,19 @@ def _sha256_hex(data: str) -> str:
     return hashlib.sha256(data.encode()).hexdigest()
 
 
+# 1PSID, the first-party session identifier (v2.2): every session id carries the identity of the server run that
+# issued it. The identity is new at every start, so a restart ends every session and a token copied earlier is dead.
+BOOT_ID = secrets.token_hex(4)
+
+
 def generate_session_token() -> str:
-    """Generate an opaque session token prefixed for easy identification."""
-    return "impress_" + secrets.token_urlsafe(48)
+    """An opaque session id: 'impress_' + this run's identity + 48 random bytes."""
+    return f"impress_{BOOT_ID}" + secrets.token_urlsafe(48)
+
+
+def psid_fingerprint(raw_token: str) -> str:
+    """What the person may see of their 1PSID: a short fingerprint, never the id."""
+    return _sha256_hex(raw_token)[:12]
 
 
 async def create_session(
@@ -147,6 +157,7 @@ async def create_session(
         ip=ip,
         user_agent=user_agent,
         revoked=False,
+        boot_id=BOOT_ID,
     )
     db.add(session)
     await db.commit()
@@ -154,15 +165,19 @@ async def create_session(
     return session, raw_token
 
 
-async def revoke_user_sessions(db: AsyncSession, user_id: int, keep_id: Optional[int] = None) -> None:
+async def revoke_user_sessions(db: AsyncSession, user_id: int, keep_id: Optional[int] = None,
+                               reason: Optional[str] = None) -> None:
     """Revoke every session of a user (except `keep_id`), in the caller's
     transaction (#118). Deactivation, deletion, password and role changes
     call this so no token issued before the change still works, even after a
     later reactivation."""
+    if reason is None:                           # why it ended: the web app explains a disabled account properly
+        who = await db.get(User, user_id)
+        reason = "disabled" if who is not None and not who.is_active else "signed_out"
     q = update(UserSession).where(UserSession.user_id == user_id, UserSession.revoked.is_(False))
     if keep_id is not None:
         q = q.where(UserSession.id != keep_id)
-    await db.execute(q.values(revoked=True))
+    await db.execute(q.values(revoked=True, end_reason=reason))
 
 
 async def _load_session_by_hash(db: AsyncSession, token_hash: str) -> Optional[UserSession]:
@@ -170,10 +185,7 @@ async def _load_session_by_hash(db: AsyncSession, token_hash: str) -> Optional[U
     result = await db.execute(
         select(UserSession).where(UserSession.token_hash == token_hash)
     )
-    session = result.scalar_one_or_none()
-    if session is None or session.revoked:
-        return None
-    return session
+    return result.scalar_one_or_none()
 
 
 # ── Idle timeout: 5 minutes, 30 for faculty during their classes ─────
@@ -204,8 +216,10 @@ async def in_class_now(db: AsyncSession, user: User, now) -> bool:
 
 
 async def idle_limit_minutes(db: AsyncSession, user: User, now) -> int:
-    from .policy import is_staff
-    if is_staff(user) and await in_class_now(db, user, now):
+    # Only faculty get the longer limit while their class is in session; administrators and super admins
+    # time out after 5 minutes whatever the timetable says (v2.2).
+    from .policy import is_faculty
+    if is_faculty(user) and user.is_active and await in_class_now(db, user, now):
         return max(settings.SESSION_CLASS_IDLE_MINUTES, settings.SESSION_IDLE_MINUTES)
     return settings.SESSION_IDLE_MINUTES
 
@@ -227,6 +241,10 @@ async def validate_session(
     session = await _load_session_by_hash(db, token_hash)
     if session is None:
         return None, None, "invalid"
+    if session.revoked:
+        return session, None, "disabled" if session.end_reason == "disabled" else "invalid"
+    if session.boot_id != BOOT_ID:               # issued by an earlier run of the server (1PSID)
+        return session, None, "restart"
 
     now = istnow()
 
@@ -236,8 +254,10 @@ async def validate_session(
 
     user_result = await db.execute(select(User).where(User.id == session.user_id))
     user = user_result.scalar_one_or_none()
-    if user is None or not user.is_active:
+    if user is None:
         return session, None, "invalid"
+    if not user.is_active:
+        return session, None, "disabled"
 
     # Idle timeout: 5 minutes, 30 while one of the user's classes is in session
     idle_delta = now - session.last_activity_at
@@ -276,6 +296,27 @@ async def live_sessions(db: AsyncSession, user: User, now) -> list[UserSession]:
     return [r for r in rows if now - r.last_activity_at <= limit]
 
 
+# What an account with temporary credentials may call: enough to sign in, set itself up, and sign out.
+PENDING_SETUP_PATHS = frozenset({
+    "/api/auth/me", "/api/auth/change-password", "/api/auth/logout", "/api/auth/preferences",
+    "/api/auth/onboarding", "/api/auth/password-strength", "/api/auth/session", "/api/auth/session-status",
+    "/api/auth/activity"})
+
+
+_ENDED = {"hard": ("SESSION_EXPIRED", "hard"), "idle": ("SESSION_EXPIRED", "idle"),
+          "disabled": ("ACCOUNT_DISABLED", "disabled"), "restart": ("SERVER_RESTARTED", "restart")}
+
+
+def _raise_for(error, user, fallback: HTTPException) -> None:
+    """The right 401 for a session that does not hold: the X-Session-Code tells the web app what to say."""
+    if error in _ENDED:
+        detail, code = _ENDED[error]
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail,
+                            headers={"WWW-Authenticate": "Bearer", "X-Session-Code": code})
+    if error == "invalid" or user is None:
+        raise fallback
+
+
 async def get_current_user(
     request: Request,
     token: str = Depends(oauth2_scheme),
@@ -296,25 +337,18 @@ async def get_current_user(
 
     session, user, error = await validate_session(db, token, refresh_activity=False)
 
-    if error == "hard":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="SESSION_EXPIRED",
-            headers={"WWW-Authenticate": "Bearer", "X-Session-Code": "hard"},
-        )
-    if error == "idle":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="SESSION_EXPIRED",
-            headers={"WWW-Authenticate": "Bearer", "X-Session-Code": "idle"},
-        )
-    if error == "invalid" or user is None:
-        raise credentials_exception
+    _raise_for(error, user, credentials_exception)
 
     # Attach session to request.state for downstream use (e.g., /session endpoint)
     request.state.session = session
+    request.state.user_id = user.id                      # read by the traffic monitor
     from .dbgateway import act_as, as_user
     act_as(as_user(user))                    # what this request may write (v2.2 database gateway)
+    if user.must_change_password and request.url.path not in PENDING_SETUP_PATHS:
+        # Temporary credentials (v2.2): the account can do nothing but finish setting itself up.
+        raise HTTPException(status.HTTP_403_FORBIDDEN, {
+            "code": "PASSWORD_CHANGE_REQUIRED",
+            "message": "Choose your own password to finish setting up this account."})
     return user
 
 
@@ -334,20 +368,7 @@ async def get_current_user_light(
 
     session, user, error = await validate_session(db, token, refresh_activity=False)
 
-    if error == "hard":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="SESSION_EXPIRED",
-            headers={"WWW-Authenticate": "Bearer", "X-Session-Code": "hard"},
-        )
-    if error == "idle":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="SESSION_EXPIRED",
-            headers={"WWW-Authenticate": "Bearer", "X-Session-Code": "idle"},
-        )
-    if error == "invalid" or user is None:
-        raise credentials_exception
+    _raise_for(error, user, credentials_exception)
 
     from .dbgateway import act_as, as_user
     act_as(as_user(user))

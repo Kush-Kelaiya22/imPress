@@ -57,7 +57,7 @@ def test_dialogs_spring_in_and_land(server, page):
     login(page, base)
     page.wait_for_url("**/#/admin*")
     page.goto(base + "/#/admin/users")
-    page.click("text=Invite user")
+    page.click("text=Add account")
     assert _anim(page, "#create-user-modal .modal-content") == "m3-dialog"
     page.wait_for_timeout(700)
     assert page.evaluate("getComputedStyle(document.querySelector('#create-user-modal .modal-content')).opacity") == "1"
@@ -70,14 +70,14 @@ def test_buttons_press_and_morph(server, page):
     page.wait_for_url("**/#/admin*")
     page.goto(base + "/#/admin/users")
     _settled(page)
-    btn = page.locator("button", has_text="Invite user")
+    btn = page.locator('button[data-action="show"][data-target="#create-user-modal"]')
     box = btn.bounding_box()
     page.mouse.move(box["x"] + 5, box["y"] + 5)
     page.mouse.down()
     page.wait_for_timeout(450)
     pressed = page.evaluate("(el) => { const c = getComputedStyle(el); return [c.transform, c.borderRadius]; }", btn.element_handle())
     page.mouse.up()
-    assert pressed[0].startswith("matrix(0.96") and pressed[1] == "8px", pressed
+    assert pressed[0].startswith("matrix(0.96") and pressed[1] == "7px", pressed
 
 
 @MOTION
@@ -103,5 +103,5 @@ def test_reduced_motion_turns_it_all_off(server, page):          # the suite's d
     assert page.evaluate("document.querySelector('#app').hasAttribute('data-enter')") is False
     assert _anim(page, ".stat-card") == "none"
     page.goto(base + "/#/admin/users")
-    page.click("text=Invite user")
+    page.click("text=Add account")
     assert _anim(page, "#create-user-modal .modal-content") == "none"

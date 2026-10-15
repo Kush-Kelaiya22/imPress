@@ -45,7 +45,7 @@ def _policy_allows(flag: str, what: str):
 @router.get("/test-mode")
 async def get_state(user: User = Depends(SUPER)):
     return {**test_mode.state(), "test_password": test_mode.test_password(),
-            "policy": {"allowed": gpc.get("test_mode.allowed"), "export_allowed": gpc.get("test_mode.export_allowed"),
+            "policy": {"allowed": gpc.get("test_mode.allowed"), "forced": gpc.get("test_mode.forced"), "export_allowed": gpc.get("test_mode.export_allowed"),
                        "pending_ttl_hours": gpc.get("test_mode.pending_ttl_hours"),
                        "dataset_ttl_days": gpc.get("test_mode.dataset_ttl_days")}}
 

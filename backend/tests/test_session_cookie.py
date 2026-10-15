@@ -11,7 +11,7 @@ CSRF = {"X-Impress-Request": "1"}
 
 
 def _browser_login(client):
-    r = client.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
+    r = client.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "admin123"})
     assert r.status_code == 200
     return r
 
@@ -24,7 +24,7 @@ def test_login_sets_httponly_strict_cookie(client):
 
 def test_cookie_authenticates_reads(client):
     _browser_login(client)
-    assert client.get("/api/auth/me").json()["username"] == "admin"
+    assert client.get("/api/auth/me").json()["username"] == "impress.default.superAdmin"
 
 
 def test_cookie_change_without_csrf_header_refused(client):

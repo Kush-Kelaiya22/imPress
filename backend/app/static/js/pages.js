@@ -22,6 +22,10 @@ function classStatus(c) {
 }
 
 function classGlyph(c) {
+  if (c.icon || c.color) {                                   // chosen by whoever made the class (an icon and a colour)
+    const col = c.color || '';
+    return `<span class="class-glyph custom" style="${col ? `background:color-mix(in srgb, ${col} 16%, var(--surface));color:${col}` : ''}">${icon(c.icon || 'book')}</span>`;
+  }
   const n = `${c.course_name || c.name}`.toLowerCase();
   const ic = /program|software|code/.test(n) ? 'code' : /data|algorithm|statist/.test(n) ? 'chart'
     : /system|architect|embedded|micro/.test(n) ? 'cpu' : /database/.test(n) ? 'database'
