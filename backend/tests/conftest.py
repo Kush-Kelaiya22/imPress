@@ -30,6 +30,13 @@ os.environ.update({
     # TrustedInstaller's minimum hardware: a CI runner may be small, test_boot_verify.py checks the rule itself
     "IMPRESS_MIN_CORES": "1", "IMPRESS_MIN_MEMORY_MB": "1", "IMPRESS_MIN_DISK_MB": "1",
     "IMPRESS_TEMP_BACKUP_DIR": str(_TMP / "backups"),
+    # v2.2 files that live next to the program in a real install: tests use their own
+    "IMPRESS_GPC_STORE": str(_TMP / "impress.gpc.json"),
+    "IMPRESS_SESSION_FLAGS": str(_TMP / "impress.session.flags.json"),
+    "IMPRESS_FLAGS_FILE": str(_TMP / "impress.flags.json"),
+    # root's password in tests (never the shipped one): sha512("Test-Root-Password-1!")
+    "IMPRESS_ROOT_PASSWORD_SHA512": __import__("hashlib").sha512(b"Test-Root-Password-1!").hexdigest(),
+    "IMPRESS_ROOT_PASSWORD": "Test-Root-Password-1!",
 })
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -61,6 +68,10 @@ async def _reset_db():
     (_TMP / "test.state.json").unlink(missing_ok=True)
     shutil.rmtree(_TMP / "test-data", ignore_errors=True)
     shutil.rmtree(_TMP / "backups", ignore_errors=True)
+    for name in ("impress.gpc.json", "impress.session.flags.json", "impress.flags.json"):
+        (_TMP / name).unlink(missing_ok=True)
+    for stale in _TMP.glob("impress.gpc.json.tampered-*"):
+        stale.unlink(missing_ok=True)
 
 
 # Fire-and-forget DB tasks the app spawns (presence pushes, WS presence

@@ -142,6 +142,8 @@ class Screen:
         self.history: list[str] = []
         self.history_index, self.draft = 0, ""
         self.busy, self.quit, self.pending = False, False, 0
+        self.password_for: str | None = None                   # a sensitive command waiting for root's password
+        self.secret = ""
         self.commands: list[str] = list(SCREEN_COMMANDS)      # the names Tab completes (run() adds the console's)
         self.notice = "Choose an action, or type a command."
         self._measure()
@@ -216,7 +218,11 @@ class Screen:
 
     def _input_line(self) -> tuple[str, int]:
         prefix = "root> " if self.cols >= 40 else "> "
+        if self.password_for is not None:
+            prefix = "root password> " if self.cols >= 40 else "pw> "
         width = max(1, self.cols - len(prefix) - 1)
+        if self.password_for is not None:
+            self.buffer, self.cursor = "*" * len(self.secret), len(self.secret)       # never the password itself
         before = self.buffer[:self.cursor]
         offset, used = 0, sum(_cell_width(ch) for ch in before)
         while used >= width and offset < len(before):
@@ -307,6 +313,12 @@ class Screen:
         if self.pending >= 8:
             self.log("Eight commands are already queued. Wait for one to finish.")
             return None
+        from . import rootauth
+        if rootauth.is_sensitive(command):                       # root's password first, typed masked, never kept or shown
+            self.password_for, self.secret = command, ""
+            self.focus, self.buffer, self.cursor = "command", "", 0
+            self.notice = "This is a sensitive action: type root's password, Enter to run, Esc to cancel."
+            return None
         # Credentials typed into a command are not echoed or kept in history.
         sensitive = bool(re.search(r"password|secret|token|authorization", command, re.I))
         if not sensitive:
@@ -341,9 +353,28 @@ class Screen:
                 self.buffer, self.cursor = common + self.buffer[self.cursor:], len(common)
             self.log(c(DIM, "  ".join(names)))
 
+    def _password_key(self, key: str) -> str | None:
+        """Keys while root's password is being typed. Returns the command and the password (joined by \x1f) on Enter."""
+        if key in {"ESCAPE", "INTERRUPT", "EOF"}:
+            self.password_for, self.secret = None, ""
+            self.notice = "Cancelled."
+        elif key == "BACKSPACE":
+            self.secret = self.secret[:-1]
+        elif key.startswith(("TEXT:", "PASTE:")):
+            self.secret += "".join(ch for ch in key.split(":", 1)[1] if ch.isprintable())[:256]
+        elif key == "ENTER":
+            command, secret = self.password_for, self.secret
+            self.password_for, self.secret = None, ""
+            self.pending += 1
+            self.busy, self.notice = True, "Commands run in order; logs continue to update."
+            return command + "\x1f" + secret
+        return None
+
     def key(self, key: str) -> str | None:
         with self.lock:
             self.dirty.set()
+            if self.password_for is not None:
+                return self._password_key(key)
             if key in {"INTERRUPT", "EOF"}:
                 self.quit = True
             elif key == "ESCAPE":
@@ -558,12 +589,13 @@ def run(argv: list[str]) -> int:
                     }.get(code, "Type  restart  to start it again. Commands still work while it is stopped.")
             screen.log(c(YELLOW, hint))
 
-    def start_server(extra: tuple[str, ...] = ()) -> None:
+    def start_server(extra: tuple[str, ...] = (), root_password: str = "") -> None:
         read_launch()
         ready.clear()
         screen.set_title(title("starting"))
         child = subprocess.Popen([sys.executable, "-m", "app.serve", "--plain", *argv, *extra], stdin=subprocess.DEVNULL,
-                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env, bufsize=1)
+                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+                                 env={**env, "IMPRESS_ROOT_PASSWORD": root_password} if root_password else env)
         server["child"] = child
         threading.Thread(target=pump, args=(child,), daemon=True).start()
 
@@ -582,16 +614,23 @@ def run(argv: list[str]) -> int:
 
     def command_worker() -> None:
         while not stopping.is_set():
-            command = commands.get()
-            if command is None:
+            item = commands.get()
+            if item is None:
                 break
+            command, _, secret = item.partition("\x1f")
             try:
                 if command.split()[0] == "restart":
+                    from . import rootauth
                     screen.echo(command)
+                    rehash = "--rehash" in command.split()
+                    if rehash and not rootauth.check(secret):
+                        screen.log(c(RED, "Root's password is not correct: nothing was changed. [ROOT_PASSWORD_WRONG]"))
+                        screen.finish(False)
+                        continue
                     screen.log(c(DIM, "stopping the server and starting it again (the flags file is read again) ..."))
                     stop_server()
                     console.stop()                                      # it reads the policy again with its next command
-                    start_server(("--rehash",) if "--rehash" in command.split() else ())
+                    start_server(("--rehash",) if rehash else (), secret if rehash else "")
                     ready.wait(90)
                     screen.finish(ready.is_set())
                     continue
@@ -600,7 +639,7 @@ def run(argv: list[str]) -> int:
                 if stopping.is_set():
                     break
                 screen.echo(command)
-                screen.finish(console.run(command, screen.log, console_env(), screen.log_width))
+                screen.finish(console.run(command + ("\x1f" + secret if secret else ""), screen.log, console_env(), screen.log_width))
             except Exception as exc:                                    # one failed command must not end the dashboard
                 screen.log(c(RED, f"Command could not finish ({type(exc).__name__}). Check the server log and retry."))
                 screen.finish(False)

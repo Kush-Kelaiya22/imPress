@@ -12,6 +12,8 @@ still work and win over the file for that start.
   --bypass-iips      start although the integrity check failed; every page shows a warning (not in the hardened profile)
   --feature N=V      any policy flag (see `python -m app.console`, `policy show`, or docs/design/gpc.md)
   --profile P        standard (default) or hardened
+  --save             keep the feature flags given here (--test-mode, --no-ota, --feature ..., --profile) in impress.flags.json
+                     for every later start; command-line only
   --host H --port N  fixed listener: 0.0.0.0:8000 (other values are refused)
 
 They become inline policy overrides (IMPRESS_GPC); in the hardened profile an override may only tighten.
@@ -38,6 +40,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--plain", action="store_true", help="no root screen: print the log only")
     ap.add_argument("--feature", action="append", default=[], metavar="NAME=VALUE", help="set any policy flag")
     ap.add_argument("--profile", choices=("standard", "hardened"))
+    ap.add_argument("--save", action="store_true",
+                    help="write the feature flags given on this command line into impress.flags.json, so the next start "
+                         "uses them without being told (policy flags cannot be saved here: use `policy set`)")
     return ap
 
 
@@ -66,17 +71,63 @@ def effective(argv: list[str]) -> tuple[str | None, list[str]]:
     return args.profile or profile, [*from_file, *env, *overrides(args)]
 
 
+def command_line_conflicts(args: argparse.Namespace) -> list[str]:
+    out = []
+    if args.test_mode and args.no_test_mode:
+        out.append("--test-mode + --no-test-mode: test mode cannot be both forced on and removed")
+    if args.rehash and args.bypass_iips:
+        out.append("--rehash + --bypass-iips: you cannot accept the files as the reference and also skip checking them")
+    return out
+
+
+def conflict_exit(lines: list[str]) -> int:
+    """Flags that cannot work together end the program here, before anything else is checked or started."""
+    print("error: flags that conflict (FLAG_CONFLICT): imPress will not start.\n  - " + "\n  - ".join(lines)
+          + "\nChange one of them (docs/reference/errors.md#startup).", file=sys.stderr)
+    return 2
+
+
+def saveable(args: argparse.Namespace) -> dict:
+    """The feature flags on this command line, as {name: value}, for --save."""
+    out: dict = {}
+    if args.test_mode:
+        out["test_mode.forced"] = True
+    if args.no_test_mode:
+        out["test_mode.allowed"] = False
+    if args.no_ota:
+        out["ota.enabled"] = False
+    if args.profile:
+        out["profile"] = args.profile
+    for item in args.feature:
+        name, _, raw = item.partition("=")
+        out[name.strip()] = raw.strip()
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     from .banner import utf8_output
     utf8_output()
     argv = list(sys.argv[1:] if argv is None else argv)
     args = build_parser().parse_args(argv)
-    if args.test_mode and args.no_test_mode:
-        print("error: --test-mode and --no-test-mode contradict each other", file=sys.stderr)
-        return 2
-    if args.rehash and args.bypass_iips:
-        print("error: --rehash and --bypass-iips contradict each other", file=sys.stderr)
-        return 2
+    if (found := command_line_conflicts(args)):                      # first of all: nothing else matters if these fail
+        return conflict_exit(found)
+    from . import rootauth
+    if args.rehash:                                                 # accepting the files as the reference is root's alone
+        password = rootauth.obtain("Root's password to accept the current files as the reference: ")
+        if not rootauth.check(password):
+            print("error: re-hashing needs root's password" + (" (ROOT_PASSWORD_WRONG)" if password else " (ROOT_PASSWORD_REQUIRED)"),
+                  file=sys.stderr)
+            return 2
+        os.environ["IMPRESS_ROOT_PASSWORD"] = password               # the server process inherits the proof, not the screen
+    if args.save:
+        from . import flagsfile
+        try:
+            where = flagsfile.save(saveable(args))
+        except flagsfile.FlagsFileError as exc:
+            print(f"error: --save: {exc}", file=sys.stderr)
+            return 2
+        print(f"  Saved to {where}: the next start uses these without being told.", flush=True)
+        argv = [a for a in argv if a != "--save"]                    # saved once, here; the server it starts is not asked again
     from . import flagsfile
     try:
         try:
@@ -86,6 +137,14 @@ def main(argv: list[str] | None = None) -> int:
         profile, flags = effective(argv)
     except flagsfile.FlagsFileError as exc:
         print(f"error: {flagsfile.path()}: {exc}", file=sys.stderr)
+        return 2
+    from . import gpc
+    try:                                                            # contradictory flags end the program here, before anything else
+        gpc.build(profile or os.environ.get("IMPRESS_PROFILE", "standard"), ",".join(flags), None, None)
+    except gpc.PolicyConflict as exc:
+        return conflict_exit([c.text() for c in exc.conflicts])
+    except gpc.PolicyError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 2
     if not args.plain and not os.environ.get("IMPRESS_PLAIN") and sys.stdin.isatty() and sys.stdout.isatty():
         from . import rootscreen          # the screen starts (and restarts) the server and the console itself, and reads
@@ -106,13 +165,15 @@ def main(argv: list[str] | None = None) -> int:
     from .services import iips
     try:
         gpc.load(settings)
+    except gpc.PolicyConflict as exc:
+        return conflict_exit([c.text() for c in exc.conflicts])
     except gpc.PolicyError as exc:
         print(f"error: global policy: {exc}", file=sys.stderr)
         return 2
     if not os.environ.get("IMPRESS_ROOT_SCREEN"):
         banner.show()
     verdict = iips.check(enabled=bool(gpc.get("iips.enabled")), rehash=args.rehash,
-                         auto_accept=bool(gpc.get("iips.auto_accept_updates")))
+                         auto_accept=bool(gpc.get("iips.auto_accept_updates")), binding=gpc.get("iips.device_binding"))
     if iips.locked():
         print("  " + iips.violation_message() + "\n", file=sys.stderr)
         return 3

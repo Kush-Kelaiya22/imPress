@@ -78,6 +78,7 @@ The launchers never select the hardened profile and never switch debug or plain 
 | `features.disabled` | str | empty | empty | Comma-separated features switched off by root; administrators cannot switch them on (see the System page for the list). |
 | `root.allow_access` | bool | `True` | `True` | Whether the separate root console may be opened (ssh, docker exec). TrustedInstaller switches it off inside a container: use the console attached to the container instead. |
 | `iips.enabled` | bool | `True` | `True` | imPress Integrity Protection Service: refuse to start when the program's own files changed since the last baseline. |
+| `iips.device_binding` | enum (off / warn / enforce) | `warn` | `enforce` | Bind the integrity reference to this machine (its hardware identity: not the address, system version or folder). Code or a reference copied to another machine is flagged: 'warn' alerts, 'enforce' locks imPress until root re-hashes there with root's password. |
 | `iips.auto_accept_updates` | bool | `True` | `False` | When the program was updated (a different release or git commit than the one the baseline was made from), its new files become the reference by themselves instead of locking imPress. Files edited by hand under the same release still lock it. Off in the hardened profile: root accepts an update with --rehash. |
 | `traffic.monitor` | bool | `True` | `True` | Watch request rates per endpoint, address and account and alert administrators to unusual traffic. |
 

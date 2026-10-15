@@ -28,7 +28,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import ed25519
@@ -43,6 +43,63 @@ class PolicyError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class Conflict:
+    flags: tuple
+    why: str
+
+    def text(self) -> str:
+        return f"{' + '.join(self.flags)}: {self.why}"
+
+
+class PolicyConflict(PolicyError):
+    """Flags that cannot work together. Start-up stops here, before anything else is checked."""
+
+    def __init__(self, conflicts: list):
+        self.conflicts = conflicts
+        super().__init__("flags that conflict:\n  - " + "\n  - ".join(c.text() for c in conflicts))
+
+
+# (flags involved, does it hold, why it is a conflict, needs at least one of them set on purpose). A rule that needs an
+# explicit flag does not fire on defaults alone, so `--no-test-mode` still works whatever the profile's defaults are.
+RULES = [
+    (("test_mode.forced", "test_mode.allowed"), lambda v, p: v["test_mode.forced"] and not v["test_mode.allowed"],
+     "test mode is forced on, and also not allowed to exist (--test-mode with --no-test-mode)", False),
+    (("test_mode.forced", "profile=hardened"), lambda v, p: v["test_mode.forced"] and p == "hardened",
+     "the hardened profile cannot force test mode: it is for labs", False),
+    (("iips.enabled", "profile=hardened"), lambda v, p: not v["iips.enabled"] and p == "hardened",
+     "the hardened profile cannot run without integrity protection (--bypass-iips)", False),
+    (("backups.restore_requires_approval", "dual_control.enabled"),
+     lambda v, p: v["backups.restore_requires_approval"] and not v["dual_control.enabled"],
+     "a restore needs a second super admin's approval, but dual control (approvals) is off, so no restore could ever run", True),
+    (("dual_control.mfa_required", "dual_control.enabled"),
+     lambda v, p: v["dual_control.mfa_required"] and not v["dual_control.enabled"],
+     "a second factor is required for dual control, which is off", True),
+    (("audit.purge_days", "audit.min_retention_days"),
+     lambda v, p: 0 < v["audit.purge_days"] < v["audit.min_retention_days"],
+     "audit entries would be deleted sooner than the minimum they must be kept", True),
+    (("iips.device_binding", "iips.enabled"), lambda v, p: v["iips.device_binding"] == "enforce" and not v["iips.enabled"],
+     "device binding is enforced, but integrity protection (which it belongs to) is off", True),
+    (("firmware.signing_required", "ota.enabled"), lambda v, p: v["firmware.signing_required"] and not v["ota.enabled"],
+     "images must be signed, but over-the-air updates are off, so there is nothing to sign", True),
+]
+
+
+def find_conflicts(values: dict, profile: str, explicit: set) -> list:
+    """Every conflict among `values`. `explicit` names the flags somebody set on purpose (not left at the default)."""
+    found = []
+    for names, holds, why, needs_explicit in RULES:
+        real = [n for n in names if n in values]
+        if needs_explicit and not any(n in explicit for n in real):
+            continue
+        try:
+            if holds(values, profile):
+                found.append(Conflict(tuple(names), why))
+        except KeyError:
+            continue
+    return found
+
+
+@dataclass(frozen=True)
 class Flag:
     name: str
     kind: str                      # bool | int | str | enum
@@ -51,6 +108,8 @@ class Flag:
     safe: str                      # true | false | higher | lower | lower0 | order | set
     doc: str
     choices: tuple = ()
+    scope: str = "policy"            # policy: sealed store, console/System page | feature: impress.flags.json, editable by hand
+    editable_by: str = "root"        # root | super admin (the System page may change it, with step-up)
 
 
 FLAGS: dict[str, Flag] = {f.name: f for f in [
@@ -97,6 +156,10 @@ FLAGS: dict[str, Flag] = {f.name: f for f in [
          "When the program was updated (a different release or git commit than the one the baseline was made from), its "
          "new files become the reference by themselves instead of locking imPress. Files edited by hand under the same "
          "release still lock it. Off in the hardened profile: root accepts an update with --rehash."),
+    Flag("iips.device_binding", "enum", "warn", "enforce", "order",
+         "Bind the integrity reference to this machine (its hardware identity: not the address, system version or folder). "
+         "Code or a reference copied to another machine is flagged: 'warn' alerts, 'enforce' locks imPress until root re-hashes "
+         "there with root's password.", ("off", "warn", "enforce")),
     Flag("traffic.monitor", "bool", True, True, "true",
          "Watch request rates per endpoint, address and account and alert administrators to unusual traffic."),
     Flag("deadlock_prevention.enabled", "bool", True, True, "true",
@@ -119,6 +182,16 @@ FLAGS: dict[str, Flag] = {f.name: f for f in [
     Flag("firmware.signing_required", "bool", False, True, "true",
          "A site firmware signing key must be configured and unsigned images are never accepted."),
 ]}
+
+
+# Feature flags are launch choices a person may edit by hand (impress.flags.json) or change for a session (`flags set`).
+# Everything else is policy: sealed, changed only through the console or the System page, and recorded.
+FEATURE_SCOPE = ("test_mode.allowed", "test_mode.forced", "test_mode.export_allowed", "ota.enabled", "features.disabled",
+                 "traffic.monitor")
+SUPER_EDITABLE = ("integrity.forensic_copies", "integrity.before_clear_days", "test_mode.pending_ttl_hours",
+                  "test_mode.dataset_ttl_days")
+FLAGS = {n: (replace(f, scope="feature") if n in FEATURE_SCOPE else
+             replace(f, editable_by="super admin") if n in SUPER_EDITABLE else f) for n, f in FLAGS.items()}
 
 
 def _order(flag: Flag, value) -> float:
@@ -182,6 +255,11 @@ class Policy:
     sources: dict = field(default_factory=lambda: {f.name: "default" for f in FLAGS.values()})
     file: dict = field(default_factory=dict)       # serial, issued_at, key_id of the applied signed file
     problems: list = field(default_factory=list)   # a signed file that was refused (standard profile only)
+    meta: dict = field(default_factory=dict)       # per flag: who set it, when, who enforces it since when
+    notices: list = field(default_factory=list)    # events to record once the database is up (a reset store, ...)
+
+    def sources_explicit(self) -> list:
+        return [n for n, s in self.sources.items() if s != "default"]
 
 
 _current = Policy()
@@ -263,7 +341,12 @@ def parse_inline(text: str) -> dict:
 
 # ── Loading ───────────────────────────────────────────────────────────────
 
-def build(profile_env: str, inline: str, file_doc: dict | None, file_error: str | None) -> Policy:
+def _meta(by: str, at, rank: str = "", via: str = "") -> dict:
+    return {"set_by": by, "set_at": at, "enforced_by": by, "enforced_at": at, "authority": rank, "via": via}
+
+
+def build(profile_env: str, inline: str, file_doc: dict | None, file_error: str | None,
+          store: dict | None = None, session: dict | None = None, booted_at: str | None = None) -> Policy:
     if profile_env not in PROFILES:
         raise PolicyError(f"IMPRESS_PROFILE must be one of {', '.join(PROFILES)}, not {profile_env!r}")
     if file_error and profile_env == "hardened":
@@ -275,10 +358,28 @@ def build(profile_env: str, inline: str, file_doc: dict | None, file_error: str 
     for f in FLAGS.values():
         pol.values[f.name] = f.hardened if use == "hardened" else f.standard
         pol.sources[f.name] = "default"
+    from .timeutil import istnow
+    booted = booted_at or istnow().isoformat(timespec="seconds")
+    for name in FLAGS:
+        pol.meta[name] = _meta("built-in default (" + use + " profile)", None)
+    for name, e in ((store or {}).get("flags") or {}).items():              # the sealed store: set from the console or the web
+        flag = FLAGS.get(name)
+        if flag is None or flag.scope != "policy":
+            continue
+        value = coerce(flag, e["value"])
+        if pol.profile == "hardened" and not at_least_as_safe(flag, value, pol.values[name]):
+            pol.problems.append(f"The stored value of {name} would loosen the hardened profile and was ignored.")
+            continue
+        pol.values[name], pol.sources[name] = value, "policy store"
+        pol.meta[name] = {"set_by": e["set_by"], "set_at": e["set_at"], "authority": RANK_LABEL.get(e["set_rank"], ""),
+                          "via": e.get("set_via", ""), "enforced_by": e.get("enforced_by", e["set_by"]),
+                          "enforced_at": e.get("enforced_at", e["set_at"]), "note": e.get("note", "")}
     if file_doc:
         for name, raw in file_doc["flags"].items():
             pol.values[name] = coerce(FLAGS[name], raw)
             pol.sources[name] = "file"
+            pol.meta[name] = _meta(f"root-signed policy file (serial {file_doc.get('serial')})", file_doc.get("issued_at"), "root", "signed file")
+            pol.meta[name]["enforced_at"] = booted
         pol.file = {k: file_doc.get(k) for k in ("serial", "issued_at", "key_id")}
     for name, value in parse_inline(inline).items():
         if pol.profile == "hardened" and not at_least_as_safe(FLAGS[name], value, pol.values[name]):
@@ -286,11 +387,21 @@ def build(profile_env: str, inline: str, file_doc: dict | None, file_error: str 
                               "only a root-signed policy file may do that (scripts/gpc.py)")
         pol.values[name] = value
         pol.sources[name] = "inline"
-    if pol.values["test_mode.forced"] and not pol.values["test_mode.allowed"]:
-        raise PolicyError("test_mode.forced contradicts test_mode.allowed=false (--test-mode with --no-test-mode)")
-    if pol.profile == "hardened" and pol.values["test_mode.forced"]:
-        raise PolicyError("the hardened profile cannot force test mode (--test-mode is for labs)")
+        pol.meta[name] = _meta("launch flags (flags file, environment or command line)", booted, "root", "launch")
+    for name, raw in (session or {}).items():                                # `flags set`: this run only
+        flag = FLAGS.get(name)
+        if flag is None or flag.scope != "feature":
+            continue
+        pol.values[name] = coerce(flag, raw)
+        pol.sources[name] = "session"
+        pol.meta[name] = _meta("root (`flags set`, this session only)", booted, "root", "console")
+    conflicts = find_conflicts(pol.values, pol.profile, set(pol.sources_explicit()))
+    if conflicts:
+        raise PolicyConflict(conflicts)
     return pol
+
+
+RANK_LABEL = {1: "administrator", 2: "super admin", 3: "root", 4: "TrustedInstaller"}
 
 
 def _paths(settings) -> tuple[Path, Path]:
@@ -319,8 +430,12 @@ def load(settings) -> Policy:
             doc = check_signed_file(path, public, _last_serial())
         except PolicyError as exc:
             err = str(exc)
-    _file_stamp = _stamp(path)
-    pol = build(settings.PROFILE, settings.GPC, doc, err)
+    from . import gpcstore
+    store, notice = gpcstore.load()
+    _file_stamp = (_stamp(path), gpcstore.stamp())               # after load(): creating the store is not a change
+    pol = build(settings.PROFILE, settings.GPC, doc, err, store=store, session=gpcstore.session_read(), booted_at=_booted_at())
+    if notice:
+        pol.notices.append({"action": "system.policy_store_reset", "message": notice})
     if doc and doc["serial"] > _last_serial():
         _remember_serial(doc["serial"], doc["key_id"])
     _current = pol
@@ -335,8 +450,21 @@ def _stamp(path: Path):
         return None
 
 
+_booted: str | None = None
+
+
+def _booted_at() -> str:
+    """When this server run began: what `enforced_at` says for flags that came from the launch."""
+    global _booted
+    if _booted is None:
+        from .timeutil import istnow
+        _booted = istnow().isoformat(timespec="seconds")
+    return _booted
+
+
 def changed_on_disk(settings) -> bool:
-    return _stamp(_paths(settings)[0]) != _file_stamp
+    from . import gpcstore
+    return (_stamp(_paths(settings)[0]), gpcstore.stamp()) != _file_stamp
 
 
 def reload_if_changed(settings) -> tuple[bool, str | None]:
@@ -354,7 +482,8 @@ def reload_if_changed(settings) -> tuple[bool, str | None]:
         error = str(exc)
     if error:
         _set(previous)
-        _file_stamp = _stamp(_paths(settings)[0])
+        from . import gpcstore
+        _file_stamp = (_stamp(_paths(settings)[0]), gpcstore.stamp())
         return False, error
     return True, None
 
@@ -379,15 +508,29 @@ def profile() -> str:
     return _current.profile
 
 
+def take_notices() -> list:
+    """Events waiting to be written to the activity log and shown as alerts (a reset policy store, ...)."""
+    out, _current.notices[:] = list(_current.notices), []
+    return out
+
+
 def current() -> Policy:
     return _current
+
+
+def _restrictions() -> dict:
+    from . import gpcstore
+    return gpcstore.restrictions()
 
 
 def describe() -> dict:
     p = _current
     return {"profile": p.profile, "file": p.file or None, "problems": list(p.problems),
+            "restrictions": _restrictions(),
             "flags": [{"name": f.name, "value": p.values[f.name], "source": p.sources[f.name],
-                       "standard": f.standard, "hardened": f.hardened, "description": f.doc}
+                       "standard": f.standard, "hardened": f.hardened, "description": f.doc, "scope": f.scope,
+                       "editable_by": f.editable_by if f.scope == "policy" else "flags file or `flags set`",
+                       **{k: v for k, v in p.meta.get(f.name, {}).items()}}
                       for f in FLAGS.values()]}
 
 

@@ -58,10 +58,17 @@ async def purge_deleted_accounts() -> int:
     return n
 
 
+async def report_policy_notices() -> None:
+    """A policy store that was edited by hand is reset (gpcstore.load): say so, and keep the evidence in the log."""
+    for n in gpc.take_notices():
+        await report(n["message"], n["action"])
+
+
 async def maintenance_once(tick: int) -> None:
     from . import deadlock
     await deadlock.check("periodic check")
     reloaded, error = gpc.reload_if_changed(settings)
+    await report_policy_notices()
     if error:
         await report(f"A changed policy file was refused and the previous policy stays in force: {error}")
     elif reloaded:

@@ -201,9 +201,69 @@ async def clear_data(body: ClearRequest, request: Request, user: User = Depends(
 
 @router.get("/api/admin/system/policy")
 async def policy_view(user: User = Depends(require("audit.read"))):
-    """Read-only: nothing in the web app or the API changes the policy."""
+    """The effective policy, with who set each flag and who enforces it since when. Administrators read it; only root (the
+    console) and, for the few operational flags, a super admin (below) change it."""
     problems = signing.verify_manifest_if_present()
     return {**gpc.describe(), "audit": auditsink.status(), "code_manifest": problems}
+
+
+@router.get("/api/admin/system/policy/history")
+async def policy_history(flag: str | None = None, limit: int = 50, user: User = Depends(require("audit.read"))):
+    from .. import gpcstore
+    return {"history": gpcstore.history(flag, min(max(limit, 1), 200)), "restrictions": gpcstore.restrictions()}
+
+
+class PolicyChange(BaseModel):
+    value: object = None
+    note: str = ""
+    password: str
+    code: str = ""
+
+
+def _refused(exc) -> HTTPException:
+    return HTTPException(exc.status, {"code": exc.code, "message": exc.message})
+
+
+@router.put("/api/admin/system/policy/{name}")
+async def policy_set(name: str, body: PolicyChange, user: User = Depends(require("users.assign_role")),
+                     db: AsyncSession = Depends(get_db)):
+    """A super admin changes an operational flag (editable_by = super admin): password and second factor, recorded with who and
+    when, alerts the administrators. Every other flag is root's, in the console."""
+    from .. import gpcstore
+    from ..config import settings
+    await approvals.step_up(db, user, body.password, body.code)
+    try:
+        entry = gpcstore.set_flag(name, body.value, user.username, gpcstore.SUPER, "web", body.note[:200])
+    except gpcstore.PolicyRefused as exc:
+        raise _refused(exc) from None
+    gpc.load(settings)
+    await log_activity(db, "policy.set", user.id, "system", None, {"flag": True, "name": name, "value": body.value, "note": body.note[:200]})
+    await db.commit()
+    events.alert(f"{user.username} changed policy {name} to {body.value!r}.", "warning")
+    return entry
+
+
+@router.delete("/api/admin/system/policy/{name}")
+async def policy_reset(name: str, password: str, code: str = "", user: User = Depends(require("users.assign_role")),
+                       db: AsyncSession = Depends(get_db)):
+    from .. import gpcstore
+    from ..config import settings
+    await approvals.step_up(db, user, password, code)
+    try:
+        done = gpcstore.reset_flags([name], user.username, gpcstore.SUPER, "web")
+    except gpcstore.PolicyRefused as exc:
+        raise _refused(exc) from None
+    gpc.load(settings)
+    await log_activity(db, "policy.reset", user.id, "system", None, {"flag": True, "name": name})
+    await db.commit()
+    return {"reset": done}
+
+
+@router.get("/api/system/errors")
+async def error_catalogue(user: User = Depends(require("audit.read"))):
+    """The error catalogue (impress.errors.json): categories, codes, what they mean and what to do."""
+    from .. import errors
+    return {"categories": errors.categories(), "errors": errors.catalogue()}
 
 
 _csp_window = {"t": 0.0, "n": 0}

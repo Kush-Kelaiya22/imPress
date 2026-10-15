@@ -98,6 +98,7 @@ class Console(cmd.Cmd):
         self.stdout = self.out
         self.loop = asyncio.new_event_loop()
         self.failed = False
+        self.root_password: str | None = None       # given out of band by the root screen, for one command
         self._start()
 
     # ── plumbing ────────────────────────────────────────────────────────
@@ -126,9 +127,18 @@ class Console(cmd.Cmd):
     def onecmd(self, line: str):
         from fastapi import HTTPException
         from sqlalchemy.exc import SQLAlchemyError
+        from . import rootauth
         from .services.rootops import RootError
         try:
+            if rootauth.is_sensitive(line):
+                what = " ".join(line.split()[:2])
+                try:
+                    rootauth.require(f"run '{what}'", self.root_password)
+                finally:
+                    self.root_password = None                 # asked again for the next sensitive command
             return super().onecmd(line)
+        except rootauth.RootAuthError as exc:
+            self.fail(f"{exc.message} [{exc.code}]")
         except RootError as exc:
             self.fail(str(exc))
         except ValueError as exc:
@@ -289,15 +299,138 @@ class Console(cmd.Cmd):
         else:
             self.fail("backup list | save NAME | restore ID --yes")
 
-    def do_policy(self, line):
-        """policy show: the effective global policy (flags, values and where each came from). Root changes it with
-        a signed file or launch flags (scripts/gpc.py, python -m app.serve --help); it is not changed here."""
+    def _reload_policy(self) -> None:
         from . import gpc
-        if self._args(line)[:1] not in ([], ["show"]):
-            return self.fail("policy show")
-        d = gpc.describe()
-        self.say(f"profile: {d['profile']}")
-        self.say(table(d["flags"], ["name", "value", "source"]))
+        from .config import settings
+        gpc.load(settings)
+
+    def do_policy(self, line):
+        """policy show | history [FLAG] | restrictions | set NAME VALUE [--note TEXT] | reset [NAME ...]
+        The global policy: every flag, its value, who set it and who enforces it since when. `set` and `reset` change the
+        sealed policy store and ask for root's password; a super admin may change only the operational flags, from the
+        System page. Editing impress.gpc.json by hand does not work: it fails its seal and is reset to the defaults."""
+        from . import gpc, gpcstore
+        a = self._args(line)
+        sub, rest = (a[0] if a else "show"), a[1:]
+        if sub == "show":
+            d = gpc.describe()
+            self.say(f"profile: {d['profile']}")
+            rows = [{"name": f["name"], "value": f["value"], "source": f["source"], "set by": f.get("set_by", ""),
+                     "enforced since": str(f.get("enforced_at") or "-")[:19], "editable by": f["editable_by"]} for f in d["flags"]]
+            self.say(table(rows, ["name", "value", "source", "set by", "enforced since", "editable by"]))
+            for problem in d["problems"]:
+                self.say(f"! {problem}")
+        elif sub == "history":
+            rows = [{"#": e["seq"], "when": e["at"], "flag": e["flag"], "old": e["old"], "new": e["new"], "by": e["by"],
+                     "authority": e["rank"], "via": e["via"], "note": e["note"]} for e in gpcstore.history(rest[0] if rest else None, 40)]
+            self.say(table(rows))
+        elif sub == "restrictions":
+            self.say(kv(gpcstore.restrictions()))
+        elif sub == "set":
+            pos, o = _opts(rest, values={"note"})
+            if len(pos) != 2:
+                return self.fail("policy set NAME VALUE [--note TEXT]")
+            self._policy_change(lambda: gpcstore.set_flag(pos[0], pos[1], "root (console)", gpcstore.ROOT, "console", o.get("note", "")),
+                                "policy_set", {"flag": pos[0], "value": pos[1]})
+            self.say(f"{pos[0]} = {gpc.get(pos[0])!r}  (recorded; the running server picks it up within seconds)")
+        elif sub == "reset":
+            names = rest or None
+            done = []
+            self._policy_change(lambda: done.extend(gpcstore.reset_flags(names, "root (console)", gpcstore.ROOT, "console")),
+                                "policy_reset", {"flags": names or "all"})
+            self.say("back to the defaults: " + (", ".join(done) if done else "nothing was changed"))
+        else:
+            self.fail("policy show | history [FLAG] | restrictions | set NAME VALUE [--note TEXT] | reset [NAME ...]")
+
+    def _policy_change(self, change, action: str, details: dict) -> None:
+        from . import gpcstore
+        try:
+            change()
+        except gpcstore.PolicyRefused as exc:
+            raise ValueError(f"{exc.message} [{exc.code}]") from None
+        self.run(self._audit(action, details))
+        self._reload_policy()
+
+    def do_flags(self, line):
+        """flags show | set NAME VALUE | unset NAME | save | reset [--file]
+        The feature flags (test mode, OTA, the traffic monitor, features.disabled). `set` changes one for THIS RUN only
+        (the server forgets it when it restarts); `save` writes the run's changes into impress.flags.json for every later
+        start; `reset` drops them (with --file also restores the shipped file: root's password). Unlike policy, the file
+        may also be edited by hand. A change that makes flags conflict is refused."""
+        from . import flagsfile, gpc, gpcstore
+        a = self._args(line)
+        sub, rest = (a[0] if a else "show"), a[1:]
+        overlay = gpcstore.session_read()
+        if sub == "show":
+            d = {f["name"]: f for f in gpc.describe()["flags"]}
+            rows = [{"name": n, "value": d[n]["value"], "source": ("session" if n in overlay else d[n]["source"]),
+                     "default": d[n]["standard"]} for n, f in gpc.FLAGS.items() if f.scope == "feature"]
+            self.say(table(rows))
+            if overlay:
+                self.say("changed for this session only: " + ", ".join(overlay) + "   ('flags save' keeps them)")
+        elif sub == "set":
+            if len(rest) != 2:
+                return self.fail("flags set NAME VALUE")
+            name, raw = rest
+            flag = gpc.FLAGS.get(name)
+            if flag is None or flag.scope != "feature":
+                return self.fail(f"{name} is " + ("a policy flag: use `policy set`" if flag else "not a flag") + " [FLAG_IS_POLICY]")
+            value = gpc.coerce(flag, raw)
+            pol = gpc.current()
+            trial = {**pol.values, name: value}
+            found = gpc.find_conflicts(trial, pol.profile, {*pol.sources_explicit(), name})
+            if found:
+                return self.fail("that would make flags conflict [POLICY_CONFLICT]: " + " | ".join(c.text() for c in found))
+            overlay[name] = value
+            gpcstore.session_write(overlay, "root (console)")
+            self.run(self._audit("flags_set", {"flag": name, "value": value, "session": True}))
+            self._reload_policy()
+            self.say(f"{name} = {value!r} for this session only. 'flags save' keeps it for later starts.")
+        elif sub == "unset" and len(rest) == 1:
+            overlay.pop(rest[0], None)
+            gpcstore.session_write(overlay, "root (console)")
+            self._reload_policy()
+            self.say(f"{rest[0]}: back to what the file says")
+        elif sub == "save":
+            if not overlay:
+                return self.say("nothing to save: no flag was changed in this session")
+            try:
+                where = flagsfile.save(overlay)
+            except flagsfile.FlagsFileError as exc:
+                return self.fail(str(exc))
+            names = list(overlay)
+            gpcstore.session_write({}, "root (console)")
+            self.run(self._audit("flags_save", {"flags": names}))
+            self._reload_policy()
+            self.say(f"saved to {where}: {', '.join(names)}. Every later start uses them.")
+        elif sub == "reset":
+            gpcstore.session_write({}, "root (console)")
+            if "--file" in rest:
+                flagsfile.write(force=True)
+                self.run(self._audit("flags_reset", {"file": True}))
+                self.say("this session's changes dropped, and impress.flags.json is the shipped file again")
+            else:
+                self.say("this session's changes dropped")
+            self._reload_policy()
+        else:
+            self.fail("flags show | set NAME VALUE | unset NAME | save | reset [--file]")
+
+    def do_errors(self, line):
+        """errors [CODE | CATEGORY]: the error catalogue (impress.errors.json): what each code means and what to do."""
+        from . import errors
+        a = self._args(line)
+        if not a:
+            self.say(table([{"category": c, "codes": len(v), "examples": ", ".join(v[:3])} for c, v in errors.categories().items()]))
+            return self.say("errors CATEGORY lists its codes; errors CODE explains one.")
+        key = a[0]
+        if key in errors.categories():
+            self.say(table([{"code": c, "http": errors.describe(c)["http"] or "-", "title": errors.describe(c)["title"]}
+                            for c in errors.categories()[key]]))
+        elif (e := errors.describe(key.upper())):
+            self.say(kv({"code": e["code"], "category": e["category"], "http": e["http"] or "(not an HTTP response)",
+                         "title": e["title"], "what it means": e["description"], "what to do": e["fix"]}))
+        else:
+            self.fail(f"no such error code or category: {key}")
 
     def do_audit(self, line):
         """audit verify FILE: check an external audit trail's hash chain."""
@@ -392,20 +525,33 @@ class Console(cmd.Cmd):
         self.say(f"\ncontainer: {'yes' if host['container'] else 'no'}")
 
     def do_iips(self, line):
-        """iips status | rehash: imPress Integrity Protection. 'rehash' makes the program's files, as they are now, the reference."""
+        """iips status | rehash | history: imPress Integrity Protection. 'rehash' makes the program's files, as they are now, the
+        reference, for this machine (root's password). It first checks what is there and records it in the reference's history."""
+        from . import fingerprint, gpc
         from .services import iips
         a = self._args(line)
+        binding = gpc.get("iips.device_binding")
         if a[:1] == ["rehash"]:
-            doc = iips.write_baseline()
-            self.say(f"the current files are the new reference ({len(doc['files'])} files, tree {doc['root_hash'][:16]})")
+            prior = iips.verify_baseline(binding)
+            doc = iips.write_baseline(binding=binding, previous=prior if prior["found"] != "missing" else None,
+                                      by="root (console, password verified)", reason="rehash requested by root")
+            self.say(f"the reference found was: {prior['found']}")
+            self.say(f"the current files are the new reference ({len(doc['files'])} files, tree {doc['root_hash'][:16]}, "
+                     f"device {fingerprint.short(doc['device'])})")
         elif a[:1] in ([], ["status"]):
-            st = iips.check(enabled=True)
-            self.say(kv({"status": st["status"], "differences": len(st["changes"]), "baseline": iips.baseline_path().name}))
+            st = iips.check(enabled=True, binding=binding)
+            fp, how = fingerprint.get()
+            self.say(kv({"status": st["status"], "differences": len(st["changes"]), "baseline": iips.baseline_path().name,
+                         "device binding": binding, "this device": f"{fingerprint.short(fp)} ({how})",
+                         "device warning": st.get("device_warning") or "-"}))
             for c in st["changes"][:20]:
                 self.say(f"  {c['change']:8} {c['path']}")
+        elif a[:1] == ["history"]:
+            base = iips.verify_baseline(binding)
+            self.say(table([{"when": h["at"], "by": h["by"], "reason": h["reason"], "found": h["found"], "device": h["device"]}
+                            for h in reversed(base.get("history", []))]))
         else:
-            self.fail("iips status | rehash")
-
+            self.fail("iips status | rehash | history")
 
     # ── the default super admin's password ──────────────────────────────
     def do_password(self, line):
@@ -462,7 +608,7 @@ class Console(cmd.Cmd):
 
     def do_api(self, line):
         """api METHOD PATH [JSON]: call any of the application's routes as a super admin, for example
-        api GET /api/admin/users | api POST /api/admin/classes '{"name":"X","code":"X1"}' | api routes [FILTER].
+        api GET /api/admin/users | api POST /api/admin/classes '{"name":"Demo","code":"demo1"}' | api routes [FILTER].
         Same validation, permissions, approvals and activity log as the web app."""
         from .services import rootapi
         a = self._args(line)
@@ -660,7 +806,7 @@ class Console(cmd.Cmd):
         if arg:
             return super().do_help(arg)
         groups = [
-            ("System", "status version uptime date env verify system policy policylog requirements iips features feature testmode deadlock"),
+            ("System", "status version uptime date env verify system policy flags errors policylog requirements iips features feature testmode deadlock"),
             ("Accounts", "users superadmin password mfa sessions ps ls whoami activity"),
             ("Classroom", "classes students courses quizzes polls"),
             ("Devices", "devices firmware"),
@@ -730,6 +876,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.serve:
             for line in sys.stdin:                           # one command per line; END + OK/FAIL after each answer
                 con.failed = False
+                line, _, con.root_password = line.rstrip("\n").partition("\x1f")      # the root screen's masked prompt
+                con.root_password = con.root_password or None
                 con.onecmd(line.strip())
                 print(f"\x1e{'FAIL' if con.failed else 'OK'}", flush=True)
             con.failed = False

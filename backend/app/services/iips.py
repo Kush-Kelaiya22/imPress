@@ -48,8 +48,11 @@ def baseline_path() -> Path:
     return base.with_suffix(".iips.json")
 
 
-def _key() -> bytes:
-    return hashlib.sha256(b"impress.iips\0" + settings.JWT_SECRET.encode()).digest()
+def _key(device: str | None = None) -> bytes:
+    """The sealing key: the site's secret and, when the reference is bound to a machine, that machine's fingerprint, so the
+    reference verifies only on the machine it was made on (a copy elsewhere fails its seal, in a way we can recognise)."""
+    base = hashlib.sha256(b"impress.iips\0" + settings.JWT_SECRET.encode()).digest()
+    return hashlib.sha256(base + b"\0" + device.encode()).digest() if device else base
 
 
 def _skip(p: Path) -> bool:
@@ -114,19 +117,58 @@ def snapshot(root: Path = ROOT) -> dict:
             "structure_hash": hashlib.sha256("\n".join(sorted(files)).encode()).hexdigest()}
 
 
-def _seal(doc: dict) -> str:
-    return hmac.new(_key(), json.dumps(doc, sort_keys=True).encode(), "sha256").hexdigest()
+def _seal(doc: dict, device: str | None = None) -> str:
+    return hmac.new(_key(device), json.dumps(doc, sort_keys=True).encode(), "sha256").hexdigest()
 
 
-def write_baseline(root: Path = ROOT) -> dict:
+def write_baseline(root: Path = ROOT, binding: str = "off", previous: dict | None = None, by: str = "system",
+                   reason: str = "") -> dict:
+    """Record the program's files as the reference. With device binding the machine's fingerprint is part of the sealed
+    document and of the key. `previous` (what was found before, from verify_baseline) goes into a hash-chained history, so
+    the file says what was replaced, when, by whom and in what state it was."""
+    from .. import fingerprint
     from ..timeutil import istnow
     doc = snapshot(root)
     doc["created_at"] = istnow().isoformat()
     doc["build"] = build_marker(root)
+    fp, how = fingerprint.get() if binding != "off" else (None, "binding is off")
+    doc["device"], doc["device_how"] = fp, how
+    history = list((previous or {}).get("history", []))
+    entry = {"at": doc["created_at"], "by": by, "reason": reason or "baseline written",
+             "found": (previous or {}).get("found", "no reference before"),
+             "replaced_tree": (previous or {}).get("root_hash", ""), "device": fingerprint.short(fp),
+             "prev": history[-1]["hash"] if history else ""}
+    entry["hash"] = hashlib.sha256((entry["prev"] + json.dumps(entry, sort_keys=True)).encode()).hexdigest()
+    doc["history"] = (history + [entry])[-20:]
     path = baseline_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"baseline": doc, "seal": _seal(doc)}, indent=1))
+    path.write_text(json.dumps({"baseline": doc, "seal": _seal(doc, fp)}, indent=1))
     return doc
+
+
+def verify_baseline(binding: str = "off") -> dict:
+    """What the reference file is, before anything is rewritten: {"found": missing | ok | edited | other_device | legacy,
+    "baseline": the document when it can be trusted, "history", "root_hash"}. Never raises."""
+    from .. import fingerprint
+    path = baseline_path()
+    if not path.exists():
+        return {"found": "missing", "history": []}
+    try:
+        saved = json.loads(path.read_text())
+        base, seal = saved["baseline"], saved["seal"]
+    except (OSError, ValueError, KeyError):
+        return {"found": "edited", "history": []}
+    out = {"baseline": base, "history": base.get("history", []), "root_hash": base.get("root_hash", "")}
+    fp, _ = fingerprint.get() if binding != "off" else (None, "")
+    if binding != "off" and fp and hmac.compare_digest(seal, _seal(base, fp)) and base.get("device") == fp:
+        return {**out, "found": "ok"}
+    recorded = base.get("device")
+    if recorded and hmac.compare_digest(seal, _seal(base, recorded)):
+        # it is sealed for a device, and that is not this one (or binding is off now): copied, or moved to other hardware
+        return {**out, "found": "other_device" if binding != "off" else "ok", "recorded_device": recorded}
+    if hmac.compare_digest(seal, _seal(base)):
+        return {**out, "found": "ok" if binding == "off" or not fp else "legacy"}          # made before device binding
+    return {"found": "edited", "history": [], "root_hash": ""}
 
 
 def compare(base: dict, now: dict) -> list[dict]:
@@ -149,10 +191,16 @@ def compare(base: dict, now: dict) -> list[dict]:
     return changes
 
 
-def check(enabled: bool = True, rehash: bool = False, root: Path = ROOT, auto_accept: bool = False) -> dict:
+def check(enabled: bool = True, rehash: bool = False, root: Path = ROOT, auto_accept: bool = False,
+          binding: str = "off") -> dict:
     """Run at start-up. Sets and returns the state: ok | baseline_created | violation | bypassed | rehashed | updated.
-    `auto_accept` (policy iips.auto_accept_updates): a different build than the baseline's is an update, not tampering."""
-    _state.update(enabled=enabled, changes=[], baseline_created=False)
+    `auto_accept` (policy iips.auto_accept_updates): a different build than the baseline's is an update, not tampering.
+    `binding` (policy iips.device_binding: off | warn | enforce): the reference belongs to the machine it was made on.
+    A rehash first looks at what is there (verify_baseline) and records it in the new reference's history."""
+    from .. import fingerprint
+    fp, how = fingerprint.get()
+    _state.update(enabled=enabled, changes=[], baseline_created=False, device_warning="", device_mismatch=False,
+                  device={"fingerprint": fingerprint.short(fp), "how": how, "binding": binding})
     if not enabled:
         _state["status"] = "bypassed"
         return _state
@@ -163,29 +211,42 @@ def check(enabled: bool = True, rehash: bool = False, root: Path = ROOT, auto_ac
         _state.update(status="violation" if changes else "ok", changes=changes[:200], total_changes=len(changes),
                       note="This build carries its own reference (a container image): --rehash does not apply; rebuild the image." if rehash else "")
         return _state
-    if rehash or not path.exists():
-        write_baseline(root)
-        _state.update(status="rehashed" if rehash else "baseline_created", baseline_created=not rehash)
+    prior = verify_baseline(binding)
+    found = prior["found"]
+    if rehash or found == "missing":
+        write_baseline(root, binding, prior if found != "missing" else None,
+                       by="root (password verified)" if rehash else "system (first start)",
+                       reason="rehash requested by root" if rehash else "first start")
+        _state.update(status="rehashed" if rehash else "baseline_created", baseline_created=not rehash, replaced=found)
         return _state
-    try:
-        saved = json.loads(path.read_text())
-        base = saved["baseline"]
-        if not hmac.compare_digest(saved["seal"], _seal(base)):
-            raise ValueError("the baseline file was edited")
-    except (OSError, ValueError, KeyError) as exc:
-        _state.update(status="violation", changes=[{"path": path.name, "change": f"unreadable ({exc})"}])
+    if found == "edited":
+        _state.update(status="violation", changes=[{"path": path.name, "change": "edited: its seal does not verify"}])
         return _state
+    base = prior["baseline"]
+    if found == "other_device":
+        msg = (f"{path.name} was made on another device ({fingerprint.short(prior.get('recorded_device'))}, this one is "
+               f"{fingerprint.short(fp)}): the program or its reference was copied here")
+        if binding == "enforce":
+            _state.update(status="violation", device_mismatch=True, changes=[{"path": path.name, "change": "made on another device"}])
+            return _state
+        _state["device_warning"] = msg + " (policy iips.device_binding is 'warn': root's rehash makes this machine the owner)"
     changes = compare(base, snapshot(root))
-    if changes and auto_accept and base.get("build") != build_marker(root):
+    if changes and auto_accept and found != "other_device" and base.get("build") != build_marker(root):
         _state.update(status="updated", changes=changes[:200], total_changes=len(changes),
                       note=f"updated from {base.get('build', 'an older build')} to {build_marker(root)}")
-        write_baseline(root)
+        write_baseline(root, binding, prior, by="system (update)", reason="the program was updated")
         return _state
+    if found == "legacy" and not changes:                         # made before device binding: bind it to this machine now
+        write_baseline(root, binding, prior, by="system (binding)", reason="bound to this device")
     _state.update(status="violation" if changes else "ok", changes=changes[:200], total_changes=len(changes))
     return _state
 
 
 def violation_message() -> str:
+    if _state.get("device_mismatch"):
+        return ("imPress has been disabled by Root: the program's reference was made on a different device, so this code or "
+                "its reference was copied here (policy iips.device_binding is 'enforce'). Root accepts it on this machine with "
+                "--rehash and root's password.")
     n = _state.get("total_changes") or len(_state["changes"])
     first = ", ".join(c["path"] for c in _state["changes"][:3])
     return (f"imPress has been disabled by Root: an integrity violation was detected in the source folder "
