@@ -247,6 +247,10 @@ async def add_account_and_class_fields(conn: AsyncConnection) -> None:
     await _add_columns(conn, _ACCOUNT_COLUMNS)
 
 
+# The versions applied by this process's start-up (an upgrade): services/integrity.py re-seals after one.
+APPLIED_AT_START: list[int] = []
+
+
 # Append-only. (version, name, step)
 MIGRATIONS: list[tuple[int, str, Step]] = [
     (1, "add_v2_columns", add_v2_columns),

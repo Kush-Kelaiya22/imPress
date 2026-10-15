@@ -92,3 +92,6 @@ desktop.ini
 # v2.2 runtime state next to the database: integrity/debug-mode flags and test data (contains real data)
 *.state.json
 test-data/
+
+# imPress integrity reference, written next to the database at first start
+*.iips.json

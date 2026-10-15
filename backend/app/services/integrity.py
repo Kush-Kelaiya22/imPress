@@ -139,6 +139,15 @@ async def restore_from(src: Path) -> None:
                 time.sleep(0.1)
     await asyncio.to_thread(go)
     await engine.dispose()           # new connections: fresh triggers, fresh data
+    # A copy made by an older version lacks today's tables and columns: bring it up to date, then seal it as it is.
+    from ..database import Base
+    from ..dbgateway import as_system
+    from ..migrations import migrate
+    with as_system():                                     # schema changes are the server's own
+        upgraded = await migrate(engine, Base.metadata.create_all)
+    if upgraded:
+        await engine.dispose()
+        await reseal_everything("a copy from an older version was restored and upgraded")
 
 
 # ── Verification ────────────────────────────────────────────────────────
@@ -175,7 +184,12 @@ async def startup() -> None:
         await reseal_everything("first start with the database gateway")
     else:
         rep = await verify_now()
-        if not rep.ok:
+        from ..migrations import APPLIED_AT_START
+        if not rep.ok and APPLIED_AT_START:
+            # An upgrade changed the schema (new columns change every row's seal): that is not tampering. The copy
+            # made before migrating exists; the database is sealed again as it is.
+            await reseal_everything(f"upgraded: migrations {APPLIED_AT_START[0]} to {APPLIED_AT_START[-1]} applied")
+        elif not rep.ok:
             if rep.key_changed:
                 await reseal_everything("the sealing key changed")
                 await _flag("The database sealing key changed (IMPRESS_JWT_SECRET rotated): the database was "
