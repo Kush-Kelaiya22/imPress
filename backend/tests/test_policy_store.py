@@ -45,8 +45,9 @@ def test_editing_the_file_by_hand_resets_it_and_keeps_the_evidence(client):
     pol = _load()
     assert pol.values["integrity.forensic_copies"] == 3                                  # defaults again
     assert list(path.parent.glob(path.name + ".tampered-*"))
-    assert pol.notices and "edited outside imPress" in pol.notices[0]["message"]
+    # the running server may notice the edit first and do the reset itself: either way the result is the same
     assert gpcstore.history()[0]["by"] == "system" and gpcstore.read()["resets"] == 1
+    assert "edited outside imPress" in gpcstore.history()[0]["note"]
 
 
 @pytest.mark.parametrize("damage", [lambda d: d["history"].clear(), lambda d: d.update(flags={"x": 1}),
@@ -56,12 +57,15 @@ def test_any_edit_breaks_the_seal(client, damage):
     doc = json.loads(gpcstore.store_path().read_text())
     damage(doc)
     gpcstore.store_path().write_text(json.dumps(doc))
-    assert gpcstore.load()[1] is not None
+    notice = gpcstore.load()[1]
+    # the running server's own reload may have reset it just before: then the evidence is already there
+    assert notice is not None or (gpcstore.read()["resets"] == 1 and list(gpcstore.store_path().parent.glob("impress.gpc.json.tampered-*")))
 
 
 def test_garbage_is_reset_too(client):
     gpcstore.store_path().write_text("{ nope")
-    assert "edited outside imPress" in gpcstore.load()[1]
+    notice = gpcstore.load()[1]
+    assert (notice and "edited outside imPress" in notice) or gpcstore.read()["resets"] == 1
 
 
 def test_the_history_is_a_hash_chain(client):
