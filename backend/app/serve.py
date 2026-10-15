@@ -1,6 +1,8 @@
 """Start the server with launch flags (v2.2):  python -m app.serve [options]
 
 Launch flags are root's: they are decided where the server is started, and nothing in the web app can undo them.
+They live in backend/impress.flags.json, each with its own explanation (docs/guides/launch-flags.md); the options below
+still work and win over the file for that start.
 
   --test-mode        test mode is forced on and nobody can turn it off (a lab setting: the default super admin
                      then signs in with a fixed password; the hardened profile refuses it)
@@ -40,6 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def overrides(args: argparse.Namespace) -> list[str]:
+    """The command line's overrides only; the flags file is read in main() (see effective())."""
     out = []
     if args.test_mode:
         out.append("test_mode.forced=true")
@@ -53,6 +56,16 @@ def overrides(args: argparse.Namespace) -> list[str]:
     return out
 
 
+def effective(argv: list[str]) -> tuple[str | None, list[str]]:
+    """(profile, policy overrides) this start will use, lowest first: the flags file, IMPRESS_GPC, the command line.
+    Raises flagsfile.FlagsFileError for a file that cannot be applied."""
+    from . import flagsfile
+    args = build_parser().parse_args(argv)
+    profile, from_file = flagsfile.load()
+    env = [x for x in os.environ.get("IMPRESS_GPC", "").split(",") if x.strip()]
+    return args.profile or profile, [*from_file, *env, *overrides(args)]
+
+
 def main(argv: list[str] | None = None) -> int:
     from .banner import utf8_output
     utf8_output()
@@ -64,16 +77,24 @@ def main(argv: list[str] | None = None) -> int:
     if args.rehash and args.bypass_iips:
         print("error: --rehash and --bypass-iips contradict each other", file=sys.stderr)
         return 2
-    flags = overrides(args)
-    # The environment must be set before the application (and its settings) is imported.
-    existing = os.environ.get("IMPRESS_GPC", "")
-    if flags:
-        os.environ["IMPRESS_GPC"] = ",".join(x for x in [existing, *flags] if x)
-    if args.profile:
-        os.environ["IMPRESS_PROFILE"] = args.profile
+    from . import flagsfile
+    try:
+        try:
+            flagsfile.write()                                      # first start: the documented file, with every default
+        except OSError:
+            pass                                                   # a read-only install: there is nothing to edit
+        profile, flags = effective(argv)
+    except flagsfile.FlagsFileError as exc:
+        print(f"error: {flagsfile.path()}: {exc}", file=sys.stderr)
+        return 2
     if not args.plain and not os.environ.get("IMPRESS_PLAIN") and sys.stdin.isatty() and sys.stdout.isatty():
-        from . import rootscreen          # console commands inherit the same root-owned launch policy as the server
-        return rootscreen.run(argv)
+        from . import rootscreen          # the screen starts (and restarts) the server and the console itself, and reads
+        return rootscreen.run(argv)       # the flags file again each time, so an edit takes effect on 'restart'
+    # The environment must be set before the application (and its settings) is imported.
+    if flags:
+        os.environ["IMPRESS_GPC"] = ",".join(flags)
+    if profile:
+        os.environ["IMPRESS_PROFILE"] = profile
     try:
         from . import gpc
         gpc.parse_inline(os.environ.get("IMPRESS_GPC", ""))          # a typo is an error here, not a stack trace later
@@ -90,12 +111,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if not os.environ.get("IMPRESS_ROOT_SCREEN"):
         banner.show()
-    verdict = iips.check(enabled=bool(gpc.get("iips.enabled")), rehash=args.rehash)
+    verdict = iips.check(enabled=bool(gpc.get("iips.enabled")), rehash=args.rehash,
+                         auto_accept=bool(gpc.get("iips.auto_accept_updates")))
     if iips.locked():
         print("  " + iips.violation_message() + "\n", file=sys.stderr)
         return 3
     note = {"baseline_created": "Integrity protection: first start, the program's files were recorded as the reference.",
             "rehashed": "Integrity protection: the current files are now the reference.",
+            "updated": "Integrity protection: imPress was updated (" + str(verdict.get("note", "")) + "): the new files are now the reference.",
             "bypassed": "Integrity protection is DISABLED (--bypass-iips): every page shows a warning."}.get(verdict["status"])
     if note:
         print("  " + note + "\n", flush=True)

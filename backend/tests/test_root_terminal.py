@@ -26,7 +26,9 @@ def test_fragmented_keys_unicode_and_bracketed_paste():
     assert decoder.feed("\x1b") == []
     assert decoder.feed("", flush_escape=True) == ["ESCAPE"]
     assert decoder.feed("界é\r") == ["TEXT:界", "TEXT:é", "ENTER"]
-    assert decoder.feed("\x1b[1;5A") == []       # unknown extended key, never command text
+    assert decoder.feed("\x1b[1;5A") == ["SCROLL_UP"]        # Ctrl/Shift/Alt+Up/Down scroll the logs from any pane
+    assert decoder.feed("\x1b[1;2B\x1b[1;5H\x1b[1;5F") == ["SCROLL_DOWN", "LOG_TOP", "LOG_LIVE"]
+    assert decoder.feed("\x1b[1;9Z") == []       # any other extended key is swallowed, never command text
 
 
 def test_windows_native_key_prefixes_and_shift_tab(monkeypatch):
@@ -266,3 +268,96 @@ def test_real_terminal_menu_commands_logs_clear_resize_and_shutdown(tmp_path, st
                 proc.wait()
         os.close(master)
         os.close(slave)
+
+
+# ── The screen's own controls ───────────────────────────────────────────────
+
+def _screen(monkeypatch, cols=100, rows=28):
+    monkeypatch.setattr(rootscreen.shutil, "get_terminal_size", lambda _fallback: os.terminal_size((cols, rows)))
+    screen = rootscreen.Screen(["imPress", "running"])
+    screen.commands = sorted({*rootscreen.SCREEN_COMMANDS, "status", "users", "sessions", "students", "backup"})
+    return screen
+
+
+def test_the_command_bar_is_always_on_screen_and_says_what_it_is_for(monkeypatch):
+    for cols, rows in ((120, 32), (80, 24), (48, 10)):
+        screen = _screen(monkeypatch, cols, rows)
+        bar = rootscreen.plain(screen.frame()[-2])
+        assert bar.startswith(("root> ", "> ")) and "type a command" in bar or cols < 60
+    screen.key("TEXT:s")
+    assert rootscreen.plain(screen.frame()[-2]).startswith(("root> s", "> s"))
+
+
+def test_scroll_keys_work_from_every_pane(monkeypatch):
+    screen = _screen(monkeypatch)
+    for i in range(200):
+        screen.log(f"INFO: line {i}")
+    for focus in ("menu", "logs", "command"):
+        screen.focus, screen.scrollback = focus, 0
+        screen.key("SCROLL_UP")
+        assert screen.scrollback == 3, focus
+        screen.key("SCROLL_DOWN")
+        assert screen.scrollback == 0, focus
+        screen.key("LOG_TOP")
+        assert screen.scrollback > 100, focus
+        screen.key("LOG_LIVE")
+        assert screen.scrollback == 0, focus
+        assert screen.focus == focus                   # scrolling never steals the focus (or moves the menu)
+    assert screen.selected == 0
+
+
+def test_the_log_pane_shows_where_you_are_with_a_scrollbar(monkeypatch):
+    screen = _screen(monkeypatch)
+    assert not any(rootscreen.plain(line).rstrip().endswith(("█", "│")) for line in screen.frame()[3:-3])
+    for i in range(300):
+        screen.log(f"INFO: line {i}")
+    live = [rootscreen.plain(line) for line in screen.frame()]
+    assert live[3 + screen.page - 1].rstrip().endswith("█") and live[3].rstrip().endswith("│")
+    screen.key("LOG_TOP")
+    top = [rootscreen.plain(line) for line in screen.frame()]
+    assert top[3].rstrip().endswith("█") and "scrollback" in top[2]
+
+
+def test_tab_completes_a_command_and_lists_the_choices(monkeypatch):
+    screen = _screen(monkeypatch)
+    screen.key("TEXT:sta")
+    screen.key("TAB")
+    assert screen.buffer == "status " and screen.cursor == 7
+    screen.key("KILL_START")
+    screen.key("PASTE:s")
+    screen.key("TAB")
+    assert screen.buffer == "s" and "sessions" in screen.messages[-1] and "students" in screen.messages[-1]
+    screen.key("TEXT:e")
+    screen.key("TAB")
+    assert screen.buffer == "sessions "
+    screen.key("TEXT:x")
+    screen.key("TAB")                                  # once past the first word, Tab does not rewrite it
+    assert screen.buffer == "sessions x"
+    screen.buffer, screen.cursor, screen.focus = "", 0, "command"
+    screen.key("TAB")
+    assert screen.focus == "menu"                      # an empty box: Tab moves between panes
+
+
+def test_a_command_is_shown_in_the_log_when_it_starts_not_when_it_is_queued(monkeypatch):
+    screen = _screen(monkeypatch)
+    screen.key("PASTE:users list")
+    assert screen.key("ENTER") == "users list"
+    assert not screen.messages                         # queued: nothing yet
+    screen.echo("users list")
+    screen.echo("password reset --password Secret-Value-1!")
+    text = rootscreen.plain("\n".join(screen.messages))
+    assert "> users list" in text and "Secret-Value" not in text and "[private arguments]" in text
+
+
+def test_the_hint_names_the_scroll_keys_when_there_is_room(monkeypatch):
+    wide = rootscreen.plain(_screen(monkeypatch, 140, 30).frame()[-1])
+    assert "Shift+Up/Down" in wide and "PgUp/PgDn" in wide
+    narrow = rootscreen.plain(_screen(monkeypatch, 60, 24).frame()[-1])
+    assert "Shift+Up/Down" in narrow
+
+
+def test_the_title_tags_follow_the_effective_flags():
+    lines = rootscreen._title("2.2.1", "running", ["test_mode.forced=true", "ota.enabled=false"], "standard", "http://x")
+    text = rootscreen.plain(" ".join(lines))
+    assert "TEST MODE (forced)" in text and "OTA off" in text and "INTEGRITY" not in text
+    assert "FLAGS FILE ERROR" in rootscreen.plain(" ".join(rootscreen._title("2", "stopped", [], "standard", "u", "FLAGS FILE ERROR")))

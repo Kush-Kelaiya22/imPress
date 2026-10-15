@@ -57,6 +57,7 @@ The integrity backups in `IMPRESS_TEMP_BACKUP_DIR` repair tampering. They live o
 
 - [ ] A scheduled, encrypted, off-host copy of the database, the firmware folder and `.env` (immutable or versioned storage), with a restore drill and the recovery time you measured written down.
 - [ ] `IMPRESS_TEMP_BACKUP_DIR` is readable by the service user only.
+- [ ] **The disk or volume that holds the database folder is encrypted** (BitLocker, FileVault, LUKS/dm-crypt, or your cloud's volume encryption with a key you control). The debug-mode snapshots, saved datasets, exports and integrity backups are plain SQLite files; encryption of the volume is what makes a copy of the files useless on its own ([decision D16](../design/decisions.md)). In the hardened profile imPress alerts at every start when it can see the volume is **not** encrypted (macOS FileVault, Linux dm-crypt); where it cannot tell (containers, Windows, network volumes) it logs that, and this item is yours to verify. Rehearse losing the key: restore from the off-host backup onto a fresh encrypted volume.
 
 ## 6. Start hardened, then check
 

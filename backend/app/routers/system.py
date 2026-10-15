@@ -194,7 +194,8 @@ async def clear_data(body: ClearRequest, request: Request, user: User = Depends(
         from ..services import bootstrap
         await bootstrap.after_reset(user.username)
     events.alert(f"{user.username} cleared the database ({body.scope.replace('_', ' ')}). "
-                 f"A copy was saved first ({backup}).", "warning", "all")
+                 + (f"A copy was saved first ({backup})." if backup else "No copy was made: test mode makes no backups."),
+                 "warning", "all")
     return {"status": "ok", "backup": backup}
 
 

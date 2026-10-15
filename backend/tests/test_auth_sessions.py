@@ -39,7 +39,7 @@ def test_login_returns_opaque_token_and_timeouts(client):
     body = r.json()
     assert body["token_type"] == "bearer"
     assert body["access_token"].startswith("impress_") and len(body["access_token"]) > 40
-    assert body["idle_timeout_s"] == 5 * 60 and body["hard_timeout_s"] == 360 * 60      # v2.2: 5-minute idle limit
+    assert body["idle_timeout_s"] == 15 * 60 and body["hard_timeout_s"] == 360 * 60      # v2.2: 15-minute idle limit
 
 
 @pytest.mark.parametrize("username,password", [("impress.default.superAdmin", "wrong"), ("nobody", "admin123"), ("", "")])
@@ -148,7 +148,7 @@ def test_session_status_counts_down_and_warns_near_hard_limit(client, db):
     from app.timeutil import istnow
     h = auth(login(client))
     s = client.get("/api/auth/session-status", headers=h).json()
-    assert 0 < s["idle_seconds_remaining"] <= 300 and s["warning_active"] is False
+    assert 0 < s["idle_seconds_remaining"] <= 900 and s["warning_active"] is False
     _shift_session(db, expires_at=istnow() + timedelta(minutes=3))
     s = client.get("/api/auth/session-status", headers=h).json()
     assert s["warning_active"] is True and s["hard_seconds_remaining"] <= 180

@@ -1,0 +1,344 @@
+{
+  "_readme": [
+    "imPress launch flags. Root edits this file; nothing in the web app or the API can change it.",
+    "Change a flag's \"value\" and restart imPress. Every flag explains itself in \"about\"; only \"value\" is read.",
+    "A value left as shipped is not an override, so the profile's own default applies (hardened stays hardened).",
+    "In the hardened profile an edit may only make a flag safer; to loosen one, sign a policy file with scripts/gpc.py.",
+    "Command-line flags (--test-mode, --feature NAME=VALUE, ...) still work and win over this file for that start.",
+    "A mistake here is reported when imPress starts, with the flag's name; it never half-applies.",
+    "Reference: docs/guides/launch-flags.md and docs/reference/flags.md."
+  ],
+  "profile": {
+    "value": "standard",
+    "choices": [
+      "standard",
+      "hardened"
+    ],
+    "about": "Which set of defaults the policy starts from: 'standard' (a classroom or lab: protections that need no set-up) or 'hardened' (a production server: everything on, and it REFUSES to start when the rest of the configuration is below its floor: debug off, real secrets, HTTPS, an external audit sink, ...). The command line's --profile wins."
+  },
+  "flags": {
+    "dual_control.enabled": {
+      "value": true,
+      "about": "Destructive or baseline-changing actions (accepting the current database state, clearing data) need a second super admin's approval.",
+      "type": "bool",
+      "standard": true,
+      "hardened": true
+    },
+    "dual_control.single_operator_ok": {
+      "value": true,
+      "about": "Allow the requester to approve their own action when they are the only active super admin.",
+      "type": "bool",
+      "standard": true,
+      "hardened": false
+    },
+    "dual_control.delay_minutes": {
+      "value": 0,
+      "about": "Minutes between an approval and the earliest moment the action may run.",
+      "type": "int",
+      "standard": 0,
+      "hardened": 15,
+      "note": "a whole number, 0 or more"
+    },
+    "dual_control.expiry_minutes": {
+      "value": 240,
+      "about": "Minutes an approval stays usable after its delay has passed.",
+      "type": "int",
+      "standard": 240,
+      "hardened": 30,
+      "note": "a whole number, 0 or more"
+    },
+    "system.reset_everything_allowed": {
+      "value": true,
+      "about": "Allow the 'reset everything' clear scope in the web app at all.",
+      "type": "bool",
+      "standard": true,
+      "hardened": false
+    },
+    "audit.sink_path": {
+      "value": "",
+      "about": "Hash-chained, append-only audit file outside the database (put it on a WORM or remote-logged volume).",
+      "type": "str",
+      "standard": "",
+      "hardened": ""
+    },
+    "audit.sink_url": {
+      "value": "",
+      "about": "HTTP(S) endpoint that also receives every audit event, signed with an HMAC (off-host copy).",
+      "type": "str",
+      "standard": "",
+      "hardened": ""
+    },
+    "audit.min_retention_days": {
+      "value": 0,
+      "about": "A clear or reset never deletes activity-log entries younger than this many days.",
+      "type": "int",
+      "standard": 0,
+      "hardened": 180,
+      "note": "a whole number, 0 or more"
+    },
+    "audit.purge_days": {
+      "value": 0,
+      "about": "Activity-log entries in the database older than this many days are deleted (0 = never; never sooner than audit.min_retention_days). The external audit sink is not touched. Only a signed policy can change it in the hardened profile.",
+      "type": "int",
+      "standard": 0,
+      "hardened": 365,
+      "note": "a whole number, 0 or more"
+    },
+    "integrity.forensic_copies": {
+      "value": 3,
+      "about": "How many copies of a failed database are kept before an automatic restore replaces it.",
+      "type": "int",
+      "standard": 3,
+      "hardened": 10,
+      "note": "a whole number, 0 or more"
+    },
+    "integrity.before_clear_days": {
+      "value": 30,
+      "about": "Days the full copy taken before a clear or reset is kept (0 = never deleted). It is your way back, and a copy of the data.",
+      "type": "int",
+      "standard": 30,
+      "hardened": 14,
+      "note": "a whole number, 0 or more"
+    },
+    "test_mode.allowed": {
+      "value": true,
+      "about": "Debug mode and test data (copies of the database) may be used at all.",
+      "type": "bool",
+      "standard": true,
+      "hardened": false,
+      "how": "false = the test-data menu and routes do not exist (the command line's --no-test-mode)."
+    },
+    "test_mode.forced": {
+      "value": false,
+      "about": "Test mode is forced on by root (launch flag --test-mode) and nobody can turn it off; the default super admin then signs in with a fixed lab password.",
+      "type": "bool",
+      "standard": false,
+      "hardened": false,
+      "how": "Lab use. Same as the command line's --test-mode. Not allowed in the hardened profile. Cannot be true while test_mode.allowed is false."
+    },
+    "ota.enabled": {
+      "value": true,
+      "about": "Over-the-air firmware updates exist at all (off with --no-ota): uploads, deployments and pushes are refused and devices are offered nothing.",
+      "type": "bool",
+      "standard": true,
+      "hardened": true,
+      "how": "false = no firmware uploads, deployments or pushes, and devices are offered nothing (--no-ota)."
+    },
+    "features.disabled": {
+      "value": "",
+      "about": "Comma-separated features switched off by root; administrators cannot switch them on (see the System page for the list).",
+      "type": "str",
+      "standard": "",
+      "hardened": "",
+      "how": "Prefer the \"features\" section below: it lists every feature by name."
+    },
+    "root.allow_access": {
+      "value": true,
+      "about": "Whether the separate root console may be opened (ssh, docker exec). TrustedInstaller switches it off inside a container: use the console attached to the container instead.",
+      "type": "bool",
+      "standard": true,
+      "hardened": true
+    },
+    "iips.enabled": {
+      "value": true,
+      "about": "imPress Integrity Protection Service: refuse to start when the program's own files changed since the last baseline.",
+      "type": "bool",
+      "standard": true,
+      "hardened": true,
+      "how": "false = start although the program's files changed; every page shows a warning (--bypass-iips). Not allowed to be loosened in the hardened profile."
+    },
+    "iips.auto_accept_updates": {
+      "value": true,
+      "about": "When the program was updated (a different release or git commit than the one the baseline was made from), its new files become the reference by themselves instead of locking imPress. Files edited by hand under the same release still lock it. Off in the hardened profile: root accepts an update with --rehash.",
+      "type": "bool",
+      "standard": true,
+      "hardened": false,
+      "how": "true: when the program was updated (a different release or git commit), its new files become the reference by themselves. Files edited by hand under the SAME release still lock imPress until root runs with --rehash."
+    },
+    "traffic.monitor": {
+      "value": true,
+      "about": "Watch request rates per endpoint, address and account and alert administrators to unusual traffic.",
+      "type": "bool",
+      "standard": true,
+      "hardened": true
+    },
+    "deadlock_prevention.enabled": {
+      "value": true,
+      "about": "If no active super admin exists, roll the database back and create a recovery account (global_deadlock_prevention).",
+      "type": "bool",
+      "standard": true,
+      "hardened": true
+    },
+    "backups.restore_requires_approval": {
+      "value": false,
+      "about": "Restoring a backup needs a second super admin's approval (so only a super admin can request it).",
+      "type": "bool",
+      "standard": false,
+      "hardened": true
+    },
+    "test_mode.export_allowed": {
+      "value": true,
+      "about": "Test-data copies may be exported as CSV files.",
+      "type": "bool",
+      "standard": true,
+      "hardened": false
+    },
+    "test_mode.pending_ttl_hours": {
+      "value": 168,
+      "about": "Hours a finished test database waits for a decision before it is deleted (0 = never).",
+      "type": "int",
+      "standard": 168,
+      "hardened": 24,
+      "note": "a whole number, 0 or more"
+    },
+    "test_mode.dataset_ttl_days": {
+      "value": 0,
+      "about": "Days a saved test dataset is kept (0 = never).",
+      "type": "int",
+      "standard": 0,
+      "hardened": 30,
+      "note": "a whole number, 0 or more"
+    },
+    "code.verify_manifest": {
+      "value": "warn",
+      "about": "Check the server's own files against the root-signed MANIFEST.json at start-up.",
+      "type": "enum",
+      "standard": "warn",
+      "hardened": "enforce",
+      "choices": [
+        "off",
+        "warn",
+        "enforce"
+      ]
+    },
+    "device.https_required": {
+      "value": false,
+      "about": "Gateways and hubs must use HTTPS/WSS (same effect as IMPRESS_DEVICE_HTTPS_ONLY).",
+      "type": "bool",
+      "standard": false,
+      "hardened": true
+    },
+    "device.keys_required": {
+      "value": false,
+      "about": "The shared device key may only enrol; every device must use its own key (same as IMPRESS_DEVICE_KEYS_REQUIRED).",
+      "type": "bool",
+      "standard": false,
+      "hardened": true
+    },
+    "firmware.signing_required": {
+      "value": false,
+      "about": "A site firmware signing key must be configured and unsigned images are never accepted.",
+      "type": "bool",
+      "standard": false,
+      "hardened": true
+    }
+  },
+  "features": {
+    "_about": "Web-app features. `false` switches one off for everybody and administrators cannot switch it back on (the same as the flag features.disabled). They are listed, with who changed them, under System > Features.",
+    "search": {
+      "value": true,
+      "about": "Global search. Search over classes, students, devices, accounts and settings.",
+      "group": "Interface"
+    },
+    "notifications": {
+      "value": true,
+      "about": "Notification tray. The bell with alerts and updates.",
+      "group": "Interface"
+    },
+    "tutorial": {
+      "value": true,
+      "about": "Guided tour. The interactive tour offered on first sign-in and from the Tutorial button.",
+      "group": "Interface"
+    },
+    "onboarding": {
+      "value": true,
+      "about": "Welcome set-up. The first sign-in questions: name, password, theme.",
+      "group": "Interface"
+    },
+    "sidebar_collapse": {
+      "value": true,
+      "about": "Collapsible sidebar. Let people collapse the sidebar to icons.",
+      "group": "Interface"
+    },
+    "help_menu": {
+      "value": true,
+      "about": "Help and documentation. The documentation menu for administrators.",
+      "group": "Interface"
+    },
+    "password_meter": {
+      "value": true,
+      "about": "Password strength meter. The strength bar under password fields.",
+      "group": "Interface"
+    },
+    "dashboard_widgets": {
+      "value": true,
+      "about": "Dashboard widgets. Editable dashboard: add, remove and move widgets.",
+      "group": "Personalization"
+    },
+    "personalization": {
+      "value": true,
+      "about": "Personalization. Accent colours, date and time formats.",
+      "group": "Personalization"
+    },
+    "accessibility": {
+      "value": true,
+      "about": "Accessibility settings. Colour-vision modes, contrast, motion and text size.",
+      "group": "Personalization"
+    },
+    "advanced_mode": {
+      "value": true,
+      "about": "Advanced mode. Detailed statistics for administrators.",
+      "group": "Personalization"
+    },
+    "class_icons": {
+      "value": true,
+      "about": "Class icons and colours. Choose an icon and colour for a class.",
+      "group": "Classes"
+    },
+    "ta_designation": {
+      "value": true,
+      "about": "Teaching assistants. The TA designation for faculty accounts.",
+      "group": "Accounts"
+    },
+    "trash": {
+      "value": true,
+      "about": "Deleted accounts (30 days). Restore a deleted account within 30 days.",
+      "group": "Accounts"
+    },
+    "presence": {
+      "value": true,
+      "about": "Active users. Who is signed in now, last activity and activity graphs.",
+      "group": "Accounts"
+    },
+    "backups": {
+      "value": true,
+      "about": "Backups and restore. Save, view and restore backups of the database and system state.",
+      "group": "System"
+    },
+    "activity_charts": {
+      "value": true,
+      "about": "Activity graphs. Charts of an account's activity over time.",
+      "group": "System"
+    },
+    "traffic_monitor": {
+      "value": true,
+      "about": "Traffic monitor. Detect unusual request rates and alert administrators.",
+      "group": "Security"
+    },
+    "risk_scores": {
+      "value": true,
+      "about": "Account risk badges. A safety badge and score for every account.",
+      "group": "Security"
+    },
+    "disabled_overlay": {
+      "value": true,
+      "about": "Disabled-account notice. Blur the page and explain when the signed-in account is disabled.",
+      "group": "Security"
+    },
+    "update_overlay": {
+      "value": true,
+      "about": "Update notice. Blur the page and explain while the system is being updated.",
+      "group": "System"
+    }
+  }
+}

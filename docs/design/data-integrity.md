@@ -60,7 +60,9 @@ sequenceDiagram
     GW->>DB: COMMIT (data and seals together)
 ```
 
-`verify()` recomputes every row's seal and every aggregate. A change made with an `sqlite3` shell, a hex editor or a copied-in file cannot produce valid seals, so verification reports it:
+`verify()` recomputes every row's seal and every aggregate, **inside one read snapshot** (the database runs in WAL mode, so the check never blocks a request and never sees half of a commit). A failing check is repeated once a second later before anything is restored, because a restore loses data. Before this, the check read each table at a different moment while the server kept writing, and a request that committed in between looked like a change made outside imPress: a false *Degraded* alarm and a restore of an older backup, most often seen right after start-up.
+
+A change made with an `sqlite3` shell, a hex editor or a copied-in file cannot produce valid seals, so verification reports it:
 
 - a row whose seal does not match (**changed**)
 - a row with no seal (**added**)

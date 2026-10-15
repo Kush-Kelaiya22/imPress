@@ -16,6 +16,13 @@ KEYS = {
     "\x1b[1~": "HOME", "\x1b[4~": "END", "\x1b[7~": "HOME", "\x1b[8~": "END",
     "\x1b[3~": "DELETE", "\x1b[5~": "PAGEUP", "\x1b[6~": "PAGEDOWN", "\x1b[Z": "BACKTAB",
 }
+# Scroll the log pane whichever pane has the focus: Shift, Alt or Ctrl with Up/Down, Ctrl+Home/End, and Option+Up/Down
+# on terminals that send Escape first. (xterm sends 2 = Shift, 3 = Alt, 5 = Ctrl, 4/6/7/8 = combinations.)
+for _mod in "2345678":
+    KEYS[f"\x1b[1;{_mod}A"], KEYS[f"\x1b[1;{_mod}B"] = "SCROLL_UP", "SCROLL_DOWN"
+    KEYS[f"\x1b[1;{_mod}H"], KEYS[f"\x1b[1;{_mod}F"] = "LOG_TOP", "LOG_LIVE"
+    KEYS[f"\x1b[5;{_mod}~"], KEYS[f"\x1b[6;{_mod}~"] = "SCROLL_UP", "SCROLL_DOWN"
+KEYS["\x1b\x1b[A"], KEYS["\x1b\x1b[B"] = "SCROLL_UP", "SCROLL_DOWN"
 CONTROLS = {"\r": "ENTER", "\n": "ENTER", "\t": "TAB", "\x7f": "BACKSPACE", "\b": "BACKSPACE",
             "\x03": "INTERRUPT", "\x04": "EOF", "\x01": "HOME", "\x05": "END", "\x0c": "REDRAW",
             "\x15": "KILL_START", "\x0b": "KILL_END", "\x17": "KILL_WORD"}
@@ -141,7 +148,8 @@ class Terminal:
             ch = msvcrt.getwch()
             if ch in ("\x00", "\xe0"):
                 return [{"H": "UP", "P": "DOWN", "M": "RIGHT", "K": "LEFT", "G": "HOME", "O": "END",
-                         "S": "DELETE", "I": "PAGEUP", "Q": "PAGEDOWN", "\x0f": "BACKTAB"}.get(msvcrt.getwch(), "IGNORE")]
+                         "S": "DELETE", "I": "PAGEUP", "Q": "PAGEDOWN", "\x0f": "BACKTAB",
+                         "\x8d": "SCROLL_UP", "\x91": "SCROLL_DOWN", "w": "LOG_TOP", "u": "LOG_LIVE"}.get(msvcrt.getwch(), "IGNORE")]
             return self.decoder.feed(ch)
         import select
         ready, _, _ = select.select([self.fd], [], [], timeout)

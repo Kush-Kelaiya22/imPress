@@ -13,6 +13,8 @@ Administrators and super admins can save, view and restore **backups of the data
 
 A saved backup is the database **plus a description of the system state** at that moment: the imPress version, the profile, the effective policy, and what the tables held (accounts, classrooms, students, quizzes, polls, devices, activity entries, the schema version, the number of active super admins). *View* shows it, so you know what you would be going back to.
 
+**Not while test mode is on:** no backup is made or restored then (see [test mode](test-mode.md#notes)); the automatic ones are refreshed from the real data when it ends.
+
 A backup is saved only when the database **verifies**: you never save a damaged copy by accident. The automatic copies live on the same machine and repair tampering; for a copy that survives the machine, use `scripts/backup.sh` ([off-host backup](production-hardening.md)).
 
 ## Restoring

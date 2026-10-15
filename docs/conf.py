@@ -11,7 +11,13 @@ REPOSITORY_ROOT = DOCS_DIR.parent
 project = "imPress"
 copyright = "2026, imPress contributors"
 author = "imPress contributors"
-release = "v2.1"
+# The release shown in the banner and the page title comes from the repository, so the published 'latest' always says
+# which release it describes (#209). A RELEASE file stamped by the build wins; otherwise VERSION.
+_version = (REPOSITORY_ROOT / "VERSION").read_text().strip()
+_stamp = REPOSITORY_ROOT / "RELEASE"
+release = _stamp.read_text().strip().split("/")[-1].lstrip("v") if _stamp.is_file() and _stamp.read_text().strip() else _version
+version = ".".join(release.split(".")[:2])
+line = "varun/v" + version
 
 extensions = ["myst_parser", "sphinx_copybutton", "sphinxcontrib.mermaid"]
 source_suffix = {".md": "markdown"}
@@ -29,13 +35,16 @@ suppress_warnings = ["myst.header"]
 html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
-html_title = "imPress documentation"
+html_title = f"imPress {release} documentation"
+templates_path = ["_templates"]
 html_theme_options = {"collapse_navigation": False, "navigation_depth": 4, "sticky_navigation": True, "includehidden": True}
 html_context = {
     "display_github": True,
     "github_user": "Kush-Kelaiya22",
     "github_repo": "imPress",
-    "github_version": "varun/v2.1",
+    "github_version": line,
+    "impress_release": release,
+    "impress_line": line,
     "conf_py_path": "/docs/",
 }
 

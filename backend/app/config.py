@@ -1,9 +1,15 @@
 """Application configuration loaded from environment variables."""
 
+import os
 import secrets
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
+
+# backend/: the default database and .env live here whatever directory the server or a tool is started from.
+# (Started from another folder, the server used to open a different, empty database with a different key.)
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+ENV_FILE = Path(os.environ.get("IMPRESS_ENV_FILE") or BACKEND_DIR / ".env")      # the settings file (tests point it elsewhere)
 
 # Public defaults shipped in this repo. Fine for local debugging, never for a
 # real deployment: insecure_settings() refuses them unless DEBUG is on.
@@ -18,7 +24,7 @@ class Settings(BaseSettings):
     SQL_ECHO: bool = False       # log every SQL statement (very noisy, includes data)
 
     # ── Database ──
-    DATABASE_URL: str = "sqlite+aiosqlite:///./impress.db"
+    DATABASE_URL: str = f"sqlite+aiosqlite:///{(BACKEND_DIR / 'impress.db').as_posix()}"
 
     # ── JWT Auth ──
     JWT_SECRET: str = DEFAULT_JWT_SECRET
@@ -26,8 +32,8 @@ class Settings(BaseSettings):
     JWT_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
     # ── Session Auth (server-side) ──
-    SESSION_IDLE_MINUTES: int = 5        # inactivity timeout (v2.2: 5 minutes)
-    SESSION_CLASS_IDLE_MINUTES: int = 30 # ... for faculty while one of their classes is in session
+    SESSION_IDLE_MINUTES: int = 15       # inactivity timeout (v2.2: 15 minutes; it was 5)
+    SESSION_CLASS_IDLE_MINUTES: int = 60 # ... for faculty while one of their classes is in session
     SINGLE_SESSION: bool = True          # refuse a second sign-in of one account from another device
     TEMP_BACKUP_DIR: str = ""            # temporary integrity backups; "" = <system temp>/impress-backups
     INTEGRITY_INTERVAL_S: int = 300      # verify the database and refresh the rolling backup this often
@@ -92,7 +98,7 @@ class Settings(BaseSettings):
     # ── CORS ──
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
 
-    model_config = {"env_prefix": "IMPRESS_", "env_file": ".env"}
+    model_config = {"env_prefix": "IMPRESS_", "env_file": str(ENV_FILE)}
 
 
 settings = Settings()

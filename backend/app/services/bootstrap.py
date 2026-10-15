@@ -12,6 +12,7 @@ Every other super admin is created by root in the console (app.console), never b
 from __future__ import annotations
 
 import logging
+import os
 
 from sqlalchemy import func, select
 
@@ -34,7 +35,8 @@ def banner(title: str, lines: list[str]) -> None:
     out = ["", "=" * width, f"  {title}", *[f"    {x}" for x in lines], "=" * width, ""]
     text = "\n".join(out)
     print(text, flush=True)
-    logger.warning("%s: %s", title, "; ".join(lines))
+    if not os.environ.get("IMPRESS_ROOT_SCREEN"):           # the root screen already shows the box: no second copy
+        logger.warning("%s: %s", title, "; ".join(lines))
 
 
 async def active_super_admins(db) -> int:
@@ -131,11 +133,8 @@ def fixed_password() -> tuple[str, str] | None:
 
 
 def _env_file():
-    from pathlib import Path
-    # Settings reads .env in the working directory. Never rewrite a different
-    # checkout's file merely because this module was imported from there.
-    path = Path.cwd() / ".env"
-    return path if path.is_file() else None
+    from ..config import ENV_FILE        # the file Settings reads, wherever the server was started from
+    return ENV_FILE if ENV_FILE.is_file() else None
 
 
 async def reset_default_password(new: str = "", keep_in_env: bool = True) -> tuple[str, str]:

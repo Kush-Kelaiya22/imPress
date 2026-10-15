@@ -62,14 +62,14 @@ cd imPress
 launcher.bat           # Windows: double-click it, or run it in cmd
 ```
 
-The terminal then shows the **imPress logo and version**, the live log, and a prompt for root's commands (the [root screen](docs/guides/console.md)). Open **http://127.0.0.1:8000** on the server itself, or `http://<SERVER_IP>:8000` from a device on the classroom network. Sign in as **`impress.default.superAdmin`**. Its password is **new at every start** and is printed once on that screen (or fix it with `IMPRESS_DEFAULT_SUPERADMIN_PASSWORD`). Run the launcher again any time to start the server.
+The terminal then shows the **imPress logo and version**, the live log, and a filled command bar for root's commands (the [root screen](docs/guides/console.md): Tab completes, Shift+Up/Down scrolls the logs, `restart` applies the flags file). Open **http://127.0.0.1:8000** on the server itself, or `http://<SERVER_IP>:8000` from a device on the classroom network. Sign in as **`impress.default.superAdmin`**. Its password is **new at every start** and is printed once on that screen (or fix it with `IMPRESS_DEFAULT_SUPERADMIN_PASSWORD`). Run the launcher again any time to start the server.
 
 | To… | Do |
 |---|---|
 | let classroom gateways reach the server | already enabled on `0.0.0.0:8000`; allow TCP 8000 in your firewall and configure HTTPS before using an untrusted network |
 | check whether a busy port can be stopped | the launcher displays the process and waits for confirmation; a forced stop requires a second confirmation |
 | try it with realistic data | sign in, open **Test data**, turn on test mode, **Generate**, **Import**: [guide](docs/guides/test-mode.md) |
-| start in a special way | launch flags: `--test-mode` (forced, cannot be turned off), `--no-test-mode`, `--no-ota`, `--rehash`, `--bypass-iips`, `--feature NAME=VALUE`: [launch flags](docs/guides/launch-flags.md) |
+| start in a special way | edit **`backend/impress.flags.json`** (every flag explained next to its value; type `restart` on the root screen to apply). The command line still works for a one-off: `--test-mode`, `--no-test-mode`, `--no-ota`, `--rehash`, `--bypass-iips`, `--feature NAME=VALUE`: [launch flags](docs/guides/launch-flags.md), [every flag](docs/reference/flags.md) |
 | run it in the background | no terminal means no screen: the log is plain lines (`--plain` forces it) |
 | run it with Docker | [Container guide](docs/deployment/container.md) |
 

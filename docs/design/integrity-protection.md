@@ -38,7 +38,8 @@ Each difference is classified: **changed**, **added**, **removed** or **moved** 
 
 | To… | Do |
 |---|---|
-| accept the files as they are now (after an upgrade, or after you changed something on purpose) | start with `--rehash`, or `iips rehash` in the console |
+| accept the files as they are now (after you changed something on purpose) | start with `--rehash` (`restart --rehash` in the root screen), or `iips rehash` in the console |
+| update imPress (pull a new release, switch branch) | nothing: in the **standard** profile a different build (git commit, or release) than the one the baseline was made from is an *update*, and the new files become the reference by themselves (policy `iips.auto_accept_updates`, on in `standard`, off in `hardened`). Files edited by hand under the **same** build still lock imPress |
 | start although the check failed | start with `--bypass-iips`. **Every page, including the sign-in page and super admins' pages, shows a red banner**: *imPress Integrity Protection Service is disabled. Proceed with caution.* It cannot be dismissed. Not allowed in the hardened profile |
 | see the differences | `iips status` in the console |
 | turn it off for good | policy flag `iips.enabled=false`; the banner stays |

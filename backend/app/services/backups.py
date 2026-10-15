@@ -124,6 +124,8 @@ def describe(backup_id: str) -> dict:
 
 
 async def save(name: str, by: str, note: str = "") -> dict:
+    if integrity.backups_suspended():
+        raise BackupError("TEST_MODE", integrity.NO_BACKUPS_IN_TEST_MODE, 409)
     name = name.strip()
     if not NAME_RE.match(name):
         raise BackupError("BAD_NAME", "Name: 1-48 letters, digits, spaces, . _ -", 422)
@@ -154,6 +156,9 @@ def delete(backup_id: str) -> None:
 
 async def restore(backup_id: str, by: str) -> dict:
     """Replace the live database with the chosen copy. Returns what happened."""
+    if integrity.backups_suspended():
+        raise BackupError("TEST_MODE", "Backups are not restored while test mode is on: that would put real data into "
+                          "the test copy. Turn test mode off first.", 409)
     src = resolve(backup_id)
     async with integrity._lock:
         probe = integrity_copy_check(src)
