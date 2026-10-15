@@ -4,9 +4,15 @@ Root decides how imPress starts. The flags used to be typed on the start command
 they live in this file now, each one with its own explanation next to its value, so a start is the same every time and
 nothing has to be remembered. Command-line flags still work and win over the file for that start.
 
+This file holds the **feature flags**: launch choices (test mode, over-the-air updates, the traffic monitor, which web-app
+features exist) that a person may edit by hand. The security and integrity switches are **policy**, not feature flags: they live
+in the sealed policy store (gpcstore.py) and change only through the console or the System page, so that every change is
+recorded with who and when.
+
 Layers, lowest first (a later one overrides an earlier one):
 
-    built-in defaults of the profile  <  root-signed global_policy_control.json  <  this file  <  IMPRESS_GPC  <  command line
+    built-in defaults  <  policy store  <  root-signed global_policy_control.json  <  this file  <  IMPRESS_GPC  <  command
+    line  <  `flags set` (this session only)
 
 The file is plain JSON. Every flag is an object; **only `value` is read**, the other keys are there for the person
 editing it (what the flag does, what the standard and hardened profiles default to, what is allowed):
@@ -61,7 +67,7 @@ def template() -> dict:
     from . import gpc
     from .services.features import FEATURES
     flags = {}
-    for f in gpc.FLAGS.values():
+    for f in (x for x in gpc.FLAGS.values() if x.scope == "feature"):
         entry = {"value": f.standard, "about": f.doc, "type": f.kind, "standard": f.standard, "hardened": f.hardened}
         if f.choices:
             entry["choices"] = list(f.choices)
@@ -144,6 +150,9 @@ def load(file: Path | None = None) -> tuple[str | None, list[str]]:
         if name not in gpc.FLAGS:
             raise FlagsFileError(f"flags: unknown flag {name!r} (see docs/reference/flags.md)")
         flag = gpc.FLAGS[name]
+        if flag.scope != "feature":
+            raise FlagsFileError(f"flags: {name} is a policy flag (FLAG_IS_POLICY): it is sealed and recorded, so it is changed "
+                                 "with `policy set` in the console (root's password), not in this file")
         try:
             value = gpc.coerce(flag, _value(entry, f"flags.{name}"))
         except gpc.PolicyError as exc:
@@ -168,18 +177,55 @@ def load(file: Path | None = None) -> tuple[str | None, list[str]]:
     return profile, overrides
 
 
+def save(changes: dict, target: Path | None = None) -> Path:
+    """Write feature-flag values (and, under the key "profile", the profile) into the file, keeping every explanation.
+    This is `--save` and `flags save`: the next start uses them. Raises FlagsFileError for a policy or unknown flag."""
+    from . import gpc
+    target = target or path()
+    write(target=target)                                    # creates it with the explanations when missing
+    doc = json.loads(target.read_text(encoding="utf-8"))
+    for name, raw in changes.items():
+        if name == "profile":
+            if raw not in gpc.PROFILES:
+                raise FlagsFileError(f"profile: {raw!r} is not valid")
+            doc["profile"]["value"] = raw
+            continue
+        flag = gpc.FLAGS.get(name)
+        if flag is None:
+            raise FlagsFileError(f"unknown flag {name!r}")
+        if flag.scope != "feature":
+            raise FlagsFileError(f"{name} is a policy flag (FLAG_IS_POLICY): it cannot be saved here; use `policy set` in the console")
+        try:
+            doc["flags"][name]["value"] = gpc.coerce(flag, raw)
+        except gpc.PolicyError as exc:
+            raise FlagsFileError(str(exc)) from None
+    tmp = target.with_suffix(".tmp")
+    tmp.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    os.replace(tmp, target)
+    return target
+
+
 def reference() -> str:
     """Markdown for docs/reference/flags.md, from the same catalogue."""
     t = template()
     out = ["# Launch flags reference", "",
            "Generated from the flag catalogue by `python -m app.flagsfile docs`; do not edit by hand. "
            "How to use the file: [launch flags](../guides/launch-flags.md).", "",
+           "## Feature flags (`impress.flags.json`, editable by hand)", "",
            "| Flag | Type | Standard | Hardened | What it does |", "|---|---|---|---|---|"]
     for name, e in t["flags"].items():
         std, hard = json.dumps(e["standard"]), json.dumps(e["hardened"])
         choices = f" ({' / '.join(e['choices'])})" if "choices" in e else ""
         extra = f" **{e['how']}**" if "how" in e else ""
         out.append(f"| `{name}` | {e['type']}{choices} | `{std}` | `{hard}` | {e['about']}{extra} |")
+    from . import gpc
+    out += ["", "## Policy flags (the sealed store: `policy set` in the console, or the System page)", "",
+            "Sealed, recorded with who and when; administrators and faculty can never change them. *Changed by* says who may.", "",
+            "| Flag | Type | Standard | Hardened | Changed by | What it does |", "|---|---|---|---|---|---|"]
+    for f in (x for x in gpc.FLAGS.values() if x.scope == "policy"):
+        choices = f" ({' / '.join(f.choices)})" if f.choices else ""
+        out.append(f"| `{f.name}` | {f.kind}{choices} | `{json.dumps(f.standard)}` | `{json.dumps(f.hardened)}` | "
+                   f"{f.editable_by} | {f.doc} |")
     out += ["", "## Web-app features", "",
             "Set `false` under `\"features\"` to switch one off for everybody (root outranks administrators).", "",
             "| Feature | Group | What it is |", "|---|---|---|"]

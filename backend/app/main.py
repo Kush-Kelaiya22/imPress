@@ -34,15 +34,29 @@ from .routers.search import router as search_router
 from .routers.backups import router as backups_router
 from .routers.features import router as features_router
 from .routers.testmode import router as testmode_router
+from .routers.mfa import router as mfa_router
 
 
 logger = logging.getLogger(__name__)
+
+
+def _rehash_allowed() -> bool:
+    """IMPRESS_REHASH=1 accepts the program's files as the reference: only with root's password (IMPRESS_ROOT_PASSWORD)."""
+    if not int(os.environ.get("IMPRESS_REHASH", "0")):
+        return False
+    from . import rootauth
+    if rootauth.check(os.environ.get("IMPRESS_ROOT_PASSWORD")):
+        return True
+    logger.error("IMPRESS_REHASH was ignored: root's password is missing or wrong (ROOT_PASSWORD_REQUIRED)")
+    return False
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Create tables and seed a default super admin on startup."""
     check_secure(settings)
+    from . import gpcstore
+    gpcstore.session_clear()                         # feature flags changed with `flags set` last only until the server restarts
     # Global policy (v2.2): root's switches. A policy that can't be applied stops a hardened server.
     try:
         policy = gpc.load(settings)
@@ -80,8 +94,10 @@ async def lifespan(app: FastAPI):
         logger.warning("DEBUG mode with default secrets %s — never deploy like this",
                        insecure_settings(settings))
     from .services import iips
-    verdict = iips.check(enabled=bool(gpc.get("iips.enabled")), rehash=bool(int(os.environ.get("IMPRESS_REHASH", "0"))),
-                         auto_accept=bool(gpc.get("iips.auto_accept_updates")))
+    verdict = iips.check(enabled=bool(gpc.get("iips.enabled")), rehash=_rehash_allowed(),
+                         auto_accept=bool(gpc.get("iips.auto_accept_updates")), binding=gpc.get("iips.device_binding"))
+    if verdict.get("device_warning"):
+        startup_alerts.append("Integrity protection: " + verdict["device_warning"])
     if iips.locked():
         logger.error(iips.violation_message())
     elif verdict["status"] == "bypassed":
@@ -147,6 +163,7 @@ async def lifespan(app: FastAPI):
     maintenance_task = asyncio.create_task(housekeeping.maintenance_loop())
     for note in startup_alerts:
         await housekeeping.report(note)
+    await housekeeping.report_policy_notices()
 
     try:
         yield
@@ -237,6 +254,10 @@ async def database_principal(request: Request, call_next):
     return await call_next(request)
 
 
+from . import errors as _errors  # noqa: E402
+_errors.install(app)
+
+
 @app.exception_handler(DatabaseWriteRefused)
 async def _write_refused(request: Request, exc: DatabaseWriteRefused):
     """A write the gateway refused: 403, flagged in the activity log."""
@@ -305,6 +326,7 @@ app.include_router(ws_router)
 app.include_router(system_router)
 app.include_router(testmode_router)
 app.include_router(approvals_router)
+app.include_router(mfa_router)
 app.include_router(search_router)
 app.include_router(backups_router)
 app.include_router(features_router)
@@ -381,5 +403,7 @@ async def graph_data():
 
 @app.get("/{full_path:path}")
 async def serve_frontend(request: Request, full_path: str = ""):
-    """Serve the SPA index.html for all non-API, non-WS routes."""
+    """Serve the SPA index.html for all non-API, non-WS routes. An unknown /api or /ws path is a real 404 (JSON), not a page."""
+    if full_path.startswith(("api/", "ws/")) or full_path in ("api", "ws"):
+        raise HTTPException(404, "No such API route")
     return templates.TemplateResponse(request, "index.html")

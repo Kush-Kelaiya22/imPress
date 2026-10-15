@@ -484,3 +484,20 @@ input, select, textarea { border-radius: 8px; border-color: var(--border-strong)
 .login-foot { border-top: 0; margin-top: 18px; padding-top: 0; justify-content: center; text-align: center; }
 .login-theme { position: fixed; top: 16px; right: 16px; }
 .onb-card { border-radius: 14px; box-shadow: none; }
+
+/* Continue as the account that signed in last (login page) and the Welcome back page that follows a sign-in */
+.last-account { display: grid; gap: .35rem; justify-items: start; margin: .25rem 0 1rem; }
+.last-account .last-account-go { justify-content: center; font-weight: 600; }
+.last-account.chosen .last-account-go { border-color: var(--accent, #5b4ee5); }
+.last-account-forget { padding-left: 0; }
+.welcome-back { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; background: var(--bg, #fff); opacity: 0; transition: opacity .35s ease; }
+.welcome-back.show { opacity: 1; } .welcome-back.leave { opacity: 0; }
+.welcome-back-card { text-align: center; transform: scale(.94) translateY(8px); transition: transform .6s cubic-bezier(.2,.9,.3,1.2); }
+.welcome-back.show .welcome-back-card { transform: none; }
+.welcome-back-card h1 { font-size: clamp(1.6rem, 5vw, 2.6rem); line-height: 1.2; margin: 1rem 0; }
+.welcome-back-card h1 span { color: var(--accent, #5b4ee5); }
+.welcome-back-bar { height: 4px; width: 12rem; margin: 0 auto; border-radius: 4px; background: rgba(128,128,128,.25); overflow: hidden; }
+.welcome-back-bar i { display: block; height: 100%; width: 0; background: var(--accent, #5b4ee5); animation: welcome-fill 1.3s ease-out forwards; }
+@keyframes welcome-fill { to { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .welcome-back, .welcome-back-card { transition: none; } .welcome-back-bar i { animation: none; width: 100%; } }
+html[data-motion="reduce"] .welcome-back, html[data-motion="reduce"] .welcome-back-card { transition: none; } html[data-motion="reduce"] .welcome-back-bar i { animation: none; width: 100%; }

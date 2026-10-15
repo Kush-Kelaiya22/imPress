@@ -34,6 +34,7 @@ scripts/gpc.py sign --key ~/impress-root/root.key --profile hardened \
 
 ## 3. An audit trail the application cannot rewrite
 
+- [ ] **Two-step verification** (`dual_control.mfa_required`, on in the hardened profile): every super admin sets up an authenticator app in *Settings → Security* and stores the recovery codes offline; without it they cannot request or approve dangerous actions. Lost phone and no codes: root runs `mfa reset USER`.
 - [ ] `audit.sink_path` points to a file on an **append-only or write-once** location (`chattr +a`, an object-lock volume, or a remote-logged mount), and/or `audit.sink_url` sends every event to a collector the application's administrators don't control.
 - [ ] Verify it regularly: `cd backend && python -m app.manage audit-verify /var/log/impress/audit.jsonl` (the chain breaks if a line is edited, removed or reordered).
 - [ ] Keep it at least as long as your retention schedule says (`audit.min_retention_days`, 180 by default in the hardened profile; see [retention](../compliance/retention-schedule.md)).

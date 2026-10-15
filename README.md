@@ -227,14 +227,14 @@ flowchart TB
 
 | Layer | What it gives you | What it does not |
 |---|---|---|
-| **Sessions and passwords** | salted bcrypt over SHA-256, a password rule with a strength meter, temporary first passwords, 5 min idle for everyone (30 for faculty in class), one device per account, strict Content-Security-Policy, HttpOnly cookies | no multi-factor authentication yet ([#211](https://github.com/Kush-Kelaiya22/imPress/issues/211)) |
+| **Sessions and passwords** | salted bcrypt over SHA-256, a password rule with a strength meter, temporary first passwords, 15 min idle for everyone (60 for faculty in class), one device per account, strict Content-Security-Policy, HttpOnly cookies | no multi-factor authentication yet ([#211](https://github.com/Kush-Kelaiya22/imPress/issues/211)) |
 | **Database gateway** | every write is checked against the acting account's permission for that table; DDL is for the server only | it guards writes made *through* the application |
 | **Sealed rows** | a row changed outside imPress (a shell, a hex editor) is found within 5 minutes and repaired from a temporary backup; Degraded is flagged to administrators only | the seal key is derived from `IMPRESS_JWT_SECRET`: protect `.env` like the database |
 | **Dual control** | accepting a changed database, or clearing or resetting data, needs a *second* super admin's approval, a password re-entry at each step, a delay, an expiry and a single use | one person holding two super-admin accounts defeats it |
 | **External audit trail** | every event is also written to a hash-chained file or webhook that the application cannot rewrite; `audit-verify` checks the chain; it never holds students' personal data | put it on append-only storage, administered by someone else |
 | **Global policy control** | the switches belong to **root**: a signed policy file and inline overrides; the web app can show them but not change them; two profiles, *standard* and *hardened*, the second refusing to start insecurely | root on the host is outside what the application can defend |
 | **Host verification (TrustedInstaller)** | imPress is locked at start until the operating system, Python, SQLite, data folder, clock, processor, memory and disk are checked against the minimum; features the host cannot carry are switched off and come back when it can; in a container the separate root console is closed ([design](docs/design/trusted-boot.md)) | it trusts what the operating system reports |
-| **File integrity (IIPS)** | the program's own files and folder structure are hashed at first start; any change, addition, removal or move disables imPress until root accepts it (`--rehash`); `--bypass-iips` starts anyway with a red warning on every page ([design](docs/design/integrity-protection.md)) | it checks files at start, not a running process |
+| **File integrity (IIPS)** | the program's own files and folder structure are hashed at first start; any change, addition, removal or move disables imPress until root accepts it (`--rehash`, with root's password); the reference is **bound to the machine** (a hardware identity, not the address or system version) so code copied to another machine is flagged; a pulled update is accepted by itself in the standard profile; `--bypass-iips` starts anyway with a red warning on every page ([design](docs/design/integrity-protection.md)) | it checks files at start, not a running process |
 | **Traffic monitor and account safety** | per-endpoint rate limits per origin and account; a DoS or DDoS suspicion alerts administrators with the origin, pages and account (nothing is blocked); each account has a *Safe* / *Potentially Unsafe* / *Likely Compromised* badge and a 0 to 100 score ([design](docs/design/traffic-monitor.md)) | it informs people; it does not defend against an attack by itself |
 | **Session identifier (1PSID)** | a session id is bound to the server run that issued it: a restart ends every session and a copied token is dead | |
 | **Signing** | signed policy, signed code manifest, signed exports (verify with `scripts/verify_export.py`), signed firmware | device messages themselves are not authenticated (below) |
@@ -242,6 +242,51 @@ flowchart TB
 **Known limits.** ESP-NOW frames between student modules and the hub are not authenticated, so a nearby device could forge or replay an answer ([proposal](docs/design/mesh-authentication.md), [#187](https://github.com/Kush-Kelaiya22/imPress/issues/187)): run pilots in a controlled room until it ships. Boards do not use secure boot or flash encryption. Hardware checks for TLS, signed OTA and rollback are still open. The [risk register](docs/compliance/risk-register.md) lists every finding of the v2.2 security audit with its status.
 
 Read more: [security model](docs/design/security-model.md) · [data integrity](docs/design/data-integrity.md) · [global policy control](docs/design/gpc.md) · [trusted boot](docs/design/trusted-boot.md) · [integrity protection](docs/design/integrity-protection.md) · [traffic monitor](docs/design/traffic-monitor.md).
+
+## Policies, flags and root's controls
+
+imPress separates **what root decides** from **what the web app lets people change**, and keeps two kinds of switch apart on purpose.
+
+| | **Policy flags** (global policy control, GPC) | **Feature flags** |
+|---|---|---|
+| What they are | security and integrity: dual control, audit retention, backups, device and firmware rules, integrity protection, the second factor | launch choices: test mode, over-the-air updates, the traffic monitor, which web-app features exist |
+| Where they live | the **sealed policy store** `backend/impress.gpc.json` (and, above it, a root-signed `global_policy_control.json`) | `backend/impress.flags.json`, a plain file with an explanation next to every value |
+| Edit by hand? | **No.** The file is sealed like the database: a hand edit fails its seal, the edited copy is set aside, the defaults come back, administrators are alerted and the event is recorded | **Yes**, then `restart` |
+| Who changes them | root in the console (`policy set`, with root's password); a super admin only for the four operational flags, from the System page, with password and second factor; **administrators and faculty never** | root: the file, `--feature`, `flags set` |
+| Recorded | every change: the flag, old and new value, **who**, at which authority, **how** (console / web / system), **when**, a note, and **who enforces it since when**; the history is a hash chain | the file's own history (git), `flags save`, the audit entries of `flags` commands |
+
+**Where a value comes from** (later wins): the profile's built-in defaults, the policy store, a root-signed policy file, the flags file, `IMPRESS_GPC`, the command line, and `flags set` for the current session. In the *hardened* profile everything above the defaults may only make a flag **safer**; loosening one needs the signed file.
+
+```bash
+# policy: sealed, recorded, root's password
+policy show                              # every flag: value, source, set by, enforced since, who may change it
+policy set audit.min_retention_days 180 --note "retention schedule"
+policy history [FLAG]                    # who changed what, when, how
+policy reset [NAME]                      # back to the defaults
+
+# feature flags: manual, or per session
+flags show
+flags set ota.enabled false              # this run only; the server forgets it when it restarts
+flags save                               # keep this run's changes in impress.flags.json for every later start
+flags reset [--file]                     # drop them (--file: restore the shipped file; root's password)
+./launcher.sh --test-mode --save         # --save (command line only) keeps the flags you gave for every later start
+```
+
+**Flags that cannot work together stop imPress before anything else.** If two or more flags contradict each other (test mode forced *and* not allowed; a restore that needs approval while approvals are off; audit entries purged sooner than they must be kept; ...) the program prints **which flags and why**, exits with code 2 and does *not* go on to check security, open the database or start the server. `--test-mode --no-test-mode` and `--rehash --bypass-iips` are conflicts too.
+
+**Root's password.** The sensitive root actions (`iips rehash` and `--rehash`, `policy set/reset`, `system reset`, `password reset`, `superadmin create`, `mfa reset`, `backup restore`, `flash`, ending every session, non-GET `api` calls) ask for **root's password**. Only its **SHA-512** is kept in the program; a site sets its own with `IMPRESS_ROOT_PASSWORD_SHA512`. On the root screen the password is typed masked and is never shown, logged, kept in history or put on a command line; in a script it comes from `IMPRESS_ROOT_PASSWORD`. Wrong tries slow down. The shipped password is shared by every installation that has not set its own: **set your own on any real server** ([production hardening](docs/guides/production-hardening.md)).
+
+**A reference that knows its machine.** At first start (and at every `--rehash`) the program's file hashes are sealed together with a **device fingerprint**: the platform's hardware UUID, else the installation's machine id, else a physical network adapter's MAC. It ignores the IP address, host name, operating-system and Python versions, the user and the folder, so renaming or moving the folder, updating the system or changing networks never trips it, while code and reference **copied or pasted onto another machine** are flagged (policy `iips.device_binding`: `warn` alerts, `enforce` locks imPress until root re-hashes there). A rehash first checks what is there (intact, edited, from another device, missing) and records it in the reference's own history.
+
+**Two-step verification.** Super admins can enrol an authenticator app (TOTP); the policy `dual_control.mfa_required` (hardened: on) makes it mandatory for every dual-control step.
+
+**Lenient where it is safe.** The *standard* profile is relaxed for a classroom: 15-minute idle sessions (60 for faculty in class), approvals usable for 240 minutes, no delay, a lone super admin may approve their own request, test mode allowed, a pulled update accepted by integrity protection. *Hardened* tightens all of it and refuses to start below its floor.
+
+**Errors you can look up.** Every HTTP error answers with a code (`error.code`, header `X-Impress-Error`) and a reference for crashes; `backend/impress.errors.json` lists every code in categories with what it means and what to do ([reference](docs/reference/errors.md); `errors CODE` in the console).
+
+**The console is the same everywhere.** One layout and one set of keys on Windows, macOS and Linux (`IMPRESS_ASCII=1` swaps the box glyphs for plain ASCII). From it root can flash and test: `ports`, `flash c6|s3|student PORT [--image FILE]`, `build ROLE`, `test [SUITE]`.
+
+Read more: [launch flags and the flags file](docs/guides/launch-flags.md) · [every flag](docs/reference/flags.md) · [global policy control](docs/design/gpc.md) · [the root screen and console](docs/guides/console.md) · [flashing](docs/install/flashing.md) · [errors](docs/reference/errors.md)
 
 ## Privacy and compliance
 

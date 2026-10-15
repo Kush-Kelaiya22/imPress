@@ -88,7 +88,13 @@ def server():
     env = {**os.environ, "IMPRESS_DATABASE_URL": f"sqlite+aiosqlite:///{tmp}/ui.db", "IMPRESS_DEBUG": "false",
            "IMPRESS_JWT_SECRET": "ui-secret-not-default", "IMPRESS_DEVICE_API_KEY": DEVICE_KEY,
            "IMPRESS_INITIAL_ADMIN_PASSWORD": ADMIN_PASSWORD, "IMPRESS_FIRMWARE_DIR": str(tmp / "fw"),
-           "IMPRESS_FIRMWARE_ALLOW_UNSIGNED": "true", "IMPRESS_FIRMWARE_SINGLE_APPROVER": "true"}   # #123
+           "IMPRESS_FIRMWARE_ALLOW_UNSIGNED": "true", "IMPRESS_FIRMWARE_SINGLE_APPROVER": "true",   # #123
+           # root's password for the console commands the fixtures run (a test password, never the shipped one), and this
+           # run's own policy store, session flags and flags file
+           "IMPRESS_ROOT_PASSWORD": "UI-Root-Password-1!",
+           "IMPRESS_ROOT_PASSWORD_SHA512": __import__("hashlib").sha512(b"UI-Root-Password-1!").hexdigest(),
+           "IMPRESS_GPC_STORE": str(tmp / "impress.gpc.json"), "IMPRESS_SESSION_FLAGS": str(tmp / "session.flags.json"),
+           "IMPRESS_FLAGS_FILE": str(tmp / "impress.flags.json")}
     Api.console_env = env
     log = open(tmp / "server.log", "w")
     proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(port),

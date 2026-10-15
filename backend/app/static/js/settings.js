@@ -61,6 +61,7 @@ function settingsSections(user) {
       <label>Type it again<input type="password" id="pw-again" autocomplete="new-password" required></label>
       <p id="pw-err" class="callout danger hidden" role="alert"></p>
       <div><button class="btn btn-primary" type="submit">${icon('lock', 'sm')} Change password</button></div></form>
+    ${user.role === 'super_admin' ? `<h3 class="mt-2 mb-1">Two-step verification</h3><div id="mfa-box" class="text-muted">Loading…</div>` : ''}
     <h3 class="mt-2 mb-1">This sign-in</h3><dl class="kv" id="sess-info"><dt>Session</dt><dd>Loading…</dd></dl></div>`;
   return SECTIONS.filter(([id, , , flag, perm]) => show(flag) && (perm !== 'admin' || admin)).map(([id]) => out[id]).join('');
 }
@@ -134,6 +135,7 @@ function wireSettings(user) {
       showToast('Profile saved', 'success');
     } catch (err) { showToast(err.message, 'error'); }
   });
+  if (document.getElementById('mfa-box')) renderMfa();
   const nu = document.getElementById('pw-new');
   if (nu) wirePasswordMeter(nu, 'pw-new', user.username, user.role);
   document.getElementById('pw-form')?.addEventListener('submit', async (e) => {
@@ -153,3 +155,50 @@ function wireSettings(user) {
     } catch (ex) { bad(ex.message); }
   });
 }
+
+// ── Two-step verification (#211): set up an authenticator app, recovery codes, turn off ──
+async function renderMfa() {
+  const box = document.getElementById('mfa-box');
+  if (!box) return;
+  let m;
+  try { m = await mfaApi.status(); } catch (e) { box.textContent = 'Not available.'; return; }
+  box.innerHTML = m.enrolled
+    ? `<p>${statusPill('ok', 'On')} Every approval asks for a code from your app as well as your password. ${m.recovery_codes_left} recovery code${m.recovery_codes_left === 1 ? '' : 's'} left.</p>
+       <button class="btn btn-outline btn-sm" data-action="mfa-codes">${icon('refresh', 'sm')} New recovery codes</button>
+       ${m.required ? '<span class="text-muted text-sm"> Required by policy: it cannot be turned off.</span>' : `<button class="btn btn-outline btn-sm" data-action="mfa-off">${icon('x', 'sm')} Turn off</button>`}`
+    : `<p>${statusPill('warn', 'Off')} ${m.required ? 'Policy requires it: you cannot request or approve dangerous actions until you set it up.' : 'Adds a code from an authenticator app to every approval.'}</p>
+       <button class="btn btn-primary btn-sm" data-action="mfa-setup">${icon('shield', 'sm')} Set up</button>`;
+}
+function showRecoveryCodes(codes) {
+  return askDialog({ title: 'Your recovery codes', confirm: 'I have saved them', cancel: '',
+    body: `<p>Each works once, if you lose your phone. They are shown <b>only now</b>: keep them somewhere safe.</p><pre class="mono" style="user-select:all">${codes.map(escHtml).join('\n')}</pre>`, fields: [] });
+}
+Object.assign(Actions, {
+  'mfa-setup': async () => {
+    const v = await askDialog({ title: 'Set up two-step verification', confirm: 'Continue', body: 'Enter your password to start.',
+      fields: [{ name: 'password', label: 'Your password', type: 'password', autocomplete: 'current-password' }], validate: (x) => x.password.length > 0 });
+    if (!v) return;
+    try {
+      const s = await mfaApi.setup(v.password);
+      const c = await askDialog({ title: 'Add it to your app', confirm: 'Turn on',
+        body: `<p>In an authenticator app (any that supports TOTP), add an account by <b>entering this key</b>:</p><p><code style="user-select:all;word-break:break-all">${escHtml(s.secret)}</code></p><p class="text-muted text-sm">Or open this link on the phone: <a href="${escHtml(s.uri)}">${escHtml(s.uri.slice(0, 40))}…</a></p><p>Then type the 6-digit code it shows.</p>`,
+        fields: [{ name: 'code', label: 'Code', type: 'text', autocomplete: 'one-time-code' }], validate: (x) => x.code.trim().length >= 6 });
+      if (!c) return;
+      const r = await mfaApi.enable(c.code);
+      await showRecoveryCodes(r.recovery_codes);
+      showToast('Two-step verification is on', 'success'); renderMfa();
+    } catch (err) { showToast(err.message, 'error'); }
+  },
+  'mfa-off': async () => {
+    const v = await askDialog({ title: 'Turn off two-step verification', confirm: 'Turn off', body: 'Enter your password and a code.',
+      fields: [{ name: 'password', label: 'Your password', type: 'password', autocomplete: 'current-password' }, CODE_FIELD], validate: (x) => x.password && x.code });
+    if (!v) return;
+    try { await mfaApi.disable(v.password, v.code); showToast('Turned off', 'success'); renderMfa(); } catch (err) { showToast(err.message, 'error'); }
+  },
+  'mfa-codes': async () => {
+    const v = await askDialog({ title: 'New recovery codes', confirm: 'Make new codes', body: 'The old codes stop working.',
+      fields: [{ name: 'password', label: 'Your password', type: 'password', autocomplete: 'current-password' }, CODE_FIELD], validate: (x) => x.password && x.code });
+    if (!v) return;
+    try { const r = await mfaApi.recovery(v.password, v.code); await showRecoveryCodes(r.recovery_codes); renderMfa(); } catch (err) { showToast(err.message, 'error'); }
+  },
+});

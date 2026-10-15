@@ -10,6 +10,7 @@ async function renderLogin(app) {
   await loadSystemStatus();
   const insecure = location.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
   const reason = getParams().get('reason');
+  const lastAccount = readLastAccount();
   app.innerHTML = `
     <div class="login-page">
       <div class="login-shell">
@@ -18,6 +19,11 @@ async function renderLogin(app) {
           <form id="login-form" novalidate>
             <div class="login-brand login-card-in">${brandMark()}<span>imPress</span></div>
             <div class="login-card-in"><h1>Welcome back</h1><p class="lead">Sign in to your classroom account.</p></div>
+            ${lastAccount ? `<div class="last-account login-card-in" id="last-account">
+              <button type="button" class="btn btn-outline btn-block last-account-go" id="last-go">${icon('user')}
+                <span>${lastAccount.u === 'impress.default.superAdmin' ? 'Login as Default Super Admin?' : `Continue as ${escHtml(lastAccount.n)}?`}</span></button>
+              <button type="button" class="btn btn-ghost btn-sm last-account-forget" id="last-forget">Not you?</button>
+              <span class="form-hint">You will still be asked for the password.</span></div>` : ''}
             ${reason ? `<p class="callout info" role="status">${escHtml(reason)}</p>` : ''}
             <div class="form-group login-card-in">
               <label for="login-user">Username</label>
@@ -70,6 +76,17 @@ async function renderLogin(app) {
     eye.innerHTML = icon(show ? 'eyeOff' : 'eye');
     eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
   };
+  document.getElementById('last-go')?.addEventListener('click', () => {      // only fills the name in: the password is still needed
+    document.getElementById('login-user').value = lastAccount.u;
+    document.getElementById('last-account').classList.add('chosen');
+    pass.focus();
+  });
+  document.getElementById('last-forget')?.addEventListener('click', () => {
+    forgetLastAccount();
+    document.getElementById('last-account')?.remove();
+    document.getElementById('login-user').value = '';
+    document.getElementById('login-user').focus();
+  });
   pass.addEventListener('keyup', (e) => document.getElementById('login-caps').classList.toggle('hidden', !e.getModifierState?.('CapsLock')));
   const fail = (m) => { err.textContent = m; err.classList.remove('hidden'); };
   form.addEventListener('submit', async (e) => {
@@ -86,6 +103,7 @@ async function renderLogin(app) {
       Shell.user = me;
       await Prefs.load();
       if (me.must_change_password || (!me.onboarded && System.feature_flags?.onboarding !== false)) { Onboarding.run(me); return; }
+      await welcomeBack(me.display_name || me.full_name || me.username);
       navigate(({ classrooms: isAdminUser(me) ? '#/admin/classes' : '#/classes', students: '#/admin/students' }[Prefs.cur.landing]) || '#/dashboard');
     } catch (ex) {
       if (ex.status === 429 && ex.retryAfter > 0) startWait(ex.retryAfter);
@@ -94,5 +112,30 @@ async function renderLogin(app) {
       inFlight = false;
       if (form.isConnected) tick();
     }
+  });
+}
+
+/* The account that signed in here last (a cookie the server sets: a username and a display name, nothing secret). */
+function readLastAccount() {
+  try {
+    const m = document.cookie.split('; ').find(c => c.startsWith('impress_last='));
+    if (!m) return null;
+    const v = JSON.parse(decodeURIComponent(m.slice('impress_last='.length)));
+    return v && typeof v.u === 'string' && v.u ? { u: v.u, n: String(v.n || v.u) } : null;
+  } catch { return null; }
+}
+function forgetLastAccount() { document.cookie = 'impress_last=; Max-Age=0; path=/; SameSite=Strict'; }
+
+/* "Welcome back, NAME": a full-page moment between signing in and the first page. Skipped quickly with reduced motion. */
+function welcomeBack(name) {
+  return new Promise((resolve) => {
+    const reduced = typeof Prefs !== 'undefined' && Prefs.reduced && Prefs.reduced();
+    const el = document.createElement('div');
+    el.className = 'welcome-back';
+    el.setAttribute('role', 'status');
+    el.innerHTML = `<div class="welcome-back-card">${brandMark()}<h1>Welcome back,<br><span>${escHtml(name)}</span></h1><div class="welcome-back-bar"><i></i></div></div>`;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    setTimeout(() => { el.classList.add('leave'); setTimeout(() => { el.remove(); resolve(); }, reduced ? 0 : 350); }, reduced ? 350 : 1500);
   });
 }

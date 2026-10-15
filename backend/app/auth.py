@@ -61,6 +61,20 @@ def set_session_cookie(response, request, token: str) -> None:
                         httponly=True, samesite="strict", secure=request.url.scheme == "https")
 
 
+LAST_ACCOUNT_COOKIE = "impress_last"
+
+
+def set_last_account_cookie(response, request, user) -> None:
+    """Which account signed in here last, so the sign-in page can offer "Continue as ...". It holds a username and a display
+    name only (no secret, never a session), so page scripts may read it: HttpOnly is deliberately off. The password is still
+    asked for; this is a convenience, not a login."""
+    import json
+    from urllib.parse import quote
+    value = quote(json.dumps({"u": user.username, "n": (user.display_name or user.full_name or user.username)[:64]}, separators=(",", ":")))
+    response.set_cookie(LAST_ACCOUNT_COOKIE, value, max_age=365 * 86400, path="/", httponly=False, samesite="strict",
+                        secure=request.url.scheme == "https")
+
+
 def clear_session_cookie(response, request) -> None:
     response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, samesite="strict",
                            secure=request.url.scheme == "https")

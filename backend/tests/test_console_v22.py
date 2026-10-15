@@ -135,9 +135,9 @@ def test_serve_is_fixed_to_all_interfaces_on_port_8000(monkeypatch):
 
 def test_serve_refuses_contradictory_flags(box):
     rc, out = box(module="app.serve", extra=["--test-mode", "--no-test-mode"])
-    assert rc == 2 and "contradict" in out
+    assert rc == 2 and "FLAG_CONFLICT" in out and "--test-mode + --no-test-mode" in out
     rc, out = box(module="app.serve", extra=["--rehash", "--bypass-iips"])
-    assert rc == 2 and "contradict" in out
+    assert rc == 2 and "FLAG_CONFLICT" in out and "--rehash + --bypass-iips" in out
     rc, out = box(module="app.serve", extra=["--feature", "nope.nothing=1"])
     assert rc == 2
 

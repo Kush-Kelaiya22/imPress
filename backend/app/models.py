@@ -538,6 +538,20 @@ class DeletedUser(Base):
 
 # ── Dual control (v2.2) ────────────────────────────────────────────────
 
+class UserMfa(Base):
+    """A super admin's second factor (#211): a TOTP secret (RFC 6238) and single-use recovery codes.
+    `enabled` is false from the QR code being shown until the first code from the app is accepted."""
+    __tablename__ = "user_mfa"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    secret = Column(String(64), nullable=False)                 # base32; the seals protect it from being altered, not from being read
+    enabled = Column(Boolean, default=False)
+    last_counter = Column(Integer, default=-1)                  # the newest time step already used: a code is never accepted twice
+    recovery = Column(JSON, default=list)                       # sha256 of each unused recovery code
+    created_at = Column(DateTime, default=istnow)
+    enabled_at = Column(DateTime, nullable=True)
+
+
 class Approval(Base):
     """A request for a dangerous action that a second super admin must approve
     (policy dual_control.*). One row per request; it is used at most once."""

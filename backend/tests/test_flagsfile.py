@@ -28,7 +28,7 @@ def _edit(path, **changes):
 
 def test_the_template_explains_every_flag_and_feature():
     t = flagsfile.template()
-    assert set(t["flags"]) == set(gpc.FLAGS)
+    assert set(t["flags"]) == {n for n, f in gpc.FLAGS.items() if f.scope == "feature"}
     assert {n for n in t["features"] if not n.startswith("_")} == set(FEATURES)
     for name, entry in t["flags"].items():
         assert entry["about"] and entry["value"] == entry["standard"] == gpc.FLAGS[name].standard
@@ -54,12 +54,12 @@ def test_a_missing_file_is_not_an_error(tmp_path):
 
 
 def test_edited_values_become_overrides(file):
-    _edit(file, **{"test_mode.forced": True, "ota.enabled": False, "dual_control.delay_minutes": 30})
+    _edit(file, **{"test_mode.forced": True, "ota.enabled": False, "traffic.monitor": False})
     profile, overrides = flagsfile.load(file)
     assert profile is None
-    assert set(overrides) == {"test_mode.forced=true", "ota.enabled=false", "dual_control.delay_minutes=30"}
+    assert set(overrides) == {"test_mode.forced=true", "ota.enabled=false", "traffic.monitor=false"}
     parsed = gpc.parse_inline(",".join(overrides))
-    assert parsed == {"test_mode.forced": True, "ota.enabled": False, "dual_control.delay_minutes": 30}
+    assert parsed == {"test_mode.forced": True, "ota.enabled": False, "traffic.monitor": False}
 
 
 def test_features_switched_off_become_features_disabled(file):
@@ -78,7 +78,7 @@ def test_the_profile_is_read(file):
 @pytest.mark.parametrize("edit,needle", [
     (lambda d: d["flags"].update({"no.such.flag": {"value": 1}}), "no.such.flag"),
     (lambda d: d["flags"]["ota.enabled"].update(value="maybe"), "ota.enabled"),
-    (lambda d: d["flags"]["dual_control.delay_minutes"].update(value=-4), "dual_control.delay_minutes"),
+    (lambda d: d["flags"].update({"dual_control.delay_minutes": {"value": 4}}), "FLAG_IS_POLICY"),
     (lambda d: d["features"].update({"nothing": {"value": False}}), "nothing"),
     (lambda d: d["features"]["search"].update(value="off"), "features.search"),
     (lambda d: d["profile"].update(value="paranoid"), "paranoid"),
@@ -108,11 +108,11 @@ def test_a_bare_value_is_accepted(file):
 def test_an_untouched_file_does_not_loosen_the_hardened_profile(file):
     _, overrides = flagsfile.load(file)
     pol = gpc.build("hardened", ",".join(overrides), None, None)
-    assert pol.values["dual_control.delay_minutes"] == 15 and pol.values["test_mode.allowed"] is False
+    assert pol.values["dual_control.delay_minutes"] == 15 and pol.values["test_mode.allowed"] is False and pol.values["ota.enabled"]
 
 
 def test_an_edit_that_loosens_the_hardened_profile_is_refused(file):
-    _edit(file, **{"dual_control.enabled": False})
+    _edit(file, **{"ota.enabled": False})
     _, overrides = flagsfile.load(file)
     with pytest.raises(gpc.PolicyError, match="loosen"):
         gpc.build("hardened", ",".join(overrides), None, None)
@@ -138,10 +138,13 @@ def test_the_reference_page_in_the_docs_is_current():
 
 def test_the_command_line_wins_over_the_environment_and_the_file(file, monkeypatch):
     from app import serve
-    _edit(file, **{"dual_control.delay_minutes": 30})
+    _edit(file, **{"test_mode.export_allowed": False})
     monkeypatch.setenv("IMPRESS_FLAGS_FILE", str(file))
-    monkeypatch.setenv("IMPRESS_GPC", "dual_control.delay_minutes=20")
-    _, flags = serve.effective(["--feature", "dual_control.delay_minutes=10"])
-    assert gpc.parse_inline(",".join(flags))["dual_control.delay_minutes"] == 10
+    monkeypatch.setenv("IMPRESS_GPC", "test_mode.export_allowed=true")
+    _, flags = serve.effective(["--feature", "test_mode.export_allowed=false"])
+    assert gpc.parse_inline(",".join(flags))["test_mode.export_allowed"] is False         # the command line
     _, flags = serve.effective([])
-    assert gpc.parse_inline(",".join(flags))["dual_control.delay_minutes"] == 20
+    assert gpc.parse_inline(",".join(flags))["test_mode.export_allowed"] is True           # then the environment, over the file
+    monkeypatch.delenv("IMPRESS_GPC")
+    _, flags = serve.effective([])
+    assert gpc.parse_inline(",".join(flags))["test_mode.export_allowed"] is False          # the file alone

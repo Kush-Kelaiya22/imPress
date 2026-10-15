@@ -201,8 +201,8 @@ const adminApi = {
   backups() { return apiRequest('/admin/backups'); },
   saveBackup(name, note = '') { return apiRequest('/admin/backups', { method: 'POST', body: JSON.stringify({ name, note }) }); },
   describeBackup(id) { return apiRequest(`/admin/backups/${id}`); },
-  restoreBackup(id, password, confirm, approvalId = null) {
-    return apiRequest(`/admin/backups/${id}/restore`, { method: 'POST', body: JSON.stringify({ password, confirm, approval_id: approvalId }) });
+  restoreBackup(id, password, confirm, approvalId = null, code = '') {
+    return apiRequest(`/admin/backups/${id}/restore`, { method: 'POST', body: JSON.stringify({ password, code, confirm, approval_id: approvalId }) });
   },
   deleteBackup(id) { return apiRequest(`/admin/backups/${id}`, { method: 'DELETE' }); },
   search(q) { return apiRequest(`/search?q=${encodeURIComponent(q)}`); },
@@ -492,11 +492,20 @@ const systemApi = {
   policy() { return apiRequest('/admin/system/policy'); },
 };
 
+// Two-step verification for super admins (v2.2, #211)
+const mfaApi = {
+  status() { return apiRequest('/auth/mfa'); },
+  setup(password) { return apiRequest('/auth/mfa/setup', { method: 'POST', body: JSON.stringify({ password }) }); },
+  enable(code) { return apiRequest('/auth/mfa/enable', { method: 'POST', body: JSON.stringify({ code }) }); },
+  disable(password, code) { return apiRequest('/auth/mfa/disable', { method: 'POST', body: JSON.stringify({ password, code }) }); },
+  recovery(password, code) { return apiRequest('/auth/mfa/recovery-codes', { method: 'POST', body: JSON.stringify({ password, code }) }); },
+};
+
 // Dual control: a second super admin approves dangerous actions (v2.2)
 const approvalsApi = {
   list() { return apiRequest('/admin/approvals'); },
-  request(action, password) { return apiRequest('/admin/approvals', { method: 'POST', body: JSON.stringify({ action, params: {}, password }) }); },
-  approve(id, password) { return apiRequest(`/admin/approvals/${id}/approve`, { method: 'POST', body: JSON.stringify({ password }) }); },
+  request(action, password, code = '') { return apiRequest('/admin/approvals', { method: 'POST', body: JSON.stringify({ action, params: {}, password, code }) }); },
+  approve(id, password, code = '') { return apiRequest(`/admin/approvals/${id}/approve`, { method: 'POST', body: JSON.stringify({ password, code }) }); },
   deny(id) { return apiRequest(`/admin/approvals/${id}/deny`, { method: 'POST' }); },
 };
 
