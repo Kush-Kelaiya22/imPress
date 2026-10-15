@@ -52,11 +52,18 @@ async def failed(db: AsyncSession, keys: list[str], now: datetime) -> None:
         row.failures += 1
         over = row.failures - _free(key)
         if over >= 0:
-            row.blocked_until = now + timedelta(seconds=min(FIRST_DELAY_S * 2 ** over, MAX_DELAY_S))
+            row.blocked_until = now + timedelta(seconds=min(FIRST_DELAY_S * 2 ** min(over, 5), MAX_DELAY_S))
 
 
 async def succeeded(db: AsyncSession, key: str) -> None:
     await db.execute(delete(LoginThrottle).where(LoginThrottle.key == key))
+
+
+async def reset_account(db: AsyncSession, username: str, user_id: int) -> int:
+    """New credentials start with a fresh allowance; address-wide limits stay in place."""
+    keys = [f"user:{username.strip().lower()}"[:160], f"change:{user_id}"]
+    result = await db.execute(delete(LoginThrottle).where(LoginThrottle.key.in_(keys)))
+    return result.rowcount or 0
 
 
 async def prune(db: AsyncSession, now: datetime) -> None:

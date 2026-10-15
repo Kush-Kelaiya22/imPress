@@ -291,7 +291,8 @@ def same_device(session: UserSession, request: Request) -> bool:
 async def live_sessions(db: AsyncSession, user: User, now) -> list[UserSession]:
     """Sessions of this user that would still be accepted now."""
     rows = (await db.execute(select(UserSession).where(
-        UserSession.user_id == user.id, UserSession.revoked.is_(False), UserSession.expires_at > now))).scalars().all()
+        UserSession.user_id == user.id, UserSession.revoked.is_(False), UserSession.expires_at > now,
+        UserSession.boot_id == BOOT_ID))).scalars().all()
     limit = timedelta(minutes=await idle_limit_minutes(db, user, now))
     return [r for r in rows if now - r.last_activity_at <= limit]
 

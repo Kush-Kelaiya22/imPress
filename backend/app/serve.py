@@ -10,7 +10,7 @@ Launch flags are root's: they are decided where the server is started, and nothi
   --bypass-iips      start although the integrity check failed; every page shows a warning (not in the hardened profile)
   --feature N=V      any policy flag (see `python -m app.console`, `policy show`, or docs/design/gpc.md)
   --profile P        standard (default) or hardened
-  --host H --port N  where to listen (IMPRESS_HOST / IMPRESS_PORT, default 127.0.0.1:8000)
+  --host H --port N  fixed listener: 0.0.0.0:8000 (other values are refused)
 
 They become inline policy overrides (IMPRESS_GPC); in the hardened profile an override may only tighten.
 TLS comes from IMPRESS_SSL_CERTFILE / IMPRESS_SSL_KEYFILE, as with scripts/start.sh.
@@ -26,8 +26,8 @@ import sys
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="python -m app.serve", description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__.split("\n\n", 1)[1])
-    ap.add_argument("--host", default=os.environ.get("IMPRESS_HOST", "127.0.0.1"))
-    ap.add_argument("--port", type=int, default=int(os.environ.get("IMPRESS_PORT", "8000")))
+    ap.add_argument("--host", choices=("0.0.0.0",), default="0.0.0.0")
+    ap.add_argument("--port", type=int, choices=(8000,), default=8000)
     ap.add_argument("--test-mode", action="store_true", help="force test mode on; nobody can turn it off")
     ap.add_argument("--no-test-mode", action="store_true", help="remove test mode; nobody can turn it on")
     ap.add_argument("--no-ota", action="store_true", help="switch over-the-air updates off")
@@ -58,9 +58,6 @@ def main(argv: list[str] | None = None) -> int:
     utf8_output()
     argv = list(sys.argv[1:] if argv is None else argv)
     args = build_parser().parse_args(argv)
-    if not args.plain and not os.environ.get("IMPRESS_PLAIN") and sys.stdin.isatty() and sys.stdout.isatty():
-        from . import rootscreen          # a terminal: the root screen (logo, live log, prompt); no terminal: plain log
-        return rootscreen.run(argv)
     if args.test_mode and args.no_test_mode:
         print("error: --test-mode and --no-test-mode contradict each other", file=sys.stderr)
         return 2
@@ -74,6 +71,9 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["IMPRESS_GPC"] = ",".join(x for x in [existing, *flags] if x)
     if args.profile:
         os.environ["IMPRESS_PROFILE"] = args.profile
+    if not args.plain and not os.environ.get("IMPRESS_PLAIN") and sys.stdin.isatty() and sys.stdout.isatty():
+        from . import rootscreen          # console commands inherit the same root-owned launch policy as the server
+        return rootscreen.run(argv)
     try:
         from . import gpc
         gpc.parse_inline(os.environ.get("IMPRESS_GPC", ""))          # a typo is an error here, not a stack trace later

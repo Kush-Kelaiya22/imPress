@@ -14,14 +14,16 @@ BACKEND = Path(__file__).resolve().parents[1]
 @pytest.fixture
 def box(tmp_path):
     env = {**os.environ, "IMPRESS_DATABASE_URL": f"sqlite+aiosqlite:///{tmp_path / 'c.db'}", "IMPRESS_TEMP_BACKUP_DIR": str(tmp_path / "b"),
-           "IMPRESS_FIRMWARE_DIR": str(tmp_path / "fw"), "IMPRESS_GPC": "", "PYTHONPATH": str(BACKEND)}
+           "IMPRESS_FIRMWARE_DIR": str(tmp_path / "fw"), "IMPRESS_GPC": "", "PYTHONPATH": str(BACKEND),
+           "IMPRESS_DEFAULT_SUPERADMIN_PASSWORD": "Console-Test-Root-19!"}
     env.pop("IMPRESS_IN_CONTAINER", None)
+    (tmp_path / ".env").write_text("IMPRESS_DEFAULT_SUPERADMIN_PASSWORD=Console-Test-Root-19!\n")
 
     def run(*cmds, module="app.console", extra=(), stdin=None, env_extra=None):
         args = [sys.executable, "-m", module, *extra]
         for c in cmds:
             args += ["-c", c]
-        p = subprocess.run(args, cwd=BACKEND, env={**env, **(env_extra or {})}, capture_output=True, text=True, timeout=120, input=stdin)
+        p = subprocess.run(args, cwd=tmp_path, env={**env, **(env_extra or {})}, capture_output=True, text=True, timeout=120, input=stdin)
         return p.returncode, p.stdout + p.stderr
     run.env = env
     return run
@@ -118,6 +120,18 @@ def test_serve_flags_become_policy_overrides():
     assert serve.overrides(args) == ["test_mode.forced=true", "ota.enabled=false", "iips.enabled=false", "features.disabled=search"]
 
 
+def test_serve_is_fixed_to_all_interfaces_on_port_8000(monkeypatch):
+    from app import serve
+    monkeypatch.setenv("IMPRESS_HOST", "127.0.0.1")
+    monkeypatch.setenv("IMPRESS_PORT", "9000")
+    args = serve.build_parser().parse_args([])
+    assert (args.host, args.port) == ("0.0.0.0", 8000)
+    with pytest.raises(SystemExit):
+        serve.build_parser().parse_args(["--host", "127.0.0.1"])
+    with pytest.raises(SystemExit):
+        serve.build_parser().parse_args(["--port", "9000"])
+
+
 def test_serve_refuses_contradictory_flags(box):
     rc, out = box(module="app.serve", extra=["--test-mode", "--no-test-mode"])
     assert rc == 2 and "contradict" in out
@@ -138,7 +152,7 @@ def test_serve_stops_with_the_integrity_message_when_files_changed(box, tmp_path
             f"open({str(base)!r},'w').write(json.dumps({{'baseline':doc,'seal':iips._seal(doc)}}))")
     env = {**os.environ, "IMPRESS_DATABASE_URL": f"sqlite+aiosqlite:///{tmp_path / 'c.db'}", "IMPRESS_GPC": ""}
     subprocess.run([sys.executable, "-c", code], cwd=BACKEND, env=env, check=True)
-    p = subprocess.run([sys.executable, "-m", "app.serve", "--plain", "--port", "0"], cwd=BACKEND, env=env, capture_output=True, text=True, timeout=60)
+    p = subprocess.run([sys.executable, "-m", "app.serve", "--plain"], cwd=BACKEND, env=env, capture_output=True, text=True, timeout=60)
     assert p.returncode == 3 and "disabled by Root" in p.stderr and "--rehash" in p.stderr and "backend/app/main.py" in p.stderr
     assert json.loads(base.read_text())["baseline"]["files"]["backend/app/main.py"] == "0" * 64          # not silently repaired
 
@@ -149,5 +163,88 @@ def test_the_root_screen_wraps_by_visible_width_and_colours_by_level():
     visible = [__import__("re").sub(r"\x1b\[[0-9;]*m", "", ln) for ln in lines]
     assert all(len(v) <= 10 for v in visible) and "".join(v.strip() for v in visible) == "y" * 25
     assert rootscreen.wrap_ansi("short", 80) == ["short"]
+    wide = rootscreen.wrap_ansi("界" * 6, 5, indent=1)
+    def cell_width(text):
+        plain = __import__("re").sub(r"\x1b\[[0-9;]*m", "", text)
+        return sum(rootscreen._cell_width(ch) for ch in plain)
+
+    assert all(cell_width(line) <= 5 for line in wide)
     assert "ERROR" in rootscreen.style_line("ERROR:    boom") and "\033[" in rootscreen.style_line("WARNING: careful")
     assert rootscreen.style_line("just text").endswith("just text")
+
+
+def test_root_screen_keeps_scrollable_log_history(monkeypatch, capsys):
+    from app import rootscreen
+    monkeypatch.setattr(rootscreen.shutil, "get_terminal_size", lambda _fallback: os.terminal_size((48, 10)))
+    screen = rootscreen.Screen(["root", "status", "profile", "help"])
+    for i in range(14):
+        screen.log(f"startup-line-{i:02d}")
+    screen.scroll("top")
+    assert screen.scrollback == len(screen._wrapped_logs()) - screen.page
+    screen.draw()
+    assert "scrollback" in capsys.readouterr().out
+    screen.scroll("live")
+    assert screen.scrollback == 0
+    screen.clear()
+    assert not screen.messages
+
+
+def test_read_only_dashboard_actions_and_recovery_after_root_session_revocation(box):
+    _seed_default(box)
+    from app.rootscreen import MENU
+    commands = [c for _, c in MENU if c not in {"clear", "exit"} and not c.endswith(" ")]
+    rc, out = box(*commands, "sessions end --all", "classes list", "uptime")
+    assert rc == 0, out
+    assert "Traceback" not in out and "sessions: ?" not in out
+
+
+@pytest.mark.parametrize("command", ["classes create --room X --teacher ann", "students add --email a@x.io ROLL",
+                                     "api POST /api/admin/classes invalid-json", "users unlock", "ls delete"])
+def test_bad_arguments_do_not_crash_the_console(box, command):
+    rc, out = box(command, "version")
+    assert rc == 1 and "error:" in out and "Traceback" not in out and "2.2" in out
+
+
+# ── root can do what a super admin can ──────────────────────────────────
+
+def test_the_default_password_can_be_shown_and_reset_by_root(box, tmp_path):
+    import hashlib
+    checkout_env = BACKEND / ".env"
+    before = hashlib.sha256(checkout_env.read_bytes()).digest() if checkout_env.exists() else None
+    _seed_default(box)
+    rc, out = box("password show", env_extra={"IMPRESS_INITIAL_ADMIN_PASSWORD": "Fixed-By-Root-9", "IMPRESS_DEFAULT_SUPERADMIN_PASSWORD": ""})
+    assert rc == 0 and "Fixed-By-Root-9" in out
+    rc, out = box("password show", env_extra={"IMPRESS_INITIAL_ADMIN_PASSWORD": "", "IMPRESS_DEFAULT_SUPERADMIN_PASSWORD": ""})
+    assert rc == 0 and "random" in out
+    rc, out = box("password reset --password Brand-New-Root-Pass-1")
+    assert rc == 0 and "Brand-New-Root-Pass-1" in out
+    assert "Brand-New-Root-Pass-1" in (tmp_path / ".env").read_text()
+    assert (hashlib.sha256(checkout_env.read_bytes()).digest() if checkout_env.exists() else None) == before
+    rc, out = box("password reset --password weak")
+    assert rc == 1 and "password" in out.lower()
+
+
+def test_root_calls_the_applications_own_api(box):
+    _seed_default(box)
+    rc, out = box("api GET /api/admin/users")
+    assert rc == 0 and "impress.default.superAdmin" in out
+    rc, out = box("api routes admin/users")
+    assert rc == 0 and "/api/admin/users" in out
+    rc, out = box("api GET /api/admin/nothing")
+    assert rc == 1 and "404" in out
+    rc, out = box("api POST /api/admin/users/999999/deactivate")
+    assert rc == 1 and "404" in out
+
+
+def test_classes_students_and_courses_from_the_shell(box):
+    _seed_default(box)
+    rc, out = box("users create ann --role teacher --name 'Ann Lee'", "classes create 'CS 101' CS101 --teacher ann --room RM-1 --icon rocket --color #2563eb",
+                  "classes list", "courses add CS101 Programming", "courses list", "students add ABCDE12345 Asha Rao", "students list asha",
+                  "activity 5", "ls classes")
+    assert rc == 0, out
+    assert "CS101" in out and "RM-1" in out and "Programming" in out and "ABCDE12345" in out and "console.api" in out or "class" in out
+
+
+def test_help_is_grouped_and_familiar_names_work(box):
+    rc, out = box("help", "whoami", "date", "ls")
+    assert rc == 0 and "Accounts" in out and "root" in out and "password" in out

@@ -27,7 +27,7 @@ Start a local-only instance for the first login and smoke check:
 scripts/start.sh
 ```
 
-Expected result: the server reports that it is listening on `127.0.0.1:8000`. Open <http://127.0.0.1:8000>, sign in as `admin` using the one-time first-start password in the server log (unless you set `IMPRESS_INITIAL_ADMIN_PASSWORD` before the first start), and change it in **Settings**. In a second terminal, verify the local service:
+Expected result: the server reports that it is listening on all interfaces at `0.0.0.0:8000`. Open <http://127.0.0.1:8000> locally, sign in as `admin` using the one-time first-start password in the server log (unless you set `IMPRESS_INITIAL_ADMIN_PASSWORD` before the first start), and change it in **Settings**. In a second terminal, verify the local service:
 
 ```sh
 scripts/smoke_test.py --base http://127.0.0.1:8000 --password '<current admin password>'
@@ -58,14 +58,14 @@ py -3.12 -c "import secrets; print(secrets.token_urlsafe(32))"
 
 Set a strong `IMPRESS_INITIAL_ADMIN_PASSWORD` before the first start, or leave it empty and capture the randomly generated password from the first-start output. Keep `.env` private; do not commit it or send it to students.
 
-Start the local-only server from the backend directory:
+Start the server from the backend directory:
 
 ```powershell
 Set-Location backend
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 ```
 
-Expected result: uvicorn listens on `http://127.0.0.1:8000`; `/health` returns a healthy status and the browser login page opens. Run the smoke check in a second PowerShell window from the repository root:
+Expected result: uvicorn listens on all interfaces at `0.0.0.0:8000`; `/health` returns a healthy status and the browser login page opens. Run the smoke check in a second PowerShell window from the repository root:
 
 ```powershell
 & backend/.venv/Scripts/python.exe scripts/smoke_test.py --base http://127.0.0.1:8000 --password '<current admin password>'

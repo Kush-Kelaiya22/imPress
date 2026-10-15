@@ -33,7 +33,7 @@ async function apiRequest(path, options = {}) {
 
   const res = await fetch(url, { ...options, headers });
 
-  if (res.status === 401) {
+  if (res.status === 401 && path !== '/auth/login') {
     // the server says why the session ended: a disabled account and a restart get a proper notice, not a redirect
     const why = res.headers.get('X-Session-Code');
     if (typeof Overlays !== 'undefined' && (why === 'disabled' || why === 'restart') && !path.startsWith('/auth/login')) {
@@ -53,8 +53,10 @@ async function apiRequest(path, options = {}) {
       throw new Error('Unauthorized');
     }
     // {"detail": {"code", "message"}} (#116) or FastAPI's string / validation list
-    const msg = typeof d === 'string' ? d : (d && d.message) || 'Request failed';
-    throw Object.assign(new Error(msg), { status: res.status, code: d && d.code, detail: d });
+    const msg = typeof d === 'string' ? d : (d && d.message) ||
+      (Array.isArray(d) ? d.map(v => v.msg).filter(Boolean).join('; ') : '') || 'Request failed';
+    const retryAfter = Math.max(0, Number(res.headers.get('Retry-After')) || 0);
+    throw Object.assign(new Error(msg), { status: res.status, code: d && d.code, detail: d, retryAfter });
   }
 
   if (res.status === 204) return null;

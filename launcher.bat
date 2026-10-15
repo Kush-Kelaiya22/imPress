@@ -2,22 +2,20 @@
 rem imPress launcher for Windows: everything from a fresh checkout to a running
 rem server, without Docker. Safe to run every time (double-click or from cmd).
 rem
-rem   launcher.bat                          http://127.0.0.1:8000, this computer only
+rem   launcher.bat                          listens on all interfaces at port 8000
 rem   launcher.bat --test-mode              test mode forced on (a lab); --no-test-mode; --no-ota; --feature name=value
-rem   set IMPRESS_HOST=0.0.0.0 ^& launcher.bat   reachable by classroom gateways
-rem   set IMPRESS_PORT=9000 ^& launcher.bat
 rem
 rem 1. finds Python 3.12+ (installs it with winget when missing)
 rem 2. creates backend\.venv and installs the dependencies (pip skips what is there)
 rem 3. creates backend\.env with fresh secrets if it does not exist (keeps existing values)
-rem 4. frees the port: stops whatever is listening on it
+rem 4. checks port 8000 and asks before stopping its current owner
 rem 5. starts the server
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 set "ROOT=%CD%"
 set "BACKEND=%ROOT%\backend"
-if not defined IMPRESS_HOST set "IMPRESS_HOST=127.0.0.1"
-if not defined IMPRESS_PORT set "IMPRESS_PORT=8000"
+set "IMPRESS_HOST=0.0.0.0"
+set "IMPRESS_PORT=8000"
 set "VPY=%BACKEND%\.venv\Scripts\python.exe"
 set "CHECK=import sys, venv, ensurepip; sys.exit(0 if sys.version_info >= (3, 12) else 1)"
 
@@ -66,29 +64,43 @@ if errorlevel 1 ( popd & echo Error: the app does not import; see the error abov
 popd
 
 rem ---- 4. free the port ----------------------------------------------------
-set "FOUND="
+set "PIDS="
 for /f "tokens=5" %%p in ('netstat -ano -p tcp ^| findstr /r /c:":%IMPRESS_PORT% .*LISTENING"') do (
   if not "%%p"=="0" (
-    if not defined FOUND echo ==^> Port %IMPRESS_PORT% is in use: stopping it
-    set "FOUND=1"
-    for /f "tokens=1 delims=," %%n in ('tasklist /fi "PID eq %%p" /fo csv /nh') do echo     %%p  %%~n
-    taskkill /PID %%p /T /F >nul 2>&1 || echo     could not stop %%p ^(run as administrator?^)
+    set "PIDS=!PIDS! %%p"
   )
 )
-if defined FOUND (
-  timeout /t 1 /nobreak >nul
-  netstat -ano -p tcp | findstr /r /c:":%IMPRESS_PORT% .*LISTENING" >nul && (
-    echo Error: port %IMPRESS_PORT% is still in use; choose another with set IMPRESS_PORT=...
-    goto :fail
+if defined PIDS (
+  echo ==^> Port %IMPRESS_PORT% is already in use by:
+  for %%p in (!PIDS!) do (
+    for /f "tokens=1 delims=," %%n in ('tasklist /fi "PID eq %%p" /fo csv /nh') do echo     PID %%p  %%~n
+  )
+  set "CONFIRM="
+  set /p "CONFIRM=Stop these process(es) so imPress can use port %IMPRESS_PORT%? [y/N] "
+  if /I not "!CONFIRM!"=="y" goto :declined
+  for %%p in (!PIDS!) do taskkill /PID %%p /T >nul 2>&1
+  timeout /t 5 /nobreak >nul
+  set "REMAINING="
+  for /f "tokens=5" %%p in ('netstat -ano -p tcp ^| findstr /r /c:":%IMPRESS_PORT% .*LISTENING"') do (
+    if not "%%p"=="0" set "REMAINING=!REMAINING! %%p"
+  )
+  if defined REMAINING (
+    echo The listener did not exit after a graceful stop:
+    for %%p in (!REMAINING!) do (
+      for /f "tokens=1 delims=," %%n in ('tasklist /fi "PID eq %%p" /fo csv /nh') do echo     PID %%p  %%~n
+    )
+    set "CONFIRM="
+    set /p "CONFIRM=Force-kill these remaining process(es)? [y/N] "
+    if /I not "!CONFIRM!"=="y" goto :declined
+    for %%p in (!REMAINING!) do taskkill /PID %%p /T /F >nul 2>&1
+    timeout /t 1 /nobreak >nul
+    netstat -ano -p tcp | findstr /r /c:":%IMPRESS_PORT% .*LISTENING" >nul && goto :still_busy
   )
 )
 
 rem ---- 5. start ------------------------------------------------------------
-if "%IMPRESS_HOST%"=="127.0.0.1" (
-  echo Listening on 127.0.0.1: only this computer can connect. For classroom gateways run
-  echo   set IMPRESS_HOST=0.0.0.0 ^& launcher.bat   and allow TCP %IMPRESS_PORT% in Windows Defender Firewall.
-)
-echo ==^> Starting imPress on http://%IMPRESS_HOST%:%IMPRESS_PORT%  (Ctrl+C stops it)
+echo Listening on all network interfaces (%IMPRESS_HOST%:%IMPRESS_PORT%); allow TCP %IMPRESS_PORT% in Windows Defender Firewall.
+echo ==^> Starting imPress on all network interfaces (%IMPRESS_HOST%:%IMPRESS_PORT%)  (Ctrl+C stops it)
 cd /d "%BACKEND%"
 rem One worker: the presence sweep, the schedulers and the WebSocket rooms live in the process.
 rem Launch flags after the command (launcher.bat --test-mode ^| --no-test-mode ^| --no-ota ^| --feature name=value)
@@ -110,3 +122,11 @@ exit /b 0
 echo.
 pause
 exit /b 1
+
+:declined
+echo No process was stopped. Rerun and confirm if you want to replace it.
+goto :fail
+
+:still_busy
+echo Error: port %IMPRESS_PORT% is still in use; stop its owner manually and retry.
+goto :fail

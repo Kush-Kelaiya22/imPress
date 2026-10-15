@@ -42,10 +42,11 @@ async def login(body: UserLogin, request: Request, response: Response, db: Async
     # Password guessing is slowed per username and per address (#153); the
     # password is not even checked while a key is waiting.
     now = istnow()
-    keys = [f"user:{body.username.strip().lower()}"[:160],
+    username = body.username.strip()
+    keys = [f"user:{username.lower()}"[:160],
             f"ip:{request.client.host if request.client else '?'}"]
     await throttle.check(db, keys, now)
-    result = await db.execute(select(User).where(User.username == body.username))
+    result = await db.execute(select(User).where(User.username == username))
     user = result.scalar_one_or_none()
     if not user or not verify_password(body.password, user.hashed_password):
         await throttle.failed(db, keys, now)

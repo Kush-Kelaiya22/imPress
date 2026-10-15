@@ -183,8 +183,7 @@ Browsers on other computers need HTTPS (#152); devices built with `BACKEND_TLS` 
 
    ```bash
    docker run -d --name impress --restart unless-stopped \
-     -p 443:8443 -v impress-data:/data -v /etc/impress/tls:/tls:ro \
-     -e IMPRESS_PORT=8443 \
+     -p 443:8000 -v impress-data:/data -v /etc/impress/tls:/tls:ro \
      -e IMPRESS_SSL_CERTFILE=/tls/server.crt -e IMPRESS_SSL_KEYFILE=/tls/server.key \
      ghcr.io/kush-kelaiya22/impress-backend:varun-latest
    ```

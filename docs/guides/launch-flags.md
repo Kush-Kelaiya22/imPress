@@ -25,7 +25,7 @@ docker run … IMAGE [flags]     # the container's arguments are the flags
 | `--bypass-iips` | start although the integrity check failed (or without it). **Every page shows a red warning**: *imPress Integrity Protection Service is disabled. Proceed with caution.* Not allowed in the hardened profile |
 | `--feature NAME=VALUE` | set any [policy flag](../design/gpc.md); repeatable. In the hardened profile an override may only make a flag safer. Example: `--feature features.disabled=search,backups` |
 | `--profile standard\|hardened` | the policy profile |
-| `--host H`, `--port N` | where to listen (default `127.0.0.1:8000`; or `IMPRESS_HOST`, `IMPRESS_PORT`) |
+| `--host H`, `--port N` | fixed listener `0.0.0.0:8000`; any other host or port is refused |
 | `--plain` | no [root screen](console.md): the logo, then a plain log |
 
 `--test-mode` and `--no-test-mode`, and `--rehash` and `--bypass-iips`, contradict each other and are refused. A mistake in `--feature` is an error when you start, not a stack trace later.

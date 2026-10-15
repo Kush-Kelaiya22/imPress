@@ -32,6 +32,7 @@ async function renderLogin(app) {
             ${insecure ? `<p class="callout danger" role="alert">This connection is not encrypted: your password would cross the network in plain text. Use the <strong>https://</strong> address of this server.</p>` : ''}
             ${System.test_mode_forced ? `<p class="callout info" role="status">${icon('flask', 'sm')} This server runs in test mode. Sign in as the default super admin, <b>impress.default.superAdmin</b>.</p>` : ''}
             <p id="login-error" class="callout danger hidden" role="alert"></p>
+            <p id="login-wait" class="callout info hidden" role="status" aria-live="polite"></p>
             <button type="submit" class="btn btn-primary btn-block mt-1 login-card-in" id="login-go">${icon('login')} Sign in</button>
             <p class="text-muted text-sm text-center mt-2">Forgot your password? Ask an administrator to reset it.</p>
             <div class="login-foot">${icon('shield', 'sm')} <span>Sign-in is for faculty and administrators. Each account can be signed in on one device at a time.</span></div>
@@ -40,6 +41,29 @@ async function renderLogin(app) {
       </div>
     </div>`;
   const pass = document.getElementById('login-pass'), eye = document.getElementById('login-eye'), err = document.getElementById('login-error');
+  const form = document.getElementById('login-form'), go = document.getElementById('login-go');
+  const wait = document.getElementById('login-wait'), signIn = go.innerHTML;
+  let inFlight = false, blockedUntil = 0, timer = null;
+  try { blockedUntil = Number(sessionStorage.getItem('impress_login_retry_at')) || 0; } catch { /* storage unavailable */ }
+  const tick = () => {
+    if (!form.isConnected) { clearInterval(timer); timer = null; return; }
+    const seconds = Math.max(0, Math.ceil((blockedUntil - Date.now()) / 1000));
+    go.disabled = inFlight || seconds > 0;
+    go.innerHTML = seconds ? `Try again in ${seconds} s` : inFlight ? 'Signing in…' : signIn;
+    wait.classList.toggle('hidden', !seconds);
+    if (seconds) wait.textContent = `Sign-in is paused after unsuccessful attempts. Try again in ${seconds} s. Your password is not checked during this wait.`;
+    else {
+      try { sessionStorage.removeItem('impress_login_retry_at'); } catch { /* storage unavailable */ }
+      clearInterval(timer); timer = null;
+    }
+  };
+  const startWait = (seconds) => {
+    blockedUntil = Date.now() + seconds * 1000;
+    try { sessionStorage.setItem('impress_login_retry_at', String(blockedUntil)); } catch { /* storage unavailable */ }
+    if (!timer) timer = setInterval(tick, 250);
+    tick();
+  };
+  if (blockedUntil > Date.now()) { timer = setInterval(tick, 250); tick(); }
   eye.onclick = () => {
     const show = pass.type === 'password';
     pass.type = show ? 'text' : 'password';
@@ -48,13 +72,14 @@ async function renderLogin(app) {
   };
   pass.addEventListener('keyup', (e) => document.getElementById('login-caps').classList.toggle('hidden', !e.getModifierState?.('CapsLock')));
   const fail = (m) => { err.textContent = m; err.classList.remove('hidden'); };
-  document.getElementById('login-form').addEventListener('submit', async (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (inFlight || blockedUntil > Date.now()) return;
     err.classList.add('hidden');
     const username = document.getElementById('login-user').value.trim(), password = pass.value;
     if (!username || !password) return fail('Enter your username and password.');
-    const go = document.getElementById('login-go');
-    go.disabled = true;
+    inFlight = true;
+    tick();
     try {
       await authApi.login(username, password);
       const me = await authApi.me();
@@ -62,6 +87,12 @@ async function renderLogin(app) {
       await Prefs.load();
       if (me.must_change_password || (!me.onboarded && System.feature_flags?.onboarding !== false)) { Onboarding.run(me); return; }
       navigate(({ classrooms: isAdminUser(me) ? '#/admin/classes' : '#/classes', students: '#/admin/students' }[Prefs.cur.landing]) || '#/dashboard');
-    } catch (ex) { fail(ex.message); go.disabled = false; }
+    } catch (ex) {
+      if (ex.status === 429 && ex.retryAfter > 0) startWait(ex.retryAfter);
+      else fail(ex.message || 'Could not reach the server. Check your connection and try again.');
+    } finally {
+      inFlight = false;
+      if (form.isConnected) tick();
+    }
   });
 }

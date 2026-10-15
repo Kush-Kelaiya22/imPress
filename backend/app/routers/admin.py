@@ -389,6 +389,8 @@ async def reset_user_password(
     from ..auth import hash_password
     target.hashed_password = hash_password(password)
     target.must_change_password = True
+    from ..services import throttle
+    await throttle.reset_account(db, target.username, target.id)
     await accounts.revoke(db, target)
     await log_activity(db, "user.reset_password", user.id, "user", user_id, {"generated": generated})
     await accounts.commit(db, revoked=target)
