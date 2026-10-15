@@ -81,7 +81,10 @@ async def init_db():
     """Create missing tables and apply pending migrations (stops on failure)."""
     from .migrations import migrate  # late import: migrations needs Base's metadata loaded
     from . import models  # noqa: F401  register every table on Base.metadata
-    await migrate(engine, Base.metadata.create_all)
+    from .migrations import APPLIED_AT_START, schema_version
+    had_schema = await schema_version(engine) > 0
+    done = await migrate(engine, Base.metadata.create_all)
+    APPLIED_AT_START[:] = done if had_schema else []        # what an upgrade changed in an existing database (re-sealed afterwards)
     async with engine.begin() as conn:      # the gateway's seal tables exist before any write
         await conn.run_sync(dbgateway.ensure_tables)
     await engine.dispose()                  # new connections carry the gateway's triggers for every table

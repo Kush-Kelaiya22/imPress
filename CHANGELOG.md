@@ -51,6 +51,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Fixed
 
+- **Upgrading an existing database no longer stops imPress from starting.** The schema upgrade changes every row's seal; imPress took that for tampering, restored an older backup that lacked the new tables, and failed with a database error. An upgrade is now sealed again as it is, and a backup made by an older version is brought up to date when it is restored.
 - The Overview's *Classrooms today* table no longer cuts off its right-hand columns on a laptop-sized window: secondary columns step aside first.
 - The server now starts on Windows: it needs the `tzdata` package there for the India time zone, which is now installed with the other dependencies.
 - An unconfigured hub now looks for its updates on the same server as its gateway: the hub's built-in default server address differed from the gateway's. `firmware/activate_idf.ps1` no longer searches one developer's own drive.
