@@ -267,6 +267,51 @@ class Console(cmd.Cmd):
             return self.fail("mfa status USER | reset USER")
         self.say(self.run(rootops.mfa(a[1], a[0] == "reset")))
 
+    def _tool(self, build, dry: bool) -> None:
+        """Run a tool command (services/devtools.py): show it, stream its output, fail the command if it fails."""
+        from .services import devtools
+        try:
+            cmd = build()
+            self.say("$ " + " ".join(cmd))
+            if dry:
+                return self.say("(dry run: nothing was started)")
+            code = devtools.stream(cmd, self.say)
+        except devtools.ToolError as exc:
+            return self.fail(f"{exc.message} [{exc.code}]")
+        if code:
+            self.fail(f"it exited with code {code} [{'HW_FLASH_FAILED' if cmd[0] != sys.executable or 'esptool' in cmd else 'ROOT_COMMAND_FAILED'}]")
+
+    def do_ports(self, line):
+        """ports: the serial ports that look like boards (the same on Windows, macOS and Linux)."""
+        from .services import devtools
+        found = devtools.ports()
+        self.say("\n".join(found) if found else "no serial port found: check the cable (a data cable, not charge-only), the driver and the permissions")
+
+    def do_flash(self, line):
+        """flash ROLE PORT [--image FILE] [--dry-run]: write firmware to a board. ROLE is c6 (gateway), s3 (hub) or student.
+        Without --image it runs `idf.py flash` for that role's project (bootloader, partitions and app together: use this for
+        a first flash); with --image it writes a finished image with esptool, after checking it is an imPress image for that
+        chip. Asks for root's password."""
+        from .services import devtools
+        pos, o = _opts(self._args(line), flags={"dry-run"}, values={"image"})
+        if len(pos) != 2:
+            return self.fail("flash ROLE PORT [--image FILE] [--dry-run]")
+        self._tool(lambda: devtools.flash_command(pos[0], pos[1], o.get("image")), bool(o.get("dry-run")))
+
+    def do_build(self, line):
+        """build ROLE [--dry-run]: build a role's firmware with ESP-IDF (idf.py build)."""
+        from .services import devtools
+        pos, o = _opts(self._args(line), flags={"dry-run"})
+        if len(pos) != 1:
+            return self.fail("build ROLE [--dry-run]")
+        self._tool(lambda: devtools.build_command(pos[0]), bool(o.get("dry-run")))
+
+    def do_test(self, line):
+        """test [SUITE ...] [--dry-run]: run the test suites (run_tests.py): backend, repo, firmware-static, host, frontend, ui, idf."""
+        from .services import devtools
+        pos, o = _opts(self._args(line), flags={"dry-run"})
+        self._tool(lambda: devtools.test_command(pos), bool(o.get("dry-run")))
+
     def do_sessions(self, line):
         """sessions list [USER] | end USER | end --all: who is signed in; sign someone out (or everyone)."""
         from .services import rootops
@@ -809,7 +854,7 @@ class Console(cmd.Cmd):
             ("System", "status version uptime date env verify system policy flags errors policylog requirements iips features feature testmode deadlock"),
             ("Accounts", "users superadmin password mfa sessions ps ls whoami activity"),
             ("Classroom", "classes students courses quizzes polls"),
-            ("Devices", "devices firmware"),
+            ("Devices", "devices firmware ports flash build test"),
             ("Data", "backup approvals audit api"),
             ("Shell", "help clear exit"),
         ]

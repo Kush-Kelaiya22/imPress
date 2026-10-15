@@ -361,3 +361,42 @@ def test_the_title_tags_follow_the_effective_flags():
     text = rootscreen.plain(" ".join(lines))
     assert "TEST MODE (forced)" in text and "OTA off" in text and "INTEGRITY" not in text
     assert "FLAGS FILE ERROR" in rootscreen.plain(" ".join(rootscreen._title("2", "stopped", [], "standard", "u", "FLAGS FILE ERROR")))
+
+
+# ── the same screen on Windows, macOS and Linux ─────────────────────────────
+
+def test_all_platforms_draw_exactly_the_same_cells(monkeypatch):
+    monkeypatch.setattr(rootscreen.shutil, "get_terminal_size", lambda _f: os.terminal_size((100, 28)))
+    frames = []
+    for system in ("nt", "posix"):
+        monkeypatch.setattr(os, "name", system)
+        screen = rootscreen.Screen(["imPress 2.2", "running"])
+        screen.messages.extend(f"INFO: line {i}" for i in range(80))
+        screen._wrapped_cache.clear()
+        frames.append(screen.frame())
+    assert frames[0] == frames[1]
+
+
+def test_the_ascii_switch_changes_only_the_glyphs(monkeypatch):
+    monkeypatch.setattr(rootscreen.shutil, "get_terminal_size", lambda _f: os.terminal_size((100, 28)))
+    screen = rootscreen.Screen(rootscreen._title("2.2", "running", [], "standard", "http://x"))
+    for i in range(80):
+        screen.log(f"INFO: line {i}")
+    fancy = [rootscreen.plain(x) for x in screen.frame()]
+    monkeypatch.setenv("IMPRESS_ASCII", "1")
+    plain = [rootscreen.plain(x) for x in rootscreen.Screen(rootscreen._title("2.2", "running", [], "standard", "http://x")).frame()]
+    assert "●" in fancy[0] and "─" in "".join(fancy) and not any(ch in "".join(plain) for ch in "█│─●")
+    assert "*" in plain[0] and "-" * 20 in "".join(plain)
+
+
+@pytest.mark.parametrize("key,expected", [("\xe0H", "UP"), ("\xe0P", "DOWN"), ("\xe0\x8d", "SCROLL_UP"), ("\xe0\x91", "SCROLL_DOWN"),
+                                          ("\xe0\x98", "SCROLL_UP"), ("\xe0\xa0", "SCROLL_DOWN"), ("\xe0w", "LOG_TOP"), ("\xe0u", "LOG_LIVE"),
+                                          ("\xe0I", "PAGEUP"), ("\xe0Q", "PAGEDOWN")])
+def test_windows_keys_scroll_the_logs_like_the_other_platforms(monkeypatch, key, expected):
+    from types import SimpleNamespace
+
+    from app import terminal
+    chars = iter(key)
+    monkeypatch.setitem(sys.modules, "msvcrt", SimpleNamespace(kbhit=lambda: True, getwch=lambda: next(chars)))
+    monkeypatch.setattr(terminal, "os", SimpleNamespace(name="nt"))
+    assert terminal.Terminal().read() == [expected]

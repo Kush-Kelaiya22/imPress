@@ -24,6 +24,15 @@ ORANGE, TITLEBAR = "38;5;208", "48;5;53;38;5;255"        # the orange and auberg
 LEVELS = (("CRITICAL", RED + ";1"), ("ERROR", RED), ("WARNING", YELLOW), ("WARN", YELLOW), ("INFO", ACCENT), ("DEBUG", DIM))
 
 
+_ASCII = {"█": "#", "│": "|", "─": "-", "●": "*", "·": "-", "…": "..."}
+
+
+def g(char: str) -> str:
+    """A box or status glyph, or its plain-ASCII twin when IMPRESS_ASCII=1 (a terminal font without them). The layout is the
+    same on Windows, macOS and Linux: only this switch changes what is drawn."""
+    return _ASCII[char] if os.environ.get("IMPRESS_ASCII") == "1" else char
+
+
 def c(code: str, text: str) -> str:
     return f"{ESC}[{code}m{text}{ESC}[0m"
 
@@ -200,9 +209,9 @@ class Screen:
                 log = visible[i] if i < len(visible) else ""
                 if not logs and i == 0:
                     log = c(DIM, "Waiting for server output...")
-                bar = c(ACCENT if self.focus == "logs" else DIM, "█" if i in thumb else "│") if len(logs) > self.page else " "
+                bar = c(ACCENT if self.focus == "logs" else DIM, g("█") if i in thumb else g("│")) if len(logs) > self.page else " "
                 lines.append(pad(label, self.left) + c(DIM, " | ") + pad(log, self.log_width) + bar)
-            lines.append(c(DIM, "─" * self.cols))
+            lines.append(c(DIM, g("─") * self.cols))
             prompt, self.input_col = self._input_line()
             lines.append(prompt)
             lines.append(c(DIM, self.notice if self.busy else (HINT if self.cols >= len(HINT) else SHORT_HINT)))
@@ -450,7 +459,7 @@ class Screen:
 
 
 def _title(version: str, state: str, flags: list[str], profile: str, url: str, problem: str = "") -> list[str]:
-    dot = {"running": c(GREEN, "● running"), "starting": c(YELLOW, "● starting"), "stopped": c(RED, "● stopped")}[state]
+    dot = {"running": c(GREEN, g("●") + " running"), "starting": c(YELLOW, g("●") + " starting"), "stopped": c(RED, g("●") + " stopped")}[state]
     tags = []
     if "test_mode.forced=true" in flags:
         tags.append(c(YELLOW, "TEST MODE (forced)"))

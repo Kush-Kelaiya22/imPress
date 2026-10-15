@@ -149,7 +149,7 @@ class Terminal:
             if ch in ("\x00", "\xe0"):
                 return [{"H": "UP", "P": "DOWN", "M": "RIGHT", "K": "LEFT", "G": "HOME", "O": "END",
                          "S": "DELETE", "I": "PAGEUP", "Q": "PAGEDOWN", "\x0f": "BACKTAB",
-                         "\x8d": "SCROLL_UP", "\x91": "SCROLL_DOWN", "w": "LOG_TOP", "u": "LOG_LIVE"}.get(msvcrt.getwch(), "IGNORE")]
+                         "\x8d": "SCROLL_UP", "\x91": "SCROLL_DOWN", "\x98": "SCROLL_UP", "\xa0": "SCROLL_DOWN", "w": "LOG_TOP", "u": "LOG_LIVE"}.get(msvcrt.getwch(), "IGNORE")]
             return self.decoder.feed(ch)
         import select
         ready, _, _ = select.select([self.fd], [], [], timeout)

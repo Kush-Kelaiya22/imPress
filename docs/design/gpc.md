@@ -116,3 +116,24 @@ The server re-reads the file every 30 seconds. A valid new file is applied (an a
 - [Data integrity](data-integrity.md): dual control, the audit sink, forensic copies
 - [Security model](security-model.md)
 - [Configuration](../guides/configuration.md)
+
+## The policy store
+
+Between the built-in defaults and the root-signed file sits the **policy store**, `backend/impress.gpc.json` (`IMPRESS_GPC_STORE`). It is where a change made while the system runs is kept.
+
+```json
+{ "flags": { "audit.min_retention_days": { "value": 180, "set_by": "root (console)", "set_rank": 3, "set_via": "console",
+    "set_at": "2026-10-15T12:01:44", "note": "retention schedule", "enforced_by": "root (console) (console)",
+    "enforced_at": "2026-10-15T12:01:44", "min_rank": 3 } },
+  "history": [ { "seq": 1, "at": "...", "flag": "audit.min_retention_days", "old": 0, "new": 180, "by": "root (console)",
+                 "rank": "root", "via": "console", "note": "...", "prev": "", "hash": "..." } ],
+  "restrictions": { "administrator": "cannot change policy", "...": "..." }, "resets": 0, "seal": "..." }
+```
+
+- **Sealed like the database.** The whole document carries an HMAC (key from `IMPRESS_JWT_SECRET`) and the history is a hash chain. **Editing the file directly fails the seal**: the edited copy is set aside as `impress.gpc.json.tampered-<time>`, the defaults are restored, administrators get an alert, the activity log gets a flagged `system.policy_store_reset` entry, and the new store's first history line says so. A change must go through the console or the System page (or the system itself, as TrustedInstaller).
+- **Who may change what.** Administrators and faculty: nothing. A **super admin**: only the flags marked *super admin* in the table above (`integrity.forensic_copies`, `integrity.before_clear_days`, `test_mode.pending_ttl_hours`, `test_mode.dataset_ttl_days`), from the System page or `PUT /api/admin/system/policy/{name}`, with password and second factor. **Root**: every policy flag, in the console, with root's password. Something root set cannot be changed by a super admin.
+- **Who enforces it, since when.** For every flag, `policy show` and the System page give the value, its source (default, policy store, file, launch flags, session), *who set it*, at which authority, *how*, *when*, and the moment it began to be enforced (a stored change: when it was made; a launch or file value: when the server started).
+- **Same safety rules.** A change that makes flags conflict is refused (`POLICY_CONFLICT`); in the hardened profile a stored value may only make a flag safer (`POLICY_LOOSENING`).
+- **The running server follows.** Within a few seconds of a change made in the console, the server reloads and records `system.policy_reloaded`.
+- Feature flags are **not** in the store: they are in `impress.flags.json` ([launch flags](../guides/launch-flags.md)).
+

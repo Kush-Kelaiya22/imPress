@@ -12,6 +12,7 @@ from ..schemas import (UserLogin, TokenResponse, MeResponse, PasswordChange, Pro
                        PreferencesUpdate, OnboardingComplete)
 from ..auth import (
     BOOT_ID,
+    set_last_account_cookie,
     psid_fingerprint,
     verify_password,
     get_current_user,
@@ -89,6 +90,7 @@ async def login(body: UserLogin, request: Request, response: Response, db: Async
     # The web app keeps the session in an HttpOnly cookie that page scripts
     # cannot read; API clients use the returned token as a bearer token.
     set_session_cookie(response, request, raw_token)
+    set_last_account_cookie(response, request, user)
 
     return TokenResponse(
         access_token=raw_token,

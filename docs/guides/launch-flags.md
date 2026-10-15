@@ -8,6 +8,8 @@ Root decides **how imPress starts**. These decisions are made where the server i
 | **TrustedInstaller's decisions** | the system | at every start, from what it finds on the host | no (an administrator cannot override it) |
 | **Features** | administrators, super admins (and root) | *System → Features* | yes, within the authority rules below |
 
+> **Two kinds of switch.** This page is about **feature flags** (test mode, OTA, the traffic monitor, features): a plain file you may edit by hand. The security and integrity switches are **policy** (global policy control): kept in a *sealed* store that a hand edit breaks, changed only with `policy set` in the console (root's password) or, for four operational flags, by a super admin on the System page, and recorded with who, how and when. See [global policy control](../design/gpc.md#the-policy-store).
+
 ## The flags file
 
 Flags no longer have to be remembered and typed at every start. They live in one file, **`backend/impress.flags.json`**, and every flag explains itself next to its value:
@@ -30,7 +32,7 @@ To change how imPress starts: edit a `value`, save, and **restart** (in the root
 | Section | What it holds |
 |---|---|
 | `profile` | `standard` (a classroom or lab) or `hardened` (a production server that refuses to start below its floor) |
-| `flags` | every [policy flag](../design/gpc.md): test mode, OTA, integrity protection, dual control, retention, backups, device and firmware rules |
+| `flags` | the **feature flags**: `test_mode.allowed`, `test_mode.forced`, `test_mode.export_allowed`, `ota.enabled`, `features.disabled`, `traffic.monitor`. A *policy* flag named here is refused (`FLAG_IS_POLICY`): use `policy set` |
 | `features` | every web-app feature by name; `false` switches it off for everybody (administrators cannot switch it back on) |
 
 **Rules that keep it safe**
@@ -51,8 +53,37 @@ To change how imPress starts: edit a `value`, save, and **restart** (in the root
 | no over-the-air firmware updates | `flags` → `ota.enabled` → `false` |
 | a production server | `profile` → `hardened`, then satisfy its floor ([production hardening](production-hardening.md)) |
 | the search box off for everybody | `features` → `search` → `false` |
-| an approval to wait before it can run | `flags` → `dual_control.delay_minutes` → `30` |
-| a second sign-off before data is cleared | leave `dual_control.enabled` on (it is, by default) |
+| an approval to wait before it can run | `policy set dual_control.delay_minutes 30` (policy, not a feature flag) |
+| keep what I passed on this start for every start | add `--save`: `./launcher.sh --no-ota --save` |
+
+## Changing flags while it runs, and keeping them
+
+| Command | What it does |
+|---|---|
+| `flags show` | every feature flag: value, where it came from (default, file, launch, session) |
+| `flags set NAME VALUE` | change one **for this run only**; takes effect within seconds and is forgotten when the server restarts. A change that makes flags conflict is refused |
+| `flags unset NAME` | drop one session change |
+| `flags save` | write this run's changes into `impress.flags.json` (the explanations are kept): every later start uses them |
+| `flags reset` / `flags reset --file` | drop the session's changes / also restore the shipped file (root's password) |
+| `--save` (command line only) | write the feature flags given on this start into the file before starting: `./launcher.sh --test-mode --save`. Policy flags cannot be saved this way |
+
+Test mode that is *forced* begins at server start: changing `test_mode.forced` for a session affects what is refused from then on, not the start-up switch.
+
+## Flags that conflict
+
+Some flags cannot be combined. imPress checks this **first**: before the integrity check, the database, TrustedInstaller or the hardened floor. If it fails the program prints each conflict, **which flags are involved and why**, and exits with code 2; nothing else is started. The checks (a rule that needs an explicit flag never fires on defaults alone, so `--no-test-mode` is always fine):
+
+| Flags | Why they conflict |
+|---|---|
+| `test_mode.forced` + `test_mode.allowed=false` | test mode would be forced on and not allowed to exist (`--test-mode` with `--no-test-mode`) |
+| `test_mode.forced` + the hardened profile | the hardened profile cannot force test mode |
+| `iips.enabled=false` + the hardened profile | the hardened profile cannot run without integrity protection |
+| `backups.restore_requires_approval` + `dual_control.enabled=false` | no restore could ever be approved |
+| `dual_control.mfa_required` + `dual_control.enabled=false` | a second factor for steps that do not exist |
+| `audit.purge_days` below `audit.min_retention_days` | entries deleted sooner than they must be kept |
+| `iips.device_binding=enforce` + `iips.enabled=false` | binding belongs to the integrity check that is off |
+| `firmware.signing_required` + `ota.enabled=false` | signing images that can never be deployed |
+| `--rehash` + `--bypass-iips`; `--test-mode` + `--no-test-mode` | on the command line |
 
 ## Command-line flags
 

@@ -149,3 +149,30 @@ def test_old_hashes_still_work_and_are_upgraded_at_sign_in(client, db):
 
 def _uid(client, headers, username):
     return next(u["id"] for u in client.get("/api/admin/users", headers=headers).json() if u["username"] == username)
+
+
+# ── the sign-in page remembers who signed in last (a convenience, never a login) ──
+
+def test_a_sign_in_leaves_a_readable_cookie_with_a_name_only(client):
+    import json
+    from urllib.parse import unquote
+    r = client.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "admin123"})
+    header = [h for h in r.headers.get_list("set-cookie") if h.startswith("impress_last=")][0]
+    assert "HttpOnly" not in header and "SameSite=strict" in header and "Max-Age=31536000" in header
+    value = json.loads(unquote(header.split(";")[0].split("=", 1)[1]))
+    assert value == {"u": "impress.default.superAdmin", "n": "Default Super Admin"}
+    session = [h for h in r.headers.get_list("set-cookie") if h.startswith("impress_session=")][0]
+    assert "HttpOnly" in session and "impress_" not in header.split(";")[0].split("=", 1)[1]        # the session stays unreadable
+
+
+def test_a_failed_sign_in_remembers_nothing(client):
+    r = client.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "wrong"})
+    assert not any(h.startswith("impress_last=") for h in r.headers.get_list("set-cookie"))
+
+
+def test_the_sign_in_page_offers_continue_as_and_still_needs_the_password():
+    from pathlib import Path
+    js = (Path(__file__).resolve().parents[1] / "app/static/js/login.js").read_text()
+    assert "Login as Default Super Admin?" in js and "Continue as" in js and "welcomeBack" in js
+    assert "login-user').value = lastAccount.u" in js and "form.addEventListener('submit'" in js        # fills the name; submit needs both
+    assert "impress_last" in js and "Not you?" in js

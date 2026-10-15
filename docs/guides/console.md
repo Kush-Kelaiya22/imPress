@@ -83,7 +83,11 @@ It runs on the server's own host with the database file's own access. Every comm
 | `features`, `feature NAME on\|off [--lock]` | features and who set them; root outranks administrators and super admins, `--lock` stops everyone below root changing it |
 | `policy show`, `policylog [FLAG]` | the effective global policy, and who changed what, when |
 | `requirements` | what TrustedInstaller checks on this host and the minimum for each |
-| `iips status`, `iips rehash` | integrity protection: compare, or accept the current files as the reference |
+| `policy show`, `policy history [FLAG]`, `policy set NAME VALUE [--note T]`, `policy reset [NAME]` | the sealed policy ([global policy control](../design/gpc.md#the-policy-store)); `set` and `reset` ask for root's password |
+| `flags show`, `flags set NAME VALUE`, `flags save`, `flags reset [--file]` | feature flags for this run, or kept in `impress.flags.json` ([launch flags](launch-flags.md)) |
+| `errors [CODE or CATEGORY]` | the [error catalogue](../reference/errors.md) |
+| `ports`, `flash ROLE PORT [--image FILE]`, `build ROLE`, `test [SUITE ...]` | flash the boards, build the firmware, run the tests: the same on Windows, macOS and Linux ([flashing](../install/flashing.md)); `flash` asks for root's password |
+| `iips status`, `iips rehash`, `iips history` | integrity protection: compare, or accept the current files as the reference |
 | `backup list`, `backup save NAME`, `backup restore ID --yes` | backups of the database and system state |
 | `api routes [FILTER]`, `api METHOD PATH [JSON]` | call the application's own routes as the default super admin, in-process and through the same authorization and validation as the web app |
 | `testmode status`, `deadlock check` | test mode; run deadlock prevention now |
@@ -100,3 +104,14 @@ The default account is `impress.default.superAdmin`. Choose **Show credentials**
 `password reset` revokes the default account's sessions and clears its old account-level guessing counter. When the fixed setting is present in the current working directory's `.env`, the command updates it. If the setting comes from an external environment, update that environment before the next restart. Run `users set-password USER` for another account; it receives a temporary password and chooses its own at sign-in.
 
 The browser shows a countdown while guessing protection is active. During the wait, even the correct password is not checked. A password reset clears that account's counter but preserves the shared-address limit. After investigating address-wide failures, root can run `users unlock USER --ip ADDRESS` using the actual client address from the server log. This recovery is local to the server; it does not disable guessing protection.
+
+## Root's password
+
+The sensitive actions ask for **root's password**: `iips rehash`, `restart --rehash` and `--rehash`, `policy set` and `reset`, `system reset`, `password reset`, `superadmin create`, `mfa reset`, `backup restore`, `flags reset --file`, `flash`, `sessions end --all`, `users set-password` and any `api` call that is not a GET. Reading is never asked for. On the root screen the bar changes to `root password>` and shows only asterisks; Enter runs the command, Esc cancels. The password is not kept, logged, put in the history or placed on a command line. In the separate console it is read without echo; a script sets `IMPRESS_ROOT_PASSWORD`.
+
+Only the **SHA-512** of the password is in the program (`backend/app/rootauth.py`); a site sets its own with `IMPRESS_ROOT_PASSWORD_SHA512=<hex digest>` (`python3 -c "import hashlib,getpass;print(hashlib.sha512(getpass.getpass().encode()).hexdigest())"`). Three wrong tries in a row slow the next one (2, 4, 8 ... 30 seconds). The shipped password is the same on every installation that has not set its own: use your own on a real server.
+
+## The same on every system
+
+The root screen draws the same cells and answers the same keys on Windows, macOS and Linux. Windows consoles cannot tell Shift+Arrow from Arrow, so Ctrl+Up/Down (and Alt+Up/Down) scroll the logs there, plus Ctrl+Home/End. A terminal font without box-drawing glyphs: `IMPRESS_ASCII=1`.
+

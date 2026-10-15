@@ -26,6 +26,20 @@ Keep the mesh channel identical on all modules in a room. Use WPA2-PSK or better
 
 For production over TLS, first make the backend serve HTTPS/WSS and install the intended CA certificate at the configured firmware path. Then enable TLS in **Backend Server**, build the C6 and S3, and test their connection before updating any fleet. A device whose TLS trust or hostname is wrong cannot fall back to plaintext; see [device TLS](../guides/deployment.md#tls-for-devices).
 
+## Flash from the root console
+
+The same steps are available in imPress's console on every system (Windows, macOS, Linux), so a classroom can be brought up from one place:
+
+```text
+ports                                   # which serial ports exist (COM5, /dev/ttyUSB0, /dev/cu.usbmodem1101)
+build c6                                # idf.py build for the gateway (c6), hub (s3) or student module (student)
+flash c6 COM5                           # the first flash: idf.py flash, bootloader + partitions + app together
+flash s3 /dev/ttyACM0 --image hub.bin   # a finished imPress image, written with esptool (pip install esptool)
+test backend repo                       # run_tests.py suites
+```
+
+`flash` asks for root's password, accepts only a serial port name, and with `--image` first checks the file is an imPress image **for that board's chip** and writes nothing otherwise. `--dry-run` shows the command without running it. It does not replace the physical checks below.
+
 ## Flash and verify
 
 1. Connect only one board. Run `idf.py -p <PORT> flash monitor` from that role's project directory. If the tool cannot find the board, check the port, data cable, driver, permissions and bootloader/download-mode procedure for the exact board; do not erase the board until its recovery plan is understood.
