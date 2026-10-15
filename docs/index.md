@@ -74,7 +74,6 @@ guides/testing
 
 compliance/README
 compliance/data-inventory
-compliance/drill-records
 compliance/privacy-notice-template
 compliance/retention-schedule
 compliance/dsar-runbook

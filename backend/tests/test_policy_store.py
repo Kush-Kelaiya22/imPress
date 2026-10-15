@@ -12,7 +12,10 @@ ROOT_PW = "Test-Root-Password-1!"
 
 
 @pytest.fixture(autouse=True)
-def _fresh(client):
+def _fresh(client, monkeypatch):
+    # The running app re-reads the store from its maintenance loop. These tests edit the file themselves, so the loop is told
+    # nothing changed: otherwise it and the test race to reset the same file.
+    monkeypatch.setattr(gpc, "changed_on_disk", lambda settings: False)
     gpcstore.store_path().unlink(missing_ok=True)
     gpcstore.session_clear()
     yield
