@@ -198,22 +198,31 @@ def ota_client(data: bytes, target: str, version: str) -> dict:
                   "interrupted transfers without switching its boot partition")
 
 
-def emulator(target: str) -> dict:
-    note = ("no emulator exists for the ESP32-C6" if target == "c6" else
-            "QEMU cannot emulate the production flash configuration; CI boots this source in QEMU "
-            "(Emulator boot test) for every change")
-    return {"stage": "emulator", "passed": None, "problems": [], "proves": note}
+def emulator(data: bytes, target: str) -> dict:
+    """Boot the exact uploaded bytes in the pinned emulator (services/emulator_worker.py, #176). When nothing could be run the stage
+    is "not run" (passed None) in the standard profile and a FAILURE when policy ota.require_emulation is on: never a pass."""
+    from .. import gpc
+    from . import emulator_worker
+    proves = "the exact uploaded image boots in the pinned emulator with the build's own bootloader and partition table"
+    result = emulator_worker.run(data, target)
+    if result["ran"]:
+        return _stage("emulator", result["problems"], proves)
+    if gpc.get("ota.require_emulation"):
+        return {"stage": "emulator", "passed": False, "problems": ["emulation is required (policy ota.require_emulation) and could "
+                "not be run: " + "; ".join(result["problems"])], "proves": proves}
+    return {"stage": "emulator", "passed": None, "problems": [],
+            "proves": "not run: " + "; ".join(result["problems"]) + ". CI boots the hub and module source in QEMU for every change"}
 
 
 def qualify(data: bytes, target: str, version: str) -> dict:
-    stages = [analysis(data, target), ota_client(data, target, version), emulator(target)]
+    stages = [analysis(data, target), ota_client(data, target, version), emulator(data, target)]
     passed = all(s["passed"] is not False for s in stages)
     return {"status": "qualified" if passed else "failed", "stages": stages}
 
 
 # ── Attestation (v2.2) ───────────────────────────────────────────────────
 # Bump QUALIFIER when the stages change: older reports are then recomputed.
-QUALIFIER = "impress-ti/2"
+QUALIFIER = "impress-ti/3"
 SUBJECT_FIELDS = ("sha256", "size", "target", "chip", "project", "version", "idf_version", "elf_sha256", "signer")
 
 
