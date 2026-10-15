@@ -133,7 +133,6 @@ def run_server(tmp, port, extra_env=None):
 
 
 def ansi_to_svg(raw: bytes, out: Path, cols=100, rows=26) -> None:
-    sys.path.insert(0, "/tmp/pyte-lib")
     import pyte
     screen = pyte.Screen(cols, rows)
     stream = pyte.ByteStream(screen)
@@ -173,12 +172,23 @@ def ansi_to_svg(raw: bytes, out: Path, cols=100, rows=26) -> None:
 def root_screen(tmp, out: Path) -> None:
     import pty
     import select
+    import socket
+    with socket.socket() as probe:
+        try:
+            probe.bind(("0.0.0.0", 8000))
+        except OSError:
+            raise SystemExit("Root-screen capture needs port 8000 free; no existing listener was stopped.") from None
     env = {**os.environ, "IMPRESS_DATABASE_URL": f"sqlite+aiosqlite:///{tmp}/screen.db", "IMPRESS_GPC": "", "IMPRESS_TEMP_BACKUP_DIR": str(tmp / "sbk"),
-           "IMPRESS_FIRMWARE_DIR": str(tmp / "sfw"), "IMPRESS_INITIAL_ADMIN_PASSWORD": PASSWORD, "COLUMNS": "100", "LINES": "26", "TERM": "xterm-256color"}
+           "IMPRESS_FIRMWARE_DIR": str(tmp / "sfw"), "IMPRESS_DEFAULT_SUPERADMIN_PASSWORD": PASSWORD,
+           "IMPRESS_JWT_SECRET": "screen-demo-secret", "IMPRESS_DEVICE_API_KEY": DEVICE_KEY, "IMPRESS_REQUIRE_HTTPS": "false",
+           "IMPRESS_MIN_CORES": "1", "IMPRESS_MIN_MEMORY_MB": "1", "IMPRESS_MIN_DISK_MB": "1",
+           "PYTHONPATH": str(BACKEND), "COLUMNS": "100", "LINES": "26", "TERM": "xterm-256color"}
+    env.pop("IMPRESS_PLAIN", None)
+    env.pop("IMPRESS_ROOT_SCREEN", None)
     pid, fd = pty.fork()
     if pid == 0:
-        os.chdir(BACKEND)
-        os.execvpe(sys.executable, [sys.executable, "-m", "app.serve", "--port", str(free_port())], env)
+        os.chdir(tmp)
+        os.execvpe(sys.executable, [sys.executable, "-m", "app.serve"], env)
     import fcntl
     import struct
     import termios
@@ -195,11 +205,20 @@ def root_screen(tmp, out: Path) -> None:
                     buf += os.read(fd, 65536)
                 except OSError:
                     return
-    pump(9)
-    os.write(fd, b"status\n"); pump(2.5)
-    os.write(fd, b"features\n"); pump(2.5)
-    ansi_to_svg(buf, out)
-    os.write(fd, b"exit\n"); pump(3)
+    try:
+        deadline = time.monotonic() + 30
+        while b"Application startup complete" not in buf and time.monotonic() < deadline:
+            pump(0.25)
+        if b"Application startup complete" not in buf:
+            raise RuntimeError("The disposable root-screen server did not start")
+        os.write(fd, b"\x1b[B\r"); pump(2.5)      # select Accounts using the actual menu
+        os.write(fd, b"status\r"); pump(2.5)
+        os.write(fd, b"users "); pump(0.3)         # a partially typed command survives live output
+        ansi_to_svg(buf, out)
+    finally:
+        os.write(fd, b"\x03"); pump(3)
+        os.close(fd)
+        os.waitpid(pid, 0)
 
 
 def main() -> int:
@@ -211,8 +230,12 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     only = {x for x in args.only.split(",") if x}
     want = lambda n: not only or n in only                                        # noqa: E731
-    from playwright.sync_api import sync_playwright
     tmp = Path(tempfile.mkdtemp(prefix="impress-shots-"))
+    if only == {"root-screen"}:
+        root_screen(tmp, out / "root-screen.svg")
+        print("pictures are in", out)
+        return 0
+    from playwright.sync_api import sync_playwright
     port = free_port()
     proc, base, env = run_server(tmp, port)
     try:

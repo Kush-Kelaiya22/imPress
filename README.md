@@ -115,7 +115,7 @@ The terminal then shows the **imPress logo and version**, the live log, and a pr
 </tr>
 </table>
 
-<p align="center"><a href="docs/images/root-screen.svg"><img alt="The root screen: logo, live log and a command line" src="docs/images/root-screen.svg" width="760"></a><br/><sub><b>The root screen</b>: what root sees when imPress starts in a terminal (or <code>docker run -it</code>)</sub></p>
+<p align="center"><a href="docs/images/root-screen.svg"><img alt="The root dashboard: keyboard actions on the left, logs on the right and commands below" src="docs/images/root-screen.svg" width="760"></a><br/><sub><b>The root screen</b>: what root sees when imPress starts in a terminal (or <code>docker run -it</code>)</sub></p>
 
 The interface is deliberately minimal: flat surfaces, hairline borders, one typeface (Inter) and one accent colour. It follows Apple's Human Interface Guidelines for layout and Material 3 Expressive for motion; pages update live without reloading. [Design notes](docs/design/ui-design.md).
 

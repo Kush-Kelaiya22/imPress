@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import cmd
 import json
+import os
 import shlex
 import sys
 
@@ -28,9 +29,37 @@ def table(rows: list[dict], columns: list[str] | None = None) -> str:
     if not rows:
         return "(none)"
     cols = columns or list(rows[0])
-    widths = [max(len(str(c)), *(len(str(r.get(c, ""))) for r in rows)) for c in cols]
-    line = "  ".join(str(c).upper().ljust(w) for c, w in zip(cols, widths))
-    body = ["  ".join(str(r.get(c, "")).ljust(w) for c, w in zip(cols, widths)) for r in rows]
+    from .rootscreen import _cell_width, _fit_ansi, plain, safe_text, wrap_ansi
+    clean = lambda value: plain(safe_text(str(value))).replace("\n", " ").replace("\t", " ")  # noqa: E731
+    cells = lambda value: sum(_cell_width(ch) for ch in value)  # noqa: E731
+    headings = [clean(c).upper() for c in cols]
+    values = [[clean(r.get(c, "")) for c in cols] for r in rows]
+    widths = [max(cells(headings[i]), *(cells(r[i]) for r in values)) for i in range(len(cols))]
+    try:
+        limit = max(0, int(os.environ.get("IMPRESS_CONSOLE_COLUMNS", "0")))
+    except ValueError:
+        limit = 0
+    if limit:
+        if limit < len(cols) * 4 + 2 * (len(cols) - 1):
+            # In a very narrow pane, labelled records retain their full values.
+            return "\n".join(plain(part) for row in values for i, value in enumerate(row)
+                             for part in wrap_ansi(f"{headings[i]}: {value}", limit, indent=min(2, limit // 4)))
+        widths = [min(w, limit) for w in widths]
+        identifiers = {"id", "username", "roll_number", "code", "mac_address"}
+        while sum(widths) + 2 * (len(cols) - 1) > limit:
+            candidates = [i for i, w in enumerate(widths) if w > 4 and cols[i] not in identifiers]
+            candidates = candidates or [i for i, w in enumerate(widths) if w > 4]
+            if not candidates:
+                break
+            widths[max(candidates, key=lambda i: widths[i])] -= 1
+
+    def fit(value, width):
+        if cells(value) > width:
+            value = plain(_fit_ansi(value, max(1, width - 1))) + "…"
+        return value + " " * max(0, width - cells(value))
+
+    line = "  ".join(fit(value, w) for value, w in zip(headings, widths))
+    body = ["  ".join(fit(value, w) for value, w in zip(row, widths)) for row in values]
     return "\n".join([line, "  ".join("-" * w for w in widths), *body])
 
 
@@ -95,6 +124,8 @@ class Console(cmd.Cmd):
         print(f"error: {text}", file=self.out, flush=True)
 
     def onecmd(self, line: str):
+        from fastapi import HTTPException
+        from sqlalchemy.exc import SQLAlchemyError
         from .services.rootops import RootError
         try:
             return super().onecmd(line)
@@ -102,6 +133,11 @@ class Console(cmd.Cmd):
             self.fail(str(exc))
         except ValueError as exc:
             self.fail(str(exc))
+        except HTTPException as exc:
+            detail = exc.detail
+            self.fail(detail.get("message", str(detail)) if isinstance(detail, dict) else str(detail))
+        except SQLAlchemyError:
+            self.fail("The database operation failed; nothing was committed. Check the server log and retry.")
         return False
 
     def emptyline(self):
@@ -136,7 +172,7 @@ class Console(cmd.Cmd):
     def do_users(self, line):
         """users list [--role R] | show USER | create USER --role admin|teacher [--name N] [--email E] [--password P] [--ta]
         | set-password USER [--password P] | finish-setup USER | activate USER | deactivate USER | delete USER | trash
-        | restore USER|ID | unlock USER
+        | restore USER|ID | unlock USER [--ip ADDRESS]
         A new account (or a reset) gets a generated temporary password unless you give one; the person chooses their own
         at first sign-in. Super admins are created with 'superadmin create', not here."""
         from .services import rootops
@@ -182,9 +218,10 @@ class Console(cmd.Cmd):
                 return self.fail("users restore USER|ID")
             self.say(f"{self.run(rootops.restore_account(rest[0]))} restored")
         elif sub == "unlock":
-            if not rest:
-                return self.fail("users unlock USER")
-            self.say(f"cleared {self.run(rootops.unlock(rest[0]))} throttle record(s)")
+            pos, o = _opts(rest, values={"ip"})
+            if len(pos) != 1:
+                return self.fail("users unlock USER [--ip ADDRESS]")
+            self.say(f"cleared {self.run(rootops.unlock(pos[0], o.get('ip')))} throttle record(s)")
         else:
             self.fail(f"users: unknown subcommand {sub}")
 
@@ -426,9 +463,13 @@ class Console(cmd.Cmd):
             rows = self._api("GET", "/api/admin/classes") or []
             self._show([{k: c.get(k) for k in ("id", "name", "code", "classroom_code", "is_active", "student_count", "teacher_name")} for c in rows])
         elif sub == "show" and rest:
-            self._show(next((c for c in self._api("GET", "/api/admin/classes") if str(c["id"]) == rest[0]), "no such class"))
+            rows = self._api("GET", "/api/admin/classes")
+            if rows is not None:
+                self._show(next((c for c in rows if str(c["id"]) == rest[0]), "no such class"))
         elif sub == "create" and len(rest) >= 2:
             pos, o = _opts(rest, values={"teacher", "room", "icon", "color"})
+            if len(pos) != 2:
+                return self.fail("classes create NAME CODE [--teacher USER] [--room R]")
             body = {"name": pos[0], "code": pos[1], **({"classroom_code": o["room"]} if "room" in o else {}),
                     **({"icon": o["icon"]} if "icon" in o else {}), **({"color": o["color"]} if "color" in o else {})}
             if "teacher" in o:
@@ -462,6 +503,8 @@ class Console(cmd.Cmd):
                         if q in f"{r.get('student_name', '')} {r.get('roll_number', '')}".lower()])
         elif sub == "add" and len(rest) >= 2:
             pos, o = _opts(rest, values={"email"})
+            if len(pos) < 2:
+                return self.fail("students add ROLL NAME [--email E]")
             self._show(self._api("POST", "/api/students/", {"roll_number": pos[0], "student_name": " ".join(pos[1:]), **({"email": o["email"]} if "email" in o else {})}))
         elif sub == "delete" and rest:
             self._show(self._api("DELETE", f"/api/students/{rest[0]}/hard-delete"))
@@ -565,12 +608,14 @@ class Console(cmd.Cmd):
 
         from .services import rootops
         st = self.run(rootops.status())
-        self.say(f"{time.strftime('%H:%M:%S')}  sessions: {st.get('sessions', '?')}  version: {st.get('version', '')}")
+        self.say(f"{time.strftime('%H:%M:%S')}  sessions: {st.get('open sessions', 0)}  version: {st.get('version', '')}")
 
     def do_ls(self, line):
         """ls [users|classes|students|courses|devices]: list things (users by default)"""
         what = (self._args(line) or ["users"])[0]
-        getattr(self, f"do_{what}", self.do_users)("list")
+        if what not in {"users", "classes", "students", "courses", "devices"}:
+            return self.fail("ls [users|classes|students|courses|devices]")
+        getattr(self, f"do_{what}")("list")
 
     def do_ps(self, line):
         """ps: who is signed in (the same as 'sessions list')"""

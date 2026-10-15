@@ -20,7 +20,7 @@ from ..dbgateway import SYSTEM, act_as
 from ..models import DeletedUser, LoginThrottle, User, UserSession
 from ..policy import is_faculty_role
 from ..timeutil import istnow
-from . import accounts, bootstrap, integrity, test_mode
+from . import accounts, bootstrap, integrity, test_mode, throttle
 
 
 class RootError(Exception):
@@ -148,6 +148,7 @@ async def set_password(ref: str, password: str = "") -> tuple[str, str]:
             raise RootError(f"password {why}")
         u.hashed_password = hash_password(password)
         u.must_change_password = u.username != DEFAULT_SUPERADMIN
+        await throttle.reset_account(db, u.username, u.id)
         await revoke_user_sessions(db, u.id)
         await log_activity(db, "console.set_password", None, "user", u.id, {"flag": True, "username": u.username})
         await db.commit()
@@ -171,6 +172,8 @@ async def set_active(ref: str, active: bool) -> str:
     act_as(SYSTEM)
     async with async_session() as db:
         u = await _user(db, ref)
+        if u.username == DEFAULT_SUPERADMIN and not active:
+            raise RootError("the default super admin can't be deactivated")
         u.is_active = active
         if not active:
             await revoke_user_sessions(db, u.id)
@@ -220,13 +223,18 @@ async def restore_account(ref: str) -> str:
         return d.username
 
 
-async def unlock(ref: str) -> int:
+async def unlock(ref: str, address: str | None = None) -> int:
     """Clear sign-in throttling for an account (after too many wrong passwords)."""
     act_as(SYSTEM)
     async with async_session() as db:
         u = await _user(db, ref)
-        n = (await db.execute(delete(LoginThrottle).where(LoginThrottle.key.in_([f"user:{u.username.lower()}", f"change:{u.id}"])))).rowcount
-        await log_activity(db, "console.unlock", None, "user", u.id, {"flag": True, "username": u.username})
+        n = await throttle.reset_account(db, u.username, u.id)
+        if address is not None:
+            import ipaddress
+            address = str(ipaddress.ip_address(address))
+            n += (await db.execute(delete(LoginThrottle).where(LoginThrottle.key == f"ip:{address}"))).rowcount or 0
+        await log_activity(db, "console.unlock", None, "user", u.id,
+                           {"flag": True, "username": u.username, **({"address": address} if address else {})})
         await db.commit()
         return n or 0
 

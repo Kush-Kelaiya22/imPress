@@ -58,9 +58,6 @@ def main(argv: list[str] | None = None) -> int:
     utf8_output()
     argv = list(sys.argv[1:] if argv is None else argv)
     args = build_parser().parse_args(argv)
-    if not args.plain and not os.environ.get("IMPRESS_PLAIN") and sys.stdin.isatty() and sys.stdout.isatty():
-        from . import rootscreen          # a terminal: the root screen (logo, live log, prompt); no terminal: plain log
-        return rootscreen.run(argv)
     if args.test_mode and args.no_test_mode:
         print("error: --test-mode and --no-test-mode contradict each other", file=sys.stderr)
         return 2
@@ -74,6 +71,9 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["IMPRESS_GPC"] = ",".join(x for x in [existing, *flags] if x)
     if args.profile:
         os.environ["IMPRESS_PROFILE"] = args.profile
+    if not args.plain and not os.environ.get("IMPRESS_PLAIN") and sys.stdin.isatty() and sys.stdout.isatty():
+        from . import rootscreen          # console commands inherit the same root-owned launch policy as the server
+        return rootscreen.run(argv)
     try:
         from . import gpc
         gpc.parse_inline(os.environ.get("IMPRESS_GPC", ""))          # a typo is an error here, not a stack trace later

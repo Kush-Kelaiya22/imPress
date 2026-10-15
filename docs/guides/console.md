@@ -7,20 +7,40 @@ Root has two tools: the **root screen**, which you see when imPress is started f
 ## The root screen
 
 ```text
-  root@impress: ~                                   imPress 2.2.24 · root screen
- ╻┏┳┓┏━┓┏━┓┏━╸┏━┓┏━┓   v2.2.24   ● running    http://0.0.0.0:8000
- ┃┃┃┃┣━┛┣┳┛┣╸ ┗━┓┗━┓   standard profile
- ╹╹ ╹╹  ╹┗╸┗━╸┗━┛┗━┛   type help for the commands
-────────────────────────────────────────────────────────────────────────
- 10:41:02  INFO      Application startup complete.
- 10:41:09  WARNING   Possible DoS: 1210 requests a minute to read pages from 203.0.113.9
- …                                                  (the live log scrolls here)
-────────────────────────────────────────────────────────────────────────
- help · status · users list · features · backup save NAME · iips status · exit stops the server
-root@impress:~>
+imPress 2.2.x | running | http://0.0.0.0:8000
+root console · standard profile · type help for commands
+ACTIONS                   | LOGS (live)
+> Overview                | 10:41:02 INFO Application startup complete.
+  Accounts                | > status
+  Signed-in users         | version             : 2.2.0
+  Show credentials        | profile             : standard
+  Unlock account...       | active super admins : 1
+  Classrooms              | ota                 : on
+  Students                |
+  Courses                 |
+───────────────────────────────────────────────────────────────────────
+root> users list
+Tab: focus | arrows: move | Enter: select/run | PgUp/PgDn: logs
 ```
 
-Start imPress in a terminal and you get it: the logo and version (with the patch number), the state of the server, the **live log** scrolling above, and a **command line** at the bottom. The log is coloured by level; request lines are quiet. The screen keeps a bounded in-memory log history: enter `scroll up [lines]`, `scroll down [lines]`, `scroll top`, or `scroll live` to review startup errors and return to new output. `clear` clears that view. The server runs as a child process: closing the screen (`exit`, Ctrl+C) stops it.
+Start imPress in a terminal to open the dashboard. Actions are on the left, live logs and command results are on the right, and the command box stays at the bottom. The title shows the version, server state and fixed listener. The log is coloured by level; request lines are quiet.
+
+| Key or action | Result |
+| --- | --- |
+| Up / Down, then Enter in Actions | Select and run an action. An action ending in `...` fills the command box for you to complete. |
+| Start typing | Focus the command box. Enter runs the command. Commands run in order; up to eight may be pending. |
+| Tab / Shift+Tab | Move focus between Actions, Logs and the command box. Escape returns to Actions. |
+| Up / Down in the command box | Recall command history. Commands containing credential arguments are excluded. |
+| Left / Right, Home / End, Backspace / Delete | Edit the command without interference from incoming logs. |
+| Ctrl+A / Ctrl+E, Ctrl+U / Ctrl+K / Ctrl+W | Move to the start/end, delete before/after the cursor, or delete the previous word. |
+| Page Up / Page Down | Scroll logs from any pane. With Logs focused, arrows scroll by one line and Home / End go to the oldest/newest output. |
+| `clear`, `cls`, or Clear logs | Erase the in-memory log view and repaint both panes. |
+| Ctrl+L | Redraw the complete screen. |
+| `exit`, Ctrl+C, or Stop server | Stop the server and restore the previous terminal screen and input settings. |
+
+The dashboard keeps the most recent 2,000 messages. New output does not move a scrolled log view until its oldest messages leave that buffer. The `scroll up [lines]`, `scroll down [lines]`, `scroll top` and `scroll live` commands also work. Pasted newlines become spaces; pasting alone never executes commands. Resize the terminal to change the layout. At least 24 columns and six rows are needed for both panes.
+
+Each command runs in a separate console process with the same launch policy as the server. Command output and errors stay in the log pane; a failed command does not close the dashboard. The dashboard uses the terminal's alternate screen and restores normal input on exit, Ctrl+C, POSIX SIGTERM and SSH hangup.
 
 Without a terminal (a service, a pipe, a container started with `-d`) there is no screen: the logo and version are printed once, then the log is plain lines. Force that with `--plain` or `IMPRESS_PLAIN=1`.
 
@@ -52,7 +72,7 @@ It runs on the server's own host with the database file's own access. Every comm
 | `users finish-setup USER` | treat the welcome set-up as done (labs and tests) |
 | `users activate\|deactivate USER`, `users delete USER` | enable, disable, move to the trash |
 | `users trash`, `users restore USER` | the 30-day trash |
-| `users unlock USER` | clear the sign-in throttle for an account |
+| `users unlock USER [--ip ADDRESS]` | clear the account's sign-in throttle; optionally clear one explicitly named address's throttle |
 | `sessions list [USER]`, `sessions end USER`, `sessions end --all` | who is signed in; sign someone (or everyone) out |
 | `features`, `feature NAME on\|off [--lock]` | features and who set them; root outranks administrators and super admins, `--lock` stops everyone below root changing it |
 | `policy show`, `policylog [FLAG]` | the effective global policy, and who changed what, when |
@@ -66,3 +86,11 @@ It runs on the server's own host with the database file's own access. Every comm
 | `help [COMMAND]`, `clear`, `scroll`, `exit` | |
 
 Exit codes: `0` success, `1` a command failed, `4` the separate console is closed here.
+
+## Recovering sign-in
+
+The default account is `impress.default.superAdmin`. Choose **Show credentials**, or run `password show`, to inspect the password fixed by root in configuration. If none is fixed, the server generates one at each start and shows it in startup output. It cannot be recovered from its hash; use `password reset` to generate a replacement.
+
+`password reset` revokes the default account's sessions and clears its old account-level guessing counter. When the fixed setting is present in the current working directory's `.env`, the command updates it. If the setting comes from an external environment, update that environment before the next restart. Run `users set-password USER` for another account; it receives a temporary password and chooses its own at sign-in.
+
+The browser shows a countdown while guessing protection is active. During the wait, even the correct password is not checked. A password reset clears that account's counter but preserves the shared-address limit. After investigating address-wide failures, root can run `users unlock USER --ip ADDRESS` using the actual client address from the server log. This recovery is local to the server; it does not disable guessing protection.

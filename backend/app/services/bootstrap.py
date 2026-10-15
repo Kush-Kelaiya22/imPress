@@ -69,6 +69,9 @@ async def ensure_default_superadmin(quiet: bool = False) -> str:
             user.is_active = True
             user.must_change_password = False
         await db.flush()
+        if changed:
+            from . import throttle
+            await throttle.reset_account(db, user.username, user.id)
         if changed and not created:
             await revoke_user_sessions(db, user.id)              # the old password's sessions end with it
         await db.commit()
@@ -129,10 +132,10 @@ def fixed_password() -> tuple[str, str] | None:
 
 def _env_file():
     from pathlib import Path
-    for p in (Path.cwd() / ".env", Path(__file__).resolve().parents[2] / ".env"):
-        if p.is_file():
-            return p
-    return None
+    # Settings reads .env in the working directory. Never rewrite a different
+    # checkout's file merely because this module was imported from there.
+    path = Path.cwd() / ".env"
+    return path if path.is_file() else None
 
 
 async def reset_default_password(new: str = "", keep_in_env: bool = True) -> tuple[str, str]:
@@ -150,6 +153,8 @@ async def reset_default_password(new: str = "", keep_in_env: bool = True) -> tup
         user.hashed_password = hash_password(password)
         user.is_active = True
         user.must_change_password = False
+        from . import throttle
+        await throttle.reset_account(db, user.username, user.id)
         await revoke_user_sessions(db, user.id, reason="signed_out")
         await db.commit()
     note = "A new random password is generated at every start unless one is fixed."

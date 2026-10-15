@@ -14,14 +14,16 @@ BACKEND = Path(__file__).resolve().parents[1]
 @pytest.fixture
 def box(tmp_path):
     env = {**os.environ, "IMPRESS_DATABASE_URL": f"sqlite+aiosqlite:///{tmp_path / 'c.db'}", "IMPRESS_TEMP_BACKUP_DIR": str(tmp_path / "b"),
-           "IMPRESS_FIRMWARE_DIR": str(tmp_path / "fw"), "IMPRESS_GPC": "", "PYTHONPATH": str(BACKEND)}
+           "IMPRESS_FIRMWARE_DIR": str(tmp_path / "fw"), "IMPRESS_GPC": "", "PYTHONPATH": str(BACKEND),
+           "IMPRESS_DEFAULT_SUPERADMIN_PASSWORD": "Console-Test-Root-19!"}
     env.pop("IMPRESS_IN_CONTAINER", None)
+    (tmp_path / ".env").write_text("IMPRESS_DEFAULT_SUPERADMIN_PASSWORD=Console-Test-Root-19!\n")
 
     def run(*cmds, module="app.console", extra=(), stdin=None, env_extra=None):
         args = [sys.executable, "-m", module, *extra]
         for c in cmds:
             args += ["-c", c]
-        p = subprocess.run(args, cwd=BACKEND, env={**env, **(env_extra or {})}, capture_output=True, text=True, timeout=120, input=stdin)
+        p = subprocess.run(args, cwd=tmp_path, env={**env, **(env_extra or {})}, capture_output=True, text=True, timeout=120, input=stdin)
         return p.returncode, p.stdout + p.stderr
     run.env = env
     return run
@@ -178,7 +180,8 @@ def test_root_screen_keeps_scrollable_log_history(monkeypatch, capsys):
     for i in range(14):
         screen.log(f"startup-line-{i:02d}")
     screen.scroll("top")
-    assert screen.scrollback == len(screen._wrapped_logs()) - (screen.bottom - screen.top)
+    assert screen.scrollback == len(screen._wrapped_logs()) - screen.page
+    screen.draw()
     assert "scrollback" in capsys.readouterr().out
     screen.scroll("live")
     assert screen.scrollback == 0
@@ -186,9 +189,28 @@ def test_root_screen_keeps_scrollable_log_history(monkeypatch, capsys):
     assert not screen.messages
 
 
+def test_read_only_dashboard_actions_and_recovery_after_root_session_revocation(box):
+    _seed_default(box)
+    from app.rootscreen import MENU
+    commands = [c for _, c in MENU if c not in {"clear", "exit"} and not c.endswith(" ")]
+    rc, out = box(*commands, "sessions end --all", "classes list", "uptime")
+    assert rc == 0, out
+    assert "Traceback" not in out and "sessions: ?" not in out
+
+
+@pytest.mark.parametrize("command", ["classes create --room X --teacher ann", "students add --email a@x.io ROLL",
+                                     "api POST /api/admin/classes invalid-json", "users unlock", "ls delete"])
+def test_bad_arguments_do_not_crash_the_console(box, command):
+    rc, out = box(command, "version")
+    assert rc == 1 and "error:" in out and "Traceback" not in out and "2.2" in out
+
+
 # ── root can do what a super admin can ──────────────────────────────────
 
 def test_the_default_password_can_be_shown_and_reset_by_root(box, tmp_path):
+    import hashlib
+    checkout_env = BACKEND / ".env"
+    before = hashlib.sha256(checkout_env.read_bytes()).digest() if checkout_env.exists() else None
     _seed_default(box)
     rc, out = box("password show", env_extra={"IMPRESS_INITIAL_ADMIN_PASSWORD": "Fixed-By-Root-9", "IMPRESS_DEFAULT_SUPERADMIN_PASSWORD": ""})
     assert rc == 0 and "Fixed-By-Root-9" in out
@@ -196,6 +218,8 @@ def test_the_default_password_can_be_shown_and_reset_by_root(box, tmp_path):
     assert rc == 0 and "random" in out
     rc, out = box("password reset --password Brand-New-Root-Pass-1")
     assert rc == 0 and "Brand-New-Root-Pass-1" in out
+    assert "Brand-New-Root-Pass-1" in (tmp_path / ".env").read_text()
+    assert (hashlib.sha256(checkout_env.read_bytes()).digest() if checkout_env.exists() else None) == before
     rc, out = box("password reset --password weak")
     assert rc == 1 and "password" in out.lower()
 

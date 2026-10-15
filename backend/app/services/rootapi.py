@@ -21,7 +21,12 @@ _session_id: int | None = None
 async def _login() -> str:
     global _token, _session_id
     if _token:
-        return _token
+        from ..auth import validate_session
+        async with async_session() as db:
+            _session, user, error = await validate_session(db, _token, refresh_activity=False)
+        if user is not None and not error:
+            return _token
+        await close()
     from sqlalchemy import select
 
     from ..auth import create_session
