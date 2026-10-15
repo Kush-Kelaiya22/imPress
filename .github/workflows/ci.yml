@@ -347,30 +347,40 @@ jobs:
       - name: scripts/start.sh
         run: |
           nohup scripts/start.sh > server.log 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/impress-http.pid"
           for _ in $(seq 60); do curl -sf http://127.0.0.1:8000/health && exit 0; sleep 1; done
           cat server.log; exit 1
       - name: HTTP smoke test
         run: python scripts/smoke_test.py --password "$IMPRESS_INITIAL_ADMIN_PASSWORD"
       - name: HTTPS smoke test (#66, a throwaway CA)
         run: |
+          http_pid="$(cat "$RUNNER_TEMP/impress-http.pid")"
+          kill -TERM "$http_pid"
+          for _ in $(seq 30); do
+            if ! kill -0 "$http_pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if kill -0 "$http_pid" 2>/dev/null; then
+            echo "HTTP server did not stop before the TLS run"; cat server.log; exit 1
+          fi
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=localhost" \
             -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
             -keyout "$RUNNER_TEMP/tls.key" -out "$RUNNER_TEMP/tls.crt" 2>/dev/null
           IMPRESS_PORT=8443 IMPRESS_DATABASE_URL="sqlite+aiosqlite:///$RUNNER_TEMP/tls.db" \
             IMPRESS_SSL_CERTFILE="$RUNNER_TEMP/tls.crt" IMPRESS_SSL_KEYFILE="$RUNNER_TEMP/tls.key" \
             nohup scripts/start.sh > tls.log 2>&1 &
-          for _ in $(seq 60); do curl -sf --cacert "$RUNNER_TEMP/tls.crt" https://127.0.0.1:8443/health && break; sleep 1; done
-          python scripts/smoke_test.py --base https://127.0.0.1:8443 --password "$IMPRESS_INITIAL_ADMIN_PASSWORD" \
+          for _ in $(seq 60); do curl -sf --cacert "$RUNNER_TEMP/tls.crt" https://127.0.0.1:8000/health && break; sleep 1; done
+          python scripts/smoke_test.py --base https://127.0.0.1:8000 --password "$IMPRESS_INITIAL_ADMIN_PASSWORD" \
             --cafile "$RUNNER_TEMP/tls.crt"
-          if python scripts/smoke_test.py --base https://127.0.0.1:8443 --password x 2>/dev/null; then
+          if python scripts/smoke_test.py --base https://127.0.0.1:8000 --password x 2>/dev/null; then
             echo "an untrusted certificate was accepted"; exit 1; fi
       - name: Server log
         if: always()
         run: cat server.log tls.log 2>/dev/null || true
 
   launchers:
-    # The one-file launchers (v2.2) on each system: install from nothing, free
-    # an occupied port, serve /health.
+    # The one-file launchers (v2.2) on each system: install from nothing,
+    # ignore host/port overrides, and serve /health on 0.0.0.0:8000.
     name: Launcher (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -379,6 +389,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     env:
+      IMPRESS_HOST: "127.0.0.1"
       IMPRESS_PORT: "8123"
       IMPRESS_INITIAL_ADMIN_PASSWORD: launcher-${{ github.run_id }}
     steps:
@@ -386,14 +397,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - name: Occupy the port
-        shell: bash
-        run: nohup python -m http.server "$IMPRESS_PORT" > /dev/null 2>&1 &
       - name: launcher.sh
         if: runner.os != 'Windows'
         run: |
           nohup ./launcher.sh > launcher.log 2>&1 &
-          for _ in $(seq 120); do curl -sf "http://127.0.0.1:$IMPRESS_PORT/health" && exit 0; sleep 1; done
+          for _ in $(seq 120); do curl -sf http://127.0.0.1:8000/health && exit 0; sleep 1; done
           cat launcher.log; exit 1
       - name: launcher.bat
         if: runner.os == 'Windows'
@@ -401,12 +409,12 @@ jobs:
         run: |
           Start-Process cmd.exe -ArgumentList '/c', 'launcher.bat > launcher.log 2>&1' -WindowStyle Hidden
           foreach ($i in 1..120) {
-            try { Invoke-RestMethod "http://127.0.0.1:$env:IMPRESS_PORT/health"; exit 0 } catch { Start-Sleep 1 }
+            try { Invoke-RestMethod "http://127.0.0.1:8000/health"; exit 0 } catch { Start-Sleep 1 }
           }
           Get-Content launcher.log; exit 1
       - name: HTTP smoke test
         shell: bash
-        run: python scripts/smoke_test.py --base "http://127.0.0.1:$IMPRESS_PORT" --password "$IMPRESS_INITIAL_ADMIN_PASSWORD"
+        run: python scripts/smoke_test.py --base http://127.0.0.1:8000 --password "$IMPRESS_INITIAL_ADMIN_PASSWORD"
       - name: Launcher log
         if: always()
         shell: bash
