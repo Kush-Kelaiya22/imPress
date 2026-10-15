@@ -248,6 +248,15 @@ class Console(cmd.Cmd):
         user, pw = self.run(rootops.create_account(pos[0], "super_admin", o.get("email", ""), o.get("name", ""), o.get("password", "")))
         self.say(f"created super admin {user}\ntemporary password: {pw}\n(they must choose their own at first sign-in)")
 
+    def do_mfa(self, line):
+        """mfa status USER | reset USER: a super admin's two-step verification. 'reset' removes it (a lost phone and no
+        recovery codes); they set it up again in Settings > Security, and the policy may require it before they can approve."""
+        from .services import rootops
+        a = self._args(line)
+        if len(a) != 2 or a[0] not in ("status", "reset"):
+            return self.fail("mfa status USER | reset USER")
+        self.say(self.run(rootops.mfa(a[1], a[0] == "reset")))
+
     def do_sessions(self, line):
         """sessions list [USER] | end USER | end --all: who is signed in; sign someone out (or everyone)."""
         from .services import rootops
@@ -652,7 +661,7 @@ class Console(cmd.Cmd):
             return super().do_help(arg)
         groups = [
             ("System", "status version uptime date env verify system policy policylog requirements iips features feature testmode deadlock"),
-            ("Accounts", "users superadmin password sessions ps ls whoami activity"),
+            ("Accounts", "users superadmin password mfa sessions ps ls whoami activity"),
             ("Classroom", "classes students courses quizzes polls"),
             ("Devices", "devices firmware"),
             ("Data", "backup approvals audit api"),

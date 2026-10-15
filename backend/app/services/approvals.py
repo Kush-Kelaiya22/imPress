@@ -26,7 +26,7 @@ from ..activity import log_activity
 from ..auth import verify_password
 from ..models import ActivityLog, Approval, User
 from ..timeutil import istnow
-from . import events
+from . import events, mfa
 
 ACTIONS = {
     "integrity.accept_current": "Accept the database as it is now as the new trusted baseline",
@@ -46,8 +46,8 @@ async def active_super_admins(db: AsyncSession) -> int:
         User.role == "super_admin", User.is_active.is_(True)))).scalar() or 0
 
 
-async def step_up(db: AsyncSession, user: User, password: str) -> None:
-    """Re-entering the password proves it is the account's owner at the keyboard, not a left-open session."""
+async def check_password(db: AsyncSession, user: User, password: str) -> None:
+    """The password half of step-up, with its lockout (also used to enrol or turn off the second factor)."""
     since = istnow() - timedelta(minutes=15)
     failures = (await db.execute(select(func.count()).select_from(ActivityLog).where(
         ActivityLog.user_id == user.id, ActivityLog.action == "approval.step_up_failed",
@@ -58,6 +58,24 @@ async def step_up(db: AsyncSession, user: User, password: str) -> None:
         await log_activity(db, "approval.step_up_failed", user.id, "user", user.id, {"flag": True})
         await db.commit()
         raise _err(403, "STEP_UP_FAILED", "The password is not correct")
+
+
+async def step_up(db: AsyncSession, user: User, password: str, code: str = "") -> None:
+    """Re-entering the password proves it is the account's owner at the keyboard, not a left-open session. With a
+    second factor (services/mfa.py: enrolled, or required by policy dual_control.mfa_required) the code from the
+    authenticator app, or an unused recovery code, is needed as well."""
+    await check_password(db, user, password)
+    if await mfa.second_factor_needed(db, user):
+        row = await mfa.get(db, user)
+        if row is None or not row.enabled:
+            raise _err(403, "MFA_ENROLMENT_REQUIRED", "Set up two-step verification in Settings > Security before you "
+                       "request or approve this (policy dual_control.mfa_required).")
+        if not code.strip():
+            raise _err(403, "MFA_CODE_REQUIRED", "Enter the code from your authenticator app (or a recovery code).")
+        if not await mfa.verify(db, user, code):
+            await log_activity(db, "approval.step_up_failed", user.id, "user", user.id, {"flag": True, "factor": "code"})
+            await db.commit()
+            raise _err(403, "STEP_UP_FAILED", "The code is not correct, or was already used")
 
 
 def _public(a: Approval, names: dict) -> dict:
@@ -73,7 +91,7 @@ async def listing(db: AsyncSession, limit: int = 30) -> list[dict]:
     return [_public(a, names) for a in rows]
 
 
-async def create(db: AsyncSession, user: User, action: str, params: dict, password: str) -> Approval:
+async def create(db: AsyncSession, user: User, action: str, params: dict, password: str, code: str = "") -> Approval:
     if action not in ACTIONS:
         raise _err(422, "UNKNOWN_ACTION", "Unknown action: " + ", ".join(ACTIONS))
     if action == "system.clear.everything" and not gpc.get("system.reset_everything_allowed"):
@@ -86,7 +104,7 @@ async def create(db: AsyncSession, user: User, action: str, params: dict, passwo
         except _backups.BackupError:
             raise _err(422, "UNKNOWN_BACKUP", "Choose an existing backup") from None
         params = {"backup": wanted}
-    await step_up(db, user, password)
+    await step_up(db, user, password, code)
     a = Approval(action=action, params=params or {}, requested_by=user.id, status="pending")
     db.add(a)
     await log_activity(db, "approval.request", user.id, "approval", None, {"flag": True, "action": action, "params": params or {}})
@@ -95,7 +113,7 @@ async def create(db: AsyncSession, user: User, action: str, params: dict, passwo
     return a
 
 
-async def approve(db: AsyncSession, user: User, approval_id: int, password: str) -> Approval:
+async def approve(db: AsyncSession, user: User, approval_id: int, password: str, code: str = "") -> Approval:
     a = await db.get(Approval, approval_id)
     if a is None:
         raise _err(404, "NOT_FOUND", "No such request")
@@ -104,7 +122,7 @@ async def approve(db: AsyncSession, user: User, approval_id: int, password: str)
     own = a.requested_by == user.id
     if own and not (gpc.get("dual_control.single_operator_ok") and await active_super_admins(db) == 1):
         raise _err(403, "SELF_APPROVAL", "A different super admin must approve this request")
-    await step_up(db, user, password)
+    await step_up(db, user, password, code)
     now = istnow()
     a.status, a.approved_by, a.approved_at = "approved", user.id, now
     a.not_before = now + timedelta(minutes=gpc.get("dual_control.delay_minutes"))

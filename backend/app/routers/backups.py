@@ -28,6 +28,7 @@ class Save(BaseModel):
 
 class Restore(BaseModel):
     password: str
+    code: str = ""                     # second factor, when one applies (services/mfa.py)
     confirm: str                       # the backup's name, typed
     approval_id: int | None = None
 
@@ -65,7 +66,7 @@ async def restore_backup(kind: str, name: str, body: Restore, user: User = Depen
         raise _err(e) from None
     if body.confirm.strip() != entry["name"]:
         raise HTTPException(422, {"code": "CONFIRM", "message": f"Type {entry['name']} to confirm"})
-    await approvals.step_up(db, user, body.password)
+    await approvals.step_up(db, user, body.password, body.code)
     if gpc.get("backups.restore_requires_approval"):
         await approvals.require(db, user, "backups.restore", {"backup": entry["id"]}, body.approval_id)
     await log_activity(db, "backup.restore", user.id, "system", None, {"flag": True, "backup": entry["id"]})

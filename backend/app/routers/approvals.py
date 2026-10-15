@@ -17,10 +17,12 @@ class NewRequest(BaseModel):
     action: str
     params: dict = {}
     password: str
+    code: str = ""                 # the authenticator app's code (or a recovery code), when a second factor applies
 
 
 class Password(BaseModel):
     password: str
+    code: str = ""
 
 
 @router.get("")
@@ -30,13 +32,13 @@ async def list_requests(user: User = Depends(SUPER), db: AsyncSession = Depends(
 
 @router.post("", status_code=201)
 async def request_action(body: NewRequest, user: User = Depends(SUPER), db: AsyncSession = Depends(get_db)):
-    a = await approvals.create(db, user, body.action, body.params, body.password)
+    a = await approvals.create(db, user, body.action, body.params, body.password, body.code)
     return {"id": a.id, "status": a.status}
 
 
 @router.post("/{approval_id}/approve")
 async def approve(approval_id: int, body: Password, user: User = Depends(SUPER), db: AsyncSession = Depends(get_db)):
-    a = await approvals.approve(db, user, approval_id, body.password)
+    a = await approvals.approve(db, user, approval_id, body.password, body.code)
     return {"id": a.id, "status": a.status, "not_before": a.not_before, "expires_at": a.expires_at}
 
 

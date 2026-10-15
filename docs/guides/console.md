@@ -78,6 +78,7 @@ It runs on the server's own host with the database file's own access. Every comm
 | `users activate\|deactivate USER`, `users delete USER` | enable, disable, move to the trash |
 | `users trash`, `users restore USER` | the 30-day trash |
 | `users unlock USER [--ip ADDRESS]` | clear the account's sign-in throttle; optionally clear one explicitly named address's throttle |
+| `mfa status USER`, `mfa reset USER` | a super admin's two-step verification: see whether it is on, or remove it (a lost phone and no recovery codes); the account is signed out and sets it up again |
 | `sessions list [USER]`, `sessions end USER`, `sessions end --all` | who is signed in; sign someone (or everyone) out |
 | `features`, `feature NAME on\|off [--lock]` | features and who set them; root outranks administrators and super admins, `--lock` stops everyone below root changing it |
 | `policy show`, `policylog [FLAG]` | the effective global policy, and who changed what, when |

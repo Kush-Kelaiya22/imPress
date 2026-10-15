@@ -53,6 +53,7 @@ The launchers never select the hardened profile and never switch debug or plain 
 |---|---|---|---|---|
 | `dual_control.enabled` | bool | `True` | `True` | Destructive or baseline-changing actions (accepting the current database state, clearing data) need a second super admin's approval. |
 | `dual_control.single_operator_ok` | bool | `True` | `False` | Allow the requester to approve their own action when they are the only active super admin. |
+| `dual_control.mfa_required` | bool | `False` | `True` | Every step of dual control (request, approve, restore a backup) also needs a code from the super admin's authenticator app (TOTP); a super admin who has not set one up cannot take part. A super admin who has set one up is always asked for the code, whatever this says. |
 | `dual_control.delay_minutes` | int | `0` | `15` | Minutes between an approval and the earliest moment the action may run. |
 | `dual_control.expiry_minutes` | int | `240` | `30` | Minutes an approval stays usable after its delay has passed. |
 | `system.reset_everything_allowed` | bool | `True` | `False` | Allow the 'reset everything' clear scope in the web app at all. |

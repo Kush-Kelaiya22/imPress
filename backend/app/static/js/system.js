@@ -167,9 +167,9 @@ Actions['bk-view'] = async (el) => {
 Actions['bk-restore'] = async (el) => {
   const v = await askDialog({ title: `Restore ${el.dataset.name}?`, confirm: 'Restore and sign everyone out', danger: true,
     body: `<div class="confirm-warn">${icon('alert', 'sm')}<span>The live database is replaced by this copy. What is there now is kept as a "before restore" copy. Everyone is signed out, including you.</span></div>Type <code>${escHtml(el.dataset.name)}</code> and your password to continue.`,
-    fields: [{ name: 'confirm', label: 'Backup name' }, PASSWORD_FIELD], validate: (x) => x.confirm.trim() === el.dataset.name && x.password.length > 0 });
+    fields: [{ name: 'confirm', label: 'Backup name' }, ...(await stepUpFields())], validate: (x) => x.confirm.trim() === el.dataset.name && x.password.length > 0 });
   if (!v) return;
-  try { await adminApi.restoreBackup(el.dataset.id, v.password, v.confirm.trim()); showToast('Restored. Please sign in again.', 'success'); setTimeout(() => { navigate('#/login'); location.reload(); }, 1200); }
+  try { await adminApi.restoreBackup(el.dataset.id, v.password, v.confirm.trim(), null, v.code || ''); showToast('Restored. Please sign in again.', 'success'); setTimeout(() => { navigate('#/login'); location.reload(); }, 1200); }
   catch (err) { showToast(err.code === 'APPROVAL_REQUIRED' ? 'A second super admin must approve this restore first.' : err.message, 'error'); }
 };
 Actions['bk-delete'] = async (el) => {

@@ -58,6 +58,10 @@ FLAGS: dict[str, Flag] = {f.name: f for f in [
          "Destructive or baseline-changing actions (accepting the current database state, clearing data) need a second super admin's approval."),
     Flag("dual_control.single_operator_ok", "bool", True, False, "false",
          "Allow the requester to approve their own action when they are the only active super admin."),
+    Flag("dual_control.mfa_required", "bool", False, True, "true",
+         "Every step of dual control (request, approve, restore a backup) also needs a code from the super admin's "
+         "authenticator app (TOTP); a super admin who has not set one up cannot take part. A super admin who has set "
+         "one up is always asked for the code, whatever this says."),
     Flag("dual_control.delay_minutes", "int", 0, 15, "higher",
          "Minutes between an approval and the earliest moment the action may run."),
     Flag("dual_control.expiry_minutes", "int", 240, 30, "lower",

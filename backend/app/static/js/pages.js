@@ -801,22 +801,28 @@ Actions['sys-ack'] = async () => {
 };
 
 const PASSWORD_FIELD = { name: 'password', label: 'Your password', type: 'password', autocomplete: 'current-password' };
+const CODE_FIELD = { name: 'code', label: 'Code from your authenticator app (or a recovery code)', type: 'text', autocomplete: 'one-time-code' };
+// The step-up fields: the password, and the code when a second factor applies to this account.
+async function stepUpFields() {
+  try { const m = await mfaApi.status(); return m.enrolled || m.required ? [PASSWORD_FIELD, CODE_FIELD] : [PASSWORD_FIELD]; }
+  catch (e) { return [PASSWORD_FIELD]; }
+}
 
 Actions['sys-request'] = async (el) => {
   const kind = el.dataset.kind;
   const v = await askDialog({ title: `Request: ${APPROVAL_LABEL[kind][0]}`, confirm: 'Request approval',
     body: 'Another super admin must approve it before it can run. Enter your password to confirm it is you.',
-    fields: [PASSWORD_FIELD], validate: (x) => x.password.length > 0 });
+    fields: await stepUpFields(), validate: (x) => x.password.length > 0 });
   if (!v) return;
-  try { await approvalsApi.request(kind, v.password); showToast('Requested: now another super admin has to approve it', 'success'); router(); }
+  try { await approvalsApi.request(kind, v.password, v.code || ''); showToast('Requested: now another super admin has to approve it', 'success'); router(); }
   catch (err) { showToast(err.message, 'error'); }
 };
 
 Actions['sys-approve'] = async (el) => {
   const v = await askDialog({ title: 'Approve this request', confirm: 'Approve',
-    body: 'You are allowing this action to run. Enter your password to confirm it is you.', fields: [PASSWORD_FIELD], validate: (x) => x.password.length > 0 });
+    body: 'You are allowing this action to run. Enter your password to confirm it is you.', fields: await stepUpFields(), validate: (x) => x.password.length > 0 });
   if (!v) return;
-  try { const r = await approvalsApi.approve(el.dataset.id, v.password); showToast(`Approved. It can run from ${istTime(istParseToEpoch(r.not_before))}.`, 'success'); router(); }
+  try { const r = await approvalsApi.approve(el.dataset.id, v.password, v.code || ''); showToast(`Approved. It can run from ${istTime(istParseToEpoch(r.not_before))}.`, 'success'); router(); }
   catch (err) { showToast(err.message, 'error'); }
 };
 

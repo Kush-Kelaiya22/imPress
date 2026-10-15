@@ -171,6 +171,24 @@ async def finish_setup(ref: str) -> str:
         return u.username
 
 
+async def mfa(ref: str, reset: bool) -> str:
+    """Whether a super admin has two-step verification; with `reset`, remove it (a lost phone with no recovery codes)."""
+    from ..models import UserMfa
+    act_as(SYSTEM)
+    async with async_session() as db:
+        u = await _user(db, ref)
+        row = await db.get(UserMfa, u.id)
+        if not reset:
+            return f"{u.username}: two-step verification is " + ("on" if row and row.enabled else "set up but not finished" if row else "off")
+        if row is None:
+            return f"{u.username}: nothing to reset"
+        await db.delete(row)
+        await revoke_user_sessions(db, u.id)
+        await log_activity(db, "console.mfa_reset", None, "user", u.id, {"flag": True, "username": u.username})
+        await db.commit()
+        return f"{u.username}: two-step verification removed and the account signed out; they set it up again in Settings > Security"
+
+
 async def set_active(ref: str, active: bool) -> str:
     act_as(SYSTEM)
     async with async_session() as db:

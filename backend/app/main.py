@@ -34,6 +34,7 @@ from .routers.search import router as search_router
 from .routers.backups import router as backups_router
 from .routers.features import router as features_router
 from .routers.testmode import router as testmode_router
+from .routers.mfa import router as mfa_router
 
 
 logger = logging.getLogger(__name__)
@@ -305,6 +306,7 @@ app.include_router(ws_router)
 app.include_router(system_router)
 app.include_router(testmode_router)
 app.include_router(approvals_router)
+app.include_router(mfa_router)
 app.include_router(search_router)
 app.include_router(backups_router)
 app.include_router(features_router)
