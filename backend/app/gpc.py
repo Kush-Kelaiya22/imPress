@@ -143,6 +143,9 @@ FLAGS: dict[str, Flag] = {f.name: f for f in [
          "Debug mode and test data (copies of the database) may be used at all."),
     Flag("test_mode.forced", "bool", False, False, "false",
          "Test mode is forced on by root (launch flag --test-mode) and nobody can turn it off; the default super admin then signs in with a fixed lab password."),
+    Flag("ota.require_emulation", "bool", False, True, "true",
+         "TrustedInstaller qualification must boot the exact uploaded image in the pinned emulator (backend/emulator/manifest.json). "
+         "Missing, unsupported, tampered, timed-out or failed emulation then blocks approval and every offer."),
     Flag("ota.enabled", "bool", True, True, "locked",
          "Over-the-air firmware updates exist at all (off with --no-ota): uploads, deployments and pushes are refused and devices are offered nothing."),
     Flag("features.disabled", "str", "", "", "set",

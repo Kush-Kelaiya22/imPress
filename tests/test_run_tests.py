@@ -90,7 +90,7 @@ def test_end_to_end_json_report(tmp_path):
                           cwd=ROOT, capture_output=True, text=True, timeout=300)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     report = json.loads(out.read_text())
-    assert report["ok"] is True and {s["name"] for s in report["suites"]} == {"host:protocol", "host:protocol:answer_ack", "host:protocol:backend_hint", "host:protocol:mesh_dedup", "host:protocol:ota_chunk", "host:protocol:spi_link"}
+    assert report["ok"] is True and {s["name"] for s in report["suites"]} == {"host:protocol", "host:protocol:answer_ack", "host:protocol:backend_hint", "host:protocol:mesh_auth", "host:protocol:mesh_dedup", "host:protocol:ota_chunk", "host:protocol:spi_link"}
     assert all(s["status"] == "PASS" and s["passed"] > 0 and s["seconds"] > 0 for s in report["suites"])
     assert "ALL PASSED" in proc.stdout and "imPress test report" in proc.stdout
 

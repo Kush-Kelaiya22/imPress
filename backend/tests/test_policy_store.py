@@ -12,9 +12,10 @@ ROOT_PW = "Test-Root-Password-1!"
 
 
 @pytest.fixture(autouse=True)
-def _fresh(client):
-    """An empty store, put in place atomically. Deleting the file instead would let the running app's own reload and the
-    test both create it at once, and one write would silently replace the other."""
+def _fresh(client, monkeypatch):
+    """An empty store, put in place atomically (deleting it would let the app's reload and the test both create it at once),
+    and the app's maintenance loop told nothing changed: these tests edit the file themselves."""
+    monkeypatch.setattr(gpc, "changed_on_disk", lambda settings: False)
     gpcstore._write(gpcstore._fresh())
     gpcstore.session_clear()
     yield

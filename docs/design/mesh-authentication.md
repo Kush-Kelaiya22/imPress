@@ -1,6 +1,8 @@
 # Mesh frame authentication (design, proposed)
 
-Status: **proposed, for review** ([#187](https://github.com/Kush-Kelaiya22/imPress/issues/187)). Nothing on this page is implemented. The three decisions at the end need a maintainer's answer before any code is written.
+Status: **the core is implemented and host-tested; it is not wired into the radio yet** ([#187](https://github.com/Kush-Kelaiya22/imPress/issues/187)). `firmware/protocol/mesh_auth.c` (pure C, its own SHA-256 and HMAC checked against FIPS 180-4 and RFC 4231 vectors) seals and opens version-2 packets, keeps the replay window and the counter persistence rule; `firmware/protocol/test_host/test_mesh_auth.c` flips every bit of a packet, tries the wrong key, forged tags, replays, late frames, relays and the end of the counter. What is **not** done: calling it from `mesh_espnow.c` and `mesh_master.c`, key provisioning from the server, the simulator scenarios and the bench tests (#183, #184, #185), because that changes the on-air format and the three decisions at the end still need a maintainer's answer.
+
+One detail differs from the sketch below: the tag also covers the version byte (`SENDER ‖ VERSION ‖ COUNTER ‖ frame`), so a version-1 frame cannot be passed off as version 2. The replay window is 64 counters wide; a counter older than that is dropped.
 
 ## Why
 

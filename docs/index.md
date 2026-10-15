@@ -77,6 +77,7 @@ compliance/data-inventory
 compliance/privacy-notice-template
 compliance/retention-schedule
 compliance/dsar-runbook
+compliance/drill-records
 compliance/incident-response
 compliance/control-mapping
 compliance/risk-register
