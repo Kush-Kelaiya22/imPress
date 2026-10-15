@@ -68,6 +68,7 @@ All notable changes to imPress, for the people who install and use it. Each pull
 
 ### Fixed
 
+- The policy-store tamper tests no longer depend on whether the running server or the test notices an edited store first.
 - **False "database changed outside imPress" alarms, most often right after start-up.** The integrity check read each table at a different moment while the server kept writing, so a request that committed in between looked like tampering: a *Degraded* flag and a restore of an older backup (which then had to be migrated again). The check now reads one snapshot, and looks twice before it restores anything.
 - **imPress started in test mode by itself.** Test mode forced by `--test-mode` was saved next to the database and survived the process, so every later normal start kept running on the test copy. A normal start now ends a leftover forced test mode and puts the real data back (the test data is kept to save or delete).
 - **A different folder, a different database.** The default database, `backend/.env` and the console's `.env` rewrite followed the working directory, so starting from another folder (or `query_db.py`) opened an empty database with another key. They are anchored to `backend/`.
