@@ -20,7 +20,7 @@ Root has two tools: the **root screen**, which you see when imPress is started f
 root@impress:~>
 ```
 
-Start imPress in a terminal and you get it: the logo and version (with the patch number), the state of the server, the **live log** scrolling above, and a **command line** at the bottom. The log is coloured by level; request lines are quiet. The server runs as a child process: closing the screen (`exit`, Ctrl+C) stops it.
+Start imPress in a terminal and you get it: the logo and version (with the patch number), the state of the server, the **live log** scrolling above, and a **command line** at the bottom. The log is coloured by level; request lines are quiet. The screen keeps a bounded in-memory log history: enter `scroll up [lines]`, `scroll down [lines]`, `scroll top`, or `scroll live` to review startup errors and return to new output. `clear` clears that view. The server runs as a child process: closing the screen (`exit`, Ctrl+C) stops it.
 
 Without a terminal (a service, a pipe, a container started with `-d`) there is no screen: the logo and version are printed once, then the log is plain lines. Force that with `--plain` or `IMPRESS_PLAIN=1`.
 
@@ -48,6 +48,7 @@ It runs on the server's own host with the database file's own access. Every comm
 | `users create USER --role admin\|teacher [--name N] [--email E] [--password P] [--ta]` | add an account; a temporary password is generated unless you give one |
 | `superadmin create USER [--name N] [--email E] [--password P]` | the only way to create a super admin; it starts *pending setup* |
 | `users set-password USER [--password P]` | a new temporary password; signs the account out everywhere |
+| `password show`, `password reset [--password P]` | root-only access to the protected default super admin's configured password, or set a new one and sign it out everywhere |
 | `users finish-setup USER` | treat the welcome set-up as done (labs and tests) |
 | `users activate\|deactivate USER`, `users delete USER` | enable, disable, move to the trash |
 | `users trash`, `users restore USER` | the 30-day trash |
@@ -58,9 +59,10 @@ It runs on the server's own host with the database file's own access. Every comm
 | `requirements` | what TrustedInstaller checks on this host and the minimum for each |
 | `iips status`, `iips rehash` | integrity protection: compare, or accept the current files as the reference |
 | `backup list`, `backup save NAME`, `backup restore ID --yes` | backups of the database and system state |
+| `api routes [FILTER]`, `api METHOD PATH [JSON]` | call the application's own routes as the default super admin, in-process and through the same authorization and validation as the web app |
 | `testmode status`, `deadlock check` | test mode; run deadlock prevention now |
 | `system reset --confirm "RESET EVERYTHING"` | clear everything and start over (a full copy is saved first); the default super admin comes back with a new password, shown here |
 | `audit verify FILE` | check an external audit trail's hash chain |
-| `help [COMMAND]`, `clear`, `exit` | |
+| `help [COMMAND]`, `clear`, `scroll`, `exit` | |
 
 Exit codes: `0` success, `1` a command failed, `4` the separate console is closed here.

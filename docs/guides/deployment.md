@@ -22,7 +22,7 @@ flowchart TB
 
 ### Host and process
 
-**Quick start on one computer (macOS, Linux, Windows): the launcher.** `./launcher.sh` or `launcher.bat` in the repository root installs what is missing (Python 3.12+ with Homebrew, apt, dnf or winget; the virtualenv; the dependencies; `backend/.env` with generated secrets), stops whatever listens on `IMPRESS_PORT` (default 8000) and starts the server in the foreground. Use it for a lab PC, a demo or a first try. For a server that must survive reboots, use the steps below with systemd.
+**Quick start on one computer (macOS, Linux, Windows): the launcher.** `./launcher.sh` or `launcher.bat` in the repository root installs what is missing (Python 3.12+ with Homebrew, apt, dnf or winget; the virtualenv; the dependencies; `backend/.env` with generated secrets), then starts the server on `0.0.0.0:8000`. If that port is occupied, the launcher displays the process and asks before requesting a graceful stop; a second confirmation is required before force-killing a process that will not exit. Use it for a lab PC, a demo or a first try. For a server that must survive reboots, use the steps below with systemd.
 
 ```mermaid
 flowchart LR
@@ -31,14 +31,16 @@ flowchart LR
     C --> D[pip install<br/>skips what is there]
     D --> E["backend/.env<br/>(secrets generated once)"]
     E --> F{port in use?}
-    F -->|yes| G[stop that process] --> H
+    F -->|yes| G{operator confirms?}
+    G -->|no| X[leave it running and exit]
+    G -->|yes| H[request graceful stop]
     F -->|no| H[uvicorn, 1 worker]
 ```
 
 ```bash
 git clone … imPress && cd imPress
 scripts/install.sh      # Python >= 3.12: backend/.venv, dependencies, backend/.env with generated secrets
-scripts/start.sh        # uvicorn on 127.0.0.1:8000, one worker (IMPRESS_HOST / IMPRESS_PORT to change)
+scripts/start.sh        # uvicorn on 0.0.0.0:8000, one worker (fixed listener)
 ```
 `install.sh` (#42) is safe to re-run, for example after `git pull`:
 - **Dependencies:** on Linux x86_64 it installs the **hash-locked** set that CI tests (`requirements-lock.txt`, `--require-hashes`); elsewhere it installs `requirements.txt`.
@@ -58,7 +60,7 @@ docker run -d --name impress --restart unless-stopped -p 8000:8000 -v impress-da
 ```
 Step-by-step: [container image guide](../deployment/container.md) (network, data, configuration, Compose, TLS, backups, upgrades). Tags: [releases → the backend container image](releases.md#the-backend-container-image). Back up the `impress-data` volume instead of `backend/`.
 
-The manual path still works: a venv in `backend/`, `pip install -r requirements.txt`, `cp .env.example .env` (then set the secrets), and `uvicorn app.main:app --workers 1 --proxy-headers` started from `backend/`.
+The manual path still works: a venv in `backend/`, `pip install -r requirements.txt`, `cp .env.example .env` (then set the secrets), and `uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers` started from `backend/`. The backend port is fixed; protect it with the host firewall and use HTTPS for staff traffic on untrusted networks.
 - **One worker only.** WebSocket rooms live in process memory ([backend scaling](../architecture/backend.md#scaling-and-limits)).
 - Run it under a supervisor (systemd unit below) and start it **from `backend/`**.
 
@@ -71,7 +73,7 @@ After=network.target
 [Service]
 WorkingDirectory=/opt/imPress/backend
 EnvironmentFile=/opt/imPress/backend/.env
-ExecStart=/opt/imPress/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers
+ExecStart=/opt/imPress/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers
 Restart=always
 User=impress
 
@@ -118,7 +120,7 @@ Gateways and hubs speak plain `http://` and `ws://` unless they are built with *
 1. **Serve TLS.** Use the nginx proxy above, or uvicorn directly:
    ```bash
    IMPRESS_SSL_CERTFILE=/etc/impress/server.crt IMPRESS_SSL_KEYFILE=/etc/impress/server.key \
-     IMPRESS_HOST=0.0.0.0 IMPRESS_PORT=443 scripts/start.sh
+     scripts/start.sh
    ```
    `start.sh` refuses to start if only one of the two is set or a file is unreadable. Check the server with `scripts/smoke_test.py --base https://<host>:<port> --password … [--cafile ca.pem]`.
 2. **Configure each board** (`class_c6` and `class_s3`): in `idf.py menuconfig` → *Backend Server*, enable **Use HTTPS / WSS to reach the backend**, and set `BACKEND_HOST` to the name in the certificate and `BACKEND_PORT` to the TLS port. Then choose how to trust the server:

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import cmd
+import json
 import shlex
 import sys
 
@@ -115,6 +116,8 @@ class Console(cmd.Cmd):
     def close(self) -> None:
         try:
             from .database import engine
+            from .services import rootapi
+            self.run(rootapi.close())
             self.run(engine.dispose())
         finally:
             self.loop.close()
@@ -346,6 +349,260 @@ class Console(cmd.Cmd):
                 self.say(f"  {c['change']:8} {c['path']}")
         else:
             self.fail("iips status | rehash")
+
+
+    # ── the default super admin's password ──────────────────────────────
+    def do_password(self, line):
+        """password show | reset [--password P]: the default super admin's password. 'show' prints the one fixed in the
+        environment (backend/.env); otherwise it is random and shown only when the server starts. 'reset' sets a new
+        one (random unless given), signs the account out, and updates backend/.env when the password is fixed there."""
+        from .services import bootstrap
+        a = self._args(line)
+        if not a or a[0] == "show":
+            fixed = bootstrap.fixed_password()
+            if self._forced_test():
+                return self.say(f"test mode is forced: the password is {bootstrap.FORCED_TEST_PASSWORD}")
+            if fixed:
+                self.say(f"impress.default.superAdmin\n{fixed[0]} = {fixed[1]}")
+            else:
+                self.say("The password is random: new at every start and shown once on the root screen when it starts.\n"
+                         "Use 'password reset' to set one now.")
+        elif a[0] == "reset":
+            _, o = _opts(a[1:], values={"password"})
+            pw, note = self.run(bootstrap.reset_default_password(o.get("password", "")))
+            self.run(self._audit("password_reset"))
+            self.say(f"impress.default.superAdmin\npassword: {pw}\n{note}")
+        else:
+            self.fail("password show | reset [--password P]")
+
+    def _forced_test(self) -> bool:
+        from . import gpc
+        return bool(gpc.get("test_mode.forced"))
+
+    async def _audit(self, action, details=None):
+        from .services import rootops
+        await rootops.audit(action, details)
+
+    # ── everything a super admin can do: the application's own API, as root ──
+    def _api(self, method, path, body=None):
+        from .services import rootapi
+        status, data = self.run(rootapi.call(method, path, body))
+        if method.upper() != "GET":
+            self.run(self._audit("api", {"method": method.upper(), "path": path, "status": status}))
+        if status >= 400:
+            detail = data.get("detail") if isinstance(data, dict) else data
+            msg = detail.get("message") if isinstance(detail, dict) else detail
+            self.fail(f"{status}: {msg if isinstance(msg, str) else json.dumps(detail)}")
+            return None
+        return data
+
+    def _show(self, data, columns=None):
+        if isinstance(data, list) and data and isinstance(data[0], dict):
+            self.say(table([{k: ("" if r.get(k) is None else r.get(k)) for k in (columns or list(r))[:9]} for r in data], columns))
+        elif isinstance(data, (dict, list)):
+            self.say(json.dumps(data, indent=2, default=str))
+        elif data is not None:
+            self.say(str(data))
+
+    def do_api(self, line):
+        """api METHOD PATH [JSON]: call any of the application's routes as a super admin, for example
+        api GET /api/admin/users | api POST /api/admin/classes '{"name":"X","code":"X1"}' | api routes [FILTER].
+        Same validation, permissions, approvals and activity log as the web app."""
+        from .services import rootapi
+        a = self._args(line)
+        if a and a[0] == "routes":
+            flt = a[1] if len(a) > 1 else ""
+            return self.say(table([{"method": m, "path": p} for m, p in rootapi.routes() if flt in p]) )
+        if len(a) < 2:
+            return self.fail("api METHOD PATH [JSON]   (api routes lists them)")
+        body = json.loads(a[2]) if len(a) > 2 else None
+        self._show(self._api(a[0], a[1], body))
+
+    def do_classes(self, line):
+        """classes list | show ID | create NAME CODE [--teacher USER] [--room R] [--icon I] [--color #RRGGBB] | activate ID | deactivate ID | delete ID | faculty ID USER[,USER]"""
+        a = self._args(line)
+        sub, rest = (a[0] if a else "list"), a[1:]
+        if sub == "list":
+            rows = self._api("GET", "/api/admin/classes") or []
+            self._show([{k: c.get(k) for k in ("id", "name", "code", "classroom_code", "is_active", "student_count", "teacher_name")} for c in rows])
+        elif sub == "show" and rest:
+            self._show(next((c for c in self._api("GET", "/api/admin/classes") if str(c["id"]) == rest[0]), "no such class"))
+        elif sub == "create" and len(rest) >= 2:
+            pos, o = _opts(rest, values={"teacher", "room", "icon", "color"})
+            body = {"name": pos[0], "code": pos[1], **({"classroom_code": o["room"]} if "room" in o else {}),
+                    **({"icon": o["icon"]} if "icon" in o else {}), **({"color": o["color"]} if "color" in o else {})}
+            if "teacher" in o:
+                body["teacher_id"] = self._user_id(o["teacher"])
+            self._show(self._api("POST", "/api/admin/classes", body))
+        elif sub in ("activate", "deactivate") and rest:
+            self._show(self._api("POST", f"/api/classes/{rest[0]}/{sub}"))
+        elif sub == "delete" and rest:
+            self._show(self._api("DELETE", f"/api/admin/classes/{rest[0]}"))
+        elif sub == "faculty" and len(rest) == 2:
+            self._show(self._api("PUT", f"/api/admin/classes/{rest[0]}/faculty", {"teacher_ids": [self._user_id(u) for u in rest[1].split(",")]}))
+        else:
+            self.fail("classes list | show ID | create NAME CODE [--teacher USER] [--room R] | activate ID | deactivate ID | delete ID | faculty ID USER,USER")
+
+    def _user_id(self, ref):
+        from .services import rootops
+        rows = self.run(rootops.list_users())
+        row = next((r for r in rows if ref in (r["username"], str(r["id"]))), None)
+        if row is None:
+            raise ValueError(f"no such account: {ref}")
+        return row["id"]
+
+    def do_students(self, line):
+        """students list [TEXT] | add ROLL NAME [--email E] | delete ID | enroll ID CLASS_ID | unenroll ID CLASS_ID"""
+        a = self._args(line)
+        sub, rest = (a[0] if a else "list"), a[1:]
+        if sub == "list":
+            rows = self._api("GET", "/api/students/") or []
+            q = (rest[0].lower() if rest else "")
+            self._show([{k: r.get(k) for k in ("id", "roll_number", "student_name", "program", "is_active")} for r in rows
+                        if q in f"{r.get('student_name', '')} {r.get('roll_number', '')}".lower()])
+        elif sub == "add" and len(rest) >= 2:
+            pos, o = _opts(rest, values={"email"})
+            self._show(self._api("POST", "/api/students/", {"roll_number": pos[0], "student_name": " ".join(pos[1:]), **({"email": o["email"]} if "email" in o else {})}))
+        elif sub == "delete" and rest:
+            self._show(self._api("DELETE", f"/api/students/{rest[0]}/hard-delete"))
+        elif sub == "enroll" and len(rest) == 2:
+            self._show(self._api("POST", f"/api/admin/classes/{rest[1]}/enroll", {"student_id": int(rest[0])}))
+        elif sub == "unenroll" and len(rest) == 2:
+            self._show(self._api("DELETE", f"/api/classes/{rest[1]}/students/{rest[0]}"))
+        else:
+            self.fail("students list [TEXT] | add ROLL NAME [--email E] | delete ID | enroll ID CLASS | unenroll ID CLASS")
+
+    def do_courses(self, line):
+        """courses list | add CODE NAME | delete ID"""
+        a = self._args(line)
+        sub, rest = (a[0] if a else "list"), a[1:]
+        if sub == "list":
+            self._show([{k: r.get(k) for k in ("id", "code", "name", "credits", "is_active")} for r in self._api("GET", "/api/courses/") or []])
+        elif sub == "add" and len(rest) >= 2:
+            self._show(self._api("POST", "/api/courses/", {"code": rest[0], "name": " ".join(rest[1:])}))
+        elif sub == "delete" and rest:
+            self._show(self._api("DELETE", f"/api/courses/{rest[0]}"))
+        else:
+            self.fail("courses list | add CODE NAME | delete ID")
+
+    def do_devices(self, line):
+        """devices list | show ID: gateways, hubs and student modules"""
+        rows = self._api("GET", "/api/admin/modules") or []
+        a = self._args(line)
+        if a[:1] == ["show"] and len(a) > 1:
+            return self._show(next((r for r in rows if str(r.get("id")) == a[1]), "no such device"))
+        self._show([{k: r.get(k) for k in ("id", "mac_address", "device_type", "device_name", "health", "is_connected", "firmware_version")} for r in rows])
+
+    def do_firmware(self, line):
+        """firmware list | approve ID | deprecate ID | delete ID, and: firmware deployments | pause ID | resume ID | cancel ID"""
+        a = self._args(line)
+        sub, rest = (a[0] if a else "list"), a[1:]
+        if sub == "list":
+            self._show([{k: r.get(k) for k in ("id", "target", "version", "status", "size", "signed")} for r in self._api("GET", "/api/admin/firmware") or []])
+        elif sub in ("approve", "deprecate") and rest:
+            self._show(self._api("POST", f"/api/admin/firmware/{rest[0]}/{sub}"))
+        elif sub == "delete" and rest:
+            self._show(self._api("DELETE", f"/api/admin/firmware/{rest[0]}"))
+        elif sub == "deployments":
+            self._show([{k: r.get(k) for k in ("id", "state", "kind", "note", "created_at")} for r in self._api("GET", "/api/admin/deployments") or []])
+        elif sub in ("pause", "resume", "cancel") and rest:
+            self._show(self._api("POST", f"/api/admin/deployments/{rest[0]}/{sub}"))
+        else:
+            self.fail("firmware list | approve ID | deprecate ID | delete ID | deployments | pause|resume|cancel ID")
+
+    def do_quizzes(self, line):
+        """quizzes list | start ID | stop ID, and: polls list | start ID | end ID"""
+        self._qp("quizzes", "quizzes", line)
+
+    def do_polls(self, line):
+        self._qp("polls", "polls", line)
+
+    def _qp(self, kind, key, line):
+        a = self._args(line)
+        sub, rest = (a[0] if a else "list"), a[1:]
+        if sub == "list":
+            data = self._api("GET", "/api/quizzes/overview") or {}
+            self._show([{k: r.get(k) for k in ("id", "title", "class_name", "status")} for r in data.get(key, [])])
+        elif sub in ("start", "stop", "end") and rest:
+            self._show(self._api("POST", f"/api/{kind}/{rest[0]}/{sub}"))
+        else:
+            self.fail(f"{kind} list | start ID | {'stop' if kind == 'quizzes' else 'end'} ID")
+
+    def do_activity(self, line):
+        """activity [N] [--flagged]: the latest entries of the activity log"""
+        pos, o = _opts(self._args(line), flags={"flagged"})
+        rows = self._api("GET", f"/api/admin/activity?limit={int(pos[0]) if pos else 30}") or []
+        if o.get("flagged"):
+            rows = [r for r in rows if (r.get("details") or {}).get("flag")]
+        self._show([{"time": str(r.get("timestamp", ""))[:19], "who": r.get("username") or "system", "action": r.get("action"),
+                     "what": f"{r.get('entity_type', '')} {r.get('entity_id') or ''}".strip()} for r in rows])
+
+    def do_approvals(self, line):
+        """approvals list | deny ID: requests that need a second super admin (approving needs a person's password in the web app)"""
+        a = self._args(line)
+        if a[:1] == ["deny"] and len(a) > 1:
+            return self._show(self._api("POST", f"/api/admin/approvals/{a[1]}/deny"))
+        data = self._api("GET", "/api/admin/approvals") or {}
+        self._show([{k: r.get(k) for k in ("id", "action", "status", "requested_by", "approved_by")} for r in data.get("requests", [])])
+
+    def do_verify(self, line):
+        """verify: check the database's integrity now (the same as System, Verify now)"""
+        self._show(self._api("POST", "/api/admin/system/integrity/verify"))
+
+    # ── familiar names ──────────────────────────────────────────────────
+    def do_whoami(self, line):
+        """whoami: you are root"""
+        self.say("root")
+
+    def do_date(self, line):
+        """date: the server's time (Indian Standard Time)"""
+        from .timeutil import istnow
+        self.say(istnow().strftime("%a %d %b %Y %H:%M:%S IST"))
+
+    def do_uptime(self, line):
+        """uptime: how long the server has been running, and how many sessions are open"""
+        import time
+
+        from .services import rootops
+        st = self.run(rootops.status())
+        self.say(f"{time.strftime('%H:%M:%S')}  sessions: {st.get('sessions', '?')}  version: {st.get('version', '')}")
+
+    def do_ls(self, line):
+        """ls [users|classes|students|courses|devices]: list things (users by default)"""
+        what = (self._args(line) or ["users"])[0]
+        getattr(self, f"do_{what}", self.do_users)("list")
+
+    def do_ps(self, line):
+        """ps: who is signed in (the same as 'sessions list')"""
+        self.do_sessions("list")
+
+    def do_env(self, line):
+        """env: the settings imPress runs with (secrets are hidden)"""
+        from .config import settings
+        rows = []
+        for k, v in settings.model_dump().items():
+            rows.append({"setting": f"IMPRESS_{k}", "value": "********" if any(x in k for x in ("SECRET", "KEY", "PASSWORD")) and v else v})
+        self.say(table(rows))
+
+    def do_help(self, arg):
+        """help [COMMAND]: the commands, or how to use one"""
+        if arg:
+            return super().do_help(arg)
+        groups = [
+            ("System", "status version uptime date env verify system policy policylog requirements iips features feature testmode deadlock"),
+            ("Accounts", "users superadmin password sessions ps ls whoami activity"),
+            ("Classroom", "classes students courses quizzes polls"),
+            ("Devices", "devices firmware"),
+            ("Data", "backup approvals audit api"),
+            ("Shell", "help clear exit"),
+        ]
+        doc = lambda n: (getattr(self, f"do_{n}").__doc__ or "").strip().split("\n")[0].split(":", 1)[-1].strip()   # noqa: E731
+        for title, names in groups:
+            self.say(f"\n{title}")
+            for n in names.split():
+                if hasattr(self, f"do_{n}"):
+                    self.say(f"  {n.ljust(13)} {doc(n)}"[:118])
+        self.say("\nType help COMMAND for the details. 'api routes' lists every route you can call with 'api'.")
 
     def do_clear(self, line):
         """clear: clear the screen."""

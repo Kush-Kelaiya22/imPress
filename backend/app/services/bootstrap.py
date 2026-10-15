@@ -73,7 +73,8 @@ async def ensure_default_superadmin(quiet: bool = False) -> str:
             await revoke_user_sessions(db, user.id)              # the old password's sessions end with it
         await db.commit()
     if not quiet:
-        shown = password if origin.startswith(("random", "forced")) else "(the one you set: not shown)"
+        shown = password if origin.startswith(("random", "forced")) else \
+            "(fixed by root: run 'password show' on the root screen, or read it in backend/.env)"
         banner("imPress default super admin", [f"username : {DEFAULT_SUPERADMIN}", f"password : {shown}",
                                                f"({origin})"])
     return password
@@ -113,3 +114,51 @@ async def create_recovery_account(reason: str) -> str:
         await log_activity(db, "system.recovery_account", None, "system", None, {"flag": True, "reason": reason})
         await db.commit()
     return password
+
+
+# ── root and the default super admin's password ──────────────────────────
+
+def fixed_password() -> tuple[str, str] | None:
+    """The password root fixed in the environment (name of the setting, value), or None when it is random."""
+    for name, value in (("IMPRESS_DEFAULT_SUPERADMIN_PASSWORD", settings.DEFAULT_SUPERADMIN_PASSWORD),
+                        ("IMPRESS_INITIAL_ADMIN_PASSWORD", settings.INITIAL_ADMIN_PASSWORD)):
+        if value:
+            return name, value
+    return None
+
+
+def _env_file():
+    from pathlib import Path
+    for p in (Path.cwd() / ".env", Path(__file__).resolve().parents[2] / ".env"):
+        if p.is_file():
+            return p
+    return None
+
+
+async def reset_default_password(new: str = "", keep_in_env: bool = True) -> tuple[str, str]:
+    """Root sets the default super admin's password (a new random one unless given), signing it out everywhere.
+    A password fixed in backend/.env is updated there too, or the next start would put the old one back.
+    Returns (password, note)."""
+    from sqlalchemy import select
+
+    from ..auth import revoke_user_sessions
+    password = new or passwords.generate(20)
+    if (why := passwords.problem(password, DEFAULT_SUPERADMIN, "super_admin")):
+        raise ValueError(f"That password {why}.")
+    async with async_session() as db:
+        user = (await db.execute(select(User).where(User.username == DEFAULT_SUPERADMIN))).scalar_one()
+        user.hashed_password = hash_password(password)
+        user.is_active = True
+        user.must_change_password = False
+        await revoke_user_sessions(db, user.id, reason="signed_out")
+        await db.commit()
+    note = "A new random password is generated at every start unless one is fixed."
+    fixed = fixed_password()
+    env = _env_file()
+    if fixed and keep_in_env and env is not None:
+        lines = env.read_text().splitlines()
+        env.write_text("\n".join(f"{fixed[0]}={password}" if l.startswith(fixed[0] + "=") else l for l in lines) + "\n")
+        note = f"Updated {fixed[0]} in {env.name}, so the next start keeps it."
+    elif fixed:
+        note = f"{fixed[0]} still holds the old password: the next start sets that one again."
+    return password, note

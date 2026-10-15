@@ -53,7 +53,7 @@ Every student holds a small ESP32 module with four answer buttons. When a teache
 
 ## Quick start
 
-You need nothing but a terminal. The launcher installs what is missing (Python 3.12+, the virtual environment, the dependencies), writes `backend/.env` with generated secrets, frees the port if something is using it, and starts the server.
+You need nothing but a terminal. The launcher installs what is missing (Python 3.12+, the virtual environment, the dependencies), writes `backend/.env` with generated secrets, and starts the server on all network interfaces at port 8000. If that port is occupied, it identifies the listener and asks before stopping it.
 
 ```bash
 git clone https://github.com/Kush-Kelaiya22/imPress.git
@@ -62,19 +62,19 @@ cd imPress
 launcher.bat           # Windows: double-click it, or run it in cmd
 ```
 
-The terminal then shows the **imPress logo and version**, the live log, and a prompt for root's commands (the [root screen](docs/guides/console.md)). Open **http://127.0.0.1:8000** and sign in as **`impress.default.superAdmin`**. Its password is **new at every start** and is printed once on that screen (or fix it with `IMPRESS_DEFAULT_SUPERADMIN_PASSWORD`). Run the launcher again any time to start the server.
+The terminal then shows the **imPress logo and version**, the live log, and a prompt for root's commands (the [root screen](docs/guides/console.md)). Open **http://127.0.0.1:8000** on the server itself, or `http://<SERVER_IP>:8000` from a device on the classroom network. Sign in as **`impress.default.superAdmin`**. Its password is **new at every start** and is printed once on that screen (or fix it with `IMPRESS_DEFAULT_SUPERADMIN_PASSWORD`). Run the launcher again any time to start the server.
 
 | To… | Do |
 |---|---|
-| let classroom gateways reach the server | `IMPRESS_HOST=0.0.0.0 ./launcher.sh` and allow the port in your firewall |
-| use another port | `IMPRESS_PORT=9000 ./launcher.sh` |
+| let classroom gateways reach the server | already enabled on `0.0.0.0:8000`; allow TCP 8000 in your firewall and configure HTTPS before using an untrusted network |
+| check whether a busy port can be stopped | the launcher displays the process and waits for confirmation; a forced stop requires a second confirmation |
 | try it with realistic data | sign in, open **Test data**, turn on test mode, **Generate**, **Import**: [guide](docs/guides/test-mode.md) |
 | start in a special way | launch flags: `--test-mode` (forced, cannot be turned off), `--no-test-mode`, `--no-ota`, `--rehash`, `--bypass-iips`, `--feature NAME=VALUE`: [launch flags](docs/guides/launch-flags.md) |
 | run it in the background | no terminal means no screen: the log is plain lines (`--plain` forces it) |
 | run it with Docker | [Container guide](docs/deployment/container.md) |
 
 > [!WARNING]
-> The launcher **stops whatever program is listening on its port**, and runs the *standard* policy profile. For a server holding real student data, follow the [production checklist](docs/guides/production-hardening.md) and run the *hardened* profile.
+> The server listens on all network interfaces at port 8000. The launcher never stops a listener without confirmation; if it does not exit gracefully, a second confirmation is required before a forced stop. Restrict TCP 8000 with the host firewall and configure HTTPS before exposing the server to an untrusted network. The launcher runs the *standard* policy profile. For real student data, follow the [production checklist](docs/guides/production-hardening.md) and run the *hardened* profile.
 
 ### Requirements
 
@@ -319,7 +319,7 @@ CI runs all of it, plus the launchers on Linux, macOS and Windows, a clean insta
 | A red **Degraded** badge | the database changed outside imPress and was restored; read the log entry and the kept copy, then acknowledge on **System**: [data integrity](docs/design/data-integrity.md) |
 | A gateway never shows online | device key, backend address and Wi-Fi in its NVS; `GET /health` from the room's network |
 | A deployment paused | the failed device's error on the Firmware page; resume to accept it, or cancel |
-| The port is in use | the launcher frees it; otherwise `IMPRESS_PORT=…` |
+| The port is in use | the launcher asks before stopping its owner; if you decline, stop it manually and retry. The server always uses port 8000 |
 
 More: [troubleshooting guide](docs/guides/troubleshooting.md) · [known issues](docs/reference/known-issues.md).
 
