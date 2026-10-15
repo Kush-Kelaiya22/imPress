@@ -27,6 +27,7 @@ import time
 
 ESC = "\033"
 ACCENT, DIM, RED, YELLOW, GREEN, RESET, BOLD = "38;5;75", "2", "38;5;203", "38;5;221", "38;5;114", "0", "1"
+ORANGE, TITLEBAR = "38;5;208", "48;5;53;38;5;255"        # the orange and aubergine of a familiar Linux terminal
 LEVELS = (("CRITICAL", RED + ";1"), ("ERROR", RED), ("WARNING", YELLOW), ("WARN", YELLOW), ("INFO", ACCENT), ("DEBUG", DIM))
 
 
@@ -66,7 +67,7 @@ def wrap_ansi(line: str, width: int, indent: int = 11) -> list[str]:
 
 
 class Screen:
-    HEADER, FOOTER = 5, 3
+    HEADER, FOOTER = 5, 3          # title bar, three lines of logo (the rule is row HEADER), then the log
 
     def __init__(self, title_lines: list[str]):
         self.lock = threading.Lock()
@@ -87,7 +88,7 @@ class Screen:
                 self._w(f"{ESC}[{i + 1};1H{line}")
             self._w(f"{ESC}[{self.HEADER};1H{rule}")
             self._w(f"{ESC}[{self.rows - 2};1H{rule}")
-            self._w(f"{ESC}[{self.rows - 1};1H" + c(DIM, " help · status · users list · features · backup save NAME · iips status · exit stops the server"))
+            self._w(f"{ESC}[{self.rows - 1};1H" + c(DIM, " help · status · users list · features · backup save NAME · policylog · exit stops the server"))
             self._w(f"{ESC}[{self.top};{self.bottom}r{ESC}[{self.bottom};1H")
 
     def set_title(self, lines: list[str]) -> None:
@@ -112,7 +113,7 @@ class Screen:
     def prompt(self) -> str:
         with self.lock:
             self._w(f"{ESC}[{self.rows};1H{ESC}[2K")
-        return input(f"\001{ESC}[{ACCENT};1m\002❯\001{ESC}[0m\002 ")
+        return input(f"\001{ESC}[1;32m\002root@impress\001{ESC}[0m\002:\001{ESC}[1;34m\002~\001{ESC}[0m\002\001{ESC}[{ORANGE};1m\002>\001{ESC}[0m\002 ")
 
     def close(self) -> None:
         self._w(f"{ESC}[r{ESC}[{self.rows};1H\n")
@@ -129,9 +130,14 @@ def _title(version: str, state: str, args: list[str], url: str) -> list[str]:
     if "--no-ota" in args:
         tags.append(c(DIM, "OTA off"))
     profile = (args[args.index("--profile") + 1] if "--profile" in args else os.environ.get("IMPRESS_PROFILE", "standard"))
-    return [c(ACCENT + ";1", MARK[0]) + f"   {c(BOLD, 'v' + version)}   {dot}    {c(DIM, url)}",
-            c(ACCENT + ";1", MARK[1]) + f"   {c(DIM, profile + ' profile')}" + ("  " + "  ".join(tags) if tags else ""),
-            c(ACCENT + ";1", MARK[2]) + f"   {c(DIM, 'root screen · type help')}"]
+    cols = shutil.get_terminal_size((100, 30)).columns
+    cols = cols if cols >= 40 else 100
+    left, right = "  root@impress: ~", f"imPress {version} · root screen  "
+    bar = c(TITLEBAR, (left + " " * max(1, cols - len(left) - len(right)) + right)[:cols])
+    return [bar,
+            c(ORANGE + ";1", MARK[0]) + f"   {c(BOLD, 'v' + version)}   {dot}    {c(DIM, url)}",
+            c(ORANGE + ";1", MARK[1]) + f"   {c(DIM, profile + ' profile')}" + ("  " + "  ".join(tags) if tags else ""),
+            c(ORANGE + ";1", MARK[2]) + f"   {c(DIM, 'type help for the commands')}"]
 
 
 def run(argv: list[str]) -> int:
@@ -171,7 +177,7 @@ def run(argv: list[str]) -> int:
         """What a root command prints goes into the log area, line by line."""
         def write(self, text: str) -> int:
             for line in text.rstrip("\n").split("\n") if text.strip() else []:
-                screen.log(c(ACCENT, "›") + " " + line)
+                screen.log(c(ORANGE, "›") + " " + line)
             return len(text)
 
         def flush(self) -> None:
@@ -196,7 +202,7 @@ def run(argv: list[str]) -> int:
             if console is None:
                 from .console import Console
                 console = Console(out=Out())
-            screen.log(c(DIM, "❯ " + line))
+            screen.log(c(DIM, "> " + line))
             console.onecmd(line)
     except KeyboardInterrupt:
         pass

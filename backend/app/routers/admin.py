@@ -43,6 +43,7 @@ from ..services.health import health
 from ..services.class_import import TEMPLATE as CLASS_TEMPLATE, apply_class_import, export_rows, plan_class_import
 from ..services.csv_import import read_upload
 from ..services import accounts
+from ..services.features import require_feature
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -397,7 +398,7 @@ async def reset_user_password(
     return out
 
 
-@router.get("/presence")
+@router.get("/presence", dependencies=[Depends(require_feature("presence"))])
 async def presence(user: User = Depends(require("users.read")), db: AsyncSession = Depends(get_db)):
     """Who is signed in and active right now, and who was active lately (admins and super admins)."""
     from ..auth import idle_limit_minutes
@@ -427,7 +428,7 @@ async def presence(user: User = Depends(require("users.read")), db: AsyncSession
             "recent": recent[:20], "total_accounts": len(users)}
 
 
-@router.get("/users/{user_id}/activity-summary")
+@router.get("/users/{user_id}/activity-summary", dependencies=[Depends(require_feature("activity_charts"))])
 async def user_activity_summary(user_id: int, days: int = Query(30, ge=1, le=180),
                                 user: User = Depends(require("users.read")), db: AsyncSession = Depends(get_db)):
     """What one account has done: per day, by kind of action, by hour of the week, and the latest events."""
@@ -459,7 +460,7 @@ async def user_activity_summary(user_id: int, days: int = Query(30, ge=1, le=180
                        for r in rows[:15]]}
 
 
-@router.post("/users/{user_id}/designation", response_model=UserResponse)
+@router.post("/users/{user_id}/designation", response_model=UserResponse, dependencies=[Depends(require_feature("ta_designation"))])
 async def change_designation(
     user_id: int,
     body: DesignationChange,
@@ -518,7 +519,7 @@ def _trash_out(d) -> dict:
             "purge_after": d.purge_after, "days_left": left}
 
 
-@router.get("/users/deleted")
+@router.get("/users/deleted", dependencies=[Depends(require_feature("trash"))])
 async def deleted_users(user: User = Depends(require("users.manage")), db: AsyncSession = Depends(get_db)):
     """The trash: accounts deleted in the last 30 days, newest first."""
     from ..models import DeletedUser
@@ -526,7 +527,7 @@ async def deleted_users(user: User = Depends(require("users.manage")), db: Async
     return {"retention_days": accounts.TRASH_DAYS, "accounts": [_trash_out(d) for d in rows]}
 
 
-@router.post("/users/deleted/{deleted_id}/restore", response_model=UserResponse)
+@router.post("/users/deleted/{deleted_id}/restore", response_model=UserResponse, dependencies=[Depends(require_feature("trash"))])
 async def restore_deleted_user(deleted_id: int, user: User = Depends(require("users.manage")),
                                db: AsyncSession = Depends(get_db)):
     """Undo a deletion within 30 days: the account comes back with its password, name and settings (not its class assignments)."""
@@ -552,7 +553,7 @@ async def restore_deleted_user(deleted_id: int, user: User = Depends(require("us
     return _user_out(user, restored)
 
 
-@router.delete("/users/deleted/{deleted_id}", status_code=204)
+@router.delete("/users/deleted/{deleted_id}", status_code=204, dependencies=[Depends(require_feature("trash"))])
 async def purge_deleted_user(deleted_id: int, user: User = Depends(require("users.manage")),
                              db: AsyncSession = Depends(get_db)):
     """Delete an account from the trash for good."""

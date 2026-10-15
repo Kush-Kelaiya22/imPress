@@ -1,4 +1,4 @@
-/* imPress v2.2: Test data page (super admins). Debug mode on/off with the
+/* imPress v2.2: Test data page (super admins). Test mode on/off with the
  * decision about the test data afterwards, a seeded generator, and a small
  * spreadsheet: one tab per table, Excel-style keyboard editing, paste from
  * Google Sheets / Excel, CSV upload and download per tab, validation with
@@ -33,13 +33,13 @@ async function renderTestData(app) {
   app.innerHTML = `
     ${renderNavbar(user, '#/admin/test-data')}
     <div class="container">
-      ${pageHeader('Test data', 'Try imPress with realistic data without touching the real database: turn on debug mode, then generate, paste or upload test data.', '', 'Administration')}
+      ${pageHeader('Test data', 'Try imPress with realistic data without touching the real database: turn on test mode, then generate, paste or upload test data.', '', 'Administration')}
       ${tdModeCard(state)}
       ${state.on ? tdGeneratorCard() + tdSheetCard() : tdOffHelp()}
     </div>
     <div id="td-pending-modal" class="modal hidden"><div class="modal-backdrop"></div>
       <div class="modal-content card"><h2>Keep the test data?</h2>
-        <p class="text-muted">Debug mode is off and imPress is back on the real data. The test data you worked on is set aside. Save it to load it again next time, export it as CSV files, or delete it.</p>
+        <p class="text-muted">Test mode is off and imPress is back on the real data. The test data you worked on is kept aside for now. Save it to load it again next time, export it as CSV files, or delete it.</p>
         <div class="form-group"><label for="td-save-name">Name to save it under</label><input id="td-save-name" maxlength="48" placeholder="e.g. Monsoon demo"></div>
         <div class="modal-actions">
           <button class="btn btn-danger-soft" id="td-p-delete">${icon('trash', 'sm')} Delete</button>
@@ -51,19 +51,22 @@ async function renderTestData(app) {
 function tdModeCard(st) {
   const ds = st.datasets || [];
   return `<div class="card">
-    <div class="card-header"><div><h2>${icon('flask')} Debug mode</h2>
-      <div class="card-sub">${st.on ? `On since ${istDateTime(istParseToEpoch(st.since))}, by ${escHtml(st.by || '?')}. Everyone sees the test-mode banner.` : 'Off: imPress is working on the real data.'}</div></div>
-      ${st.on ? `<button class="btn btn-danger-soft" id="td-off">${icon('power', 'sm')} Turn off and go back to the real data</button>`
+    <div class="card-header"><div><h2>${icon('flask')} Test mode</h2>
+      <div class="card-sub">${st.on ? `On since ${istDateTime(istParseToEpoch(st.since))}, by ${escHtml(st.by || '?')}. Everyone sees the test mode banner.` : 'Off: imPress is working on the real data.'}</div></div>
+      ${st.on && st.forced ? `<span class="badge badge-warning">${icon('lock', 'sm')} Enabled by root</span>`
+        : st.on ? `<button class="btn btn-danger-soft btn-sm" id="td-off">${icon('power', 'sm')} Turn off and return to the real data</button>`
         : `<div class="page-actions"><select id="td-dataset" class="input-sm" style="width:auto" aria-label="Start from">
              <option value="">Start from a copy of the real data</option>
              ${ds.map(d => `<option value="${escHtml(d.name)}">Load saved: ${escHtml(d.name)}</option>`).join('')}</select>
-           <button class="btn btn-primary" id="td-on">${icon('flask', 'sm')} Turn on debug mode</button></div>`}
+           <button class="btn btn-primary" id="td-on">${icon('flask', 'sm')} Turn on test mode</button></div>`}
     </div>
-    <div class="grid-3">
-      <div class="mini-stat"><span>Real database</span><b>${st.on ? 'Set aside, untouched' : 'In use'}</b></div>
+    ${st.on && st.forced ? `<div class="trash-note">${icon('lock', 'sm')}<span>Test mode was enabled by root and cannot be turned off from here. This is intentional application design.</span></div>` : ''}
+    <div class="grid-2">
       <div class="mini-stat"><span>Saved datasets</span><b>${ds.length}</b></div>
       <div class="mini-stat"><span>Waiting for a decision</span><b>${(st.pending || []).length}</b></div>
     </div>
+    <details class="test-more"><summary>${icon('chevronRight', 'sm')} About the real data</summary>
+      <p class="text-muted mt-1">${st.on ? 'The real database is kept safe and is not changed while test mode is on. Turning test mode off brings it back exactly as it was.' : 'The real database is in use. Turning on test mode works on a copy and leaves it unchanged.'}</p></details>
     ${(st.pending || []).length ? `<h3 class="mt-2 mb-1">Test data waiting for a decision</h3>${st.pending.map(p => `<div class="feed-item"><span class="feed-icon amber">${icon('clock', 'sm')}</span>
       <div class="feed-body"><b>${escHtml(p.id)}</b><span>${(p.size / 1024).toFixed(0)} KB</span></div>
       <button class="btn btn-sm btn-outline" ${callAttr('tdPending', p.id)}>Decide</button></div>`).join('')}` : ''}
@@ -78,7 +81,7 @@ function tdModeCard(st) {
 function tdOffHelp() {
   return `<div class="card"><div class="grid-3">
     <div class="feed-item"><span class="feed-icon">${icon('shield', 'sm')}</span><div class="feed-body"><b>The real data is safe</b>
-      <span>Turning debug mode on copies the database aside (it must verify first); everything you do happens on a copy.</span></div></div>
+      <span>Turning test mode on copies the database aside (it must verify first); everything you do happens on a copy.</span></div></div>
     <div class="feed-item"><span class="feed-icon">${icon('table', 'sm')}</span><div class="feed-body"><b>Sheets like a spreadsheet</b>
       <span>Teachers, courses, students, classes, enrolments, quizzes and polls: type, paste from Google Sheets or Excel, or upload CSV.</span></div></div>
     <div class="feed-item"><span class="feed-icon">${icon('sparkles', 'sm')}</span><div class="feed-body"><b>Realistic generator</b>
@@ -281,16 +284,16 @@ function tdUsedRows(name) {
 function wireTestData(state) {
   document.getElementById('td-on')?.addEventListener('click', async (e) => {
     const ds = document.getElementById('td-dataset').value || null;
-    if (!confirm(`Turn on debug mode${ds ? ` with the saved dataset "${ds}"` : ''}?\n\nThe real database is copied aside first, and everyone sees a test-mode banner until you turn it off.`)) return;
+    if (!confirm(`Turn on test mode${ds ? ` with the saved dataset "${ds}"` : ''}?\n\nThe real database is copied aside first, and everyone sees a test-mode banner until you turn it off.`)) return;
     e.target.disabled = true;
-    try { await testModeApi.enable(ds); showToast('Debug mode is on', 'success'); router(); } catch (err) { showToast(err.message, 'error'); e.target.disabled = false; }
+    try { await testModeApi.enable(ds); showToast('Test mode is on', 'success'); router(); } catch (err) { showToast(err.message, 'error'); e.target.disabled = false; }
   });
   document.getElementById('td-off')?.addEventListener('click', async (e) => {
-    if (!confirm('Turn off debug mode and go back to the real data?\n\nYou can then save, export or delete the test data.')) return;
+    if (!confirm('Turn off test mode and go back to the real data?\n\nYou can then save, export or delete the test data.')) return;
     e.target.disabled = true;
     try {
       const r = await testModeApi.disable();
-      showToast('Debug mode is off: back on the real data', 'success');
+      showToast('Test mode is off: back on the real data', 'success');
       await renderTestData(document.getElementById('app'));
       if (r.pending_id) tdPending(r.pending_id);
     } catch (err) { showToast(err.message, 'error'); e.target.disabled = false; }

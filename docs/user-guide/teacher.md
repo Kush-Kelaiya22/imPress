@@ -2,6 +2,14 @@
 
 Teachers use their own account and operate only classes assigned to them. Before a class, confirm the class roster and room devices with the administrator. The [first 30 minutes guide](README.md) walks through an initial practice run.
 
+## Your first sign-in
+
+An administrator gives you a username and a **temporary password**. The first time you sign in, imPress asks you to **choose your own password** (8 or more characters with upper and lower case, a number and a special character; the meter shows how strong it is), what it should call you, and a look (light, dark or automatic). You are then offered a short **tour**, which you can skip and take again later from the **?** button. Details: [accounts and first sign-in](../guides/accounts-and-onboarding.md).
+
+You see **only the classrooms you manage**. Your overview is a set of widgets you can add, remove, resize and drag (**Customise**). Press **Ctrl K** (**⌘ K** on a Mac) to search classrooms, students, quizzes and polls, and to change settings such as dark mode or text size without leaving the page. [Personalization and accessibility](../guides/personalization.md) lists everything you can adjust.
+
+If you are signed in on another device, or are idle for 30 minutes during your class (5 minutes otherwise), imPress signs you out.
+
 ## Open a class
 
 1. Sign in over the HTTPS address supplied by the operator.

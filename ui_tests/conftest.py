@@ -106,6 +106,9 @@ def server():
                 time.sleep(0.25)
         # v2.2 allows one device per account: the test's API calls use their own super admin (created the
         # way root creates one: in the console), so the browser can still sign in as the default super admin.
+        # the default super admin has done its welcome set-up (a test of the first sign-in creates a fresh account)
+        subprocess.run([sys.executable, "-m", "app.console", "-c", "users finish-setup impress.default.superAdmin"],
+                       cwd=ROOT / "backend", env=env, capture_output=True, check=True)
         out = subprocess.run([sys.executable, "-m", "app.console", "-c", "superadmin create ui-api --password Temp-ui-api-1"],
                              cwd=ROOT / "backend", env=env, capture_output=True, text=True)
         assert "created super admin" in out.stdout, out.stdout + out.stderr

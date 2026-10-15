@@ -2,6 +2,8 @@
 role changes, preferences and onboarding, session limits."""
 
 
+import json
+
 import pytest
 
 from conftest import PASSWORD, auth, login, make_class, make_student, make_user
@@ -369,3 +371,25 @@ def test_date_and_time_formats_are_preferences(client):
     assert p["week_start"] == "sunday" and p["relative_times"] is False and p["landing"] == "classrooms"
     for bad in ({"date_format": "yy"}, {"time_format": "36h"}, {"week_start": "friday"}, {"show_seconds": "yes"}, {"landing": "admin"}):
         assert client.put("/api/auth/preferences", headers=su, json=bad).status_code == 422, bad
+
+
+def test_the_web_apps_meter_agrees_with_the_servers():
+    """ui.js passwordStrength / passwordProblem must score and judge exactly as passwords.py does."""
+    import shutil
+    import subprocess
+    from pathlib import Path
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    cases = ["", "abc", "password", "Passw0rd!", "abcdefgh1", "Tr0ub4dor&3xyz!", "Tr0ub4dor&3-horse-staple", "ALLUPPER1!", "aA1!aA1!aA1!aA1!x",
+             "impress.default.superAdmin", "short1A!", "NoSpecial123", "alllower12345", "aaaaaaaaaa"]
+    src = (Path(__file__).resolve().parents[1] / "app/static/js/ui.js").read_text()
+    start, end = src.index("const COMMON_PASSWORDS"), src.index("/** The meter under")
+    js = (src[start:end] + f"const cases = {json.dumps(cases)};"
+          "process.stdout.write(JSON.stringify(cases.map(p => [passwordStrength(p, 'impress.default.superAdmin').score, "
+          "passwordProblem(p, 'impress.default.superAdmin', 'teacher'), passwordProblem(p, 'impress.default.superAdmin', 'super_admin')])));")
+    out = json.loads(subprocess.run([node, "-e", js], capture_output=True, text=True, check=True).stdout)
+    want = [[passwords.strength(c, "impress.default.superAdmin")["score"], passwords.problem(c, "impress.default.superAdmin", "teacher"),
+             passwords.problem(c, "impress.default.superAdmin", "super_admin")] for c in cases]
+    norm = lambda rows: [[r[0], (r[1] or "").replace("(for example ! @ # $ %)", "").strip(), (r[2] or "").strip()] for r in rows]     # noqa: E731
+    assert norm(out) == norm(want)

@@ -16,9 +16,11 @@ def test_clear_data_needs_a_second_super_admin(server, page):
     expect(page.locator("h1", has_text="System")).to_be_visible()
 
     # the policy is shown, and there is nothing to edit
+    page.click('[data-tab="policy"]')
     expect(page.locator("code", has_text="dual_control.enabled")).to_be_visible()
     assert page.locator("input[name*=flag]").count() == 0
 
+    page.click('[data-tab="approvals"]')
     # request: step-up with the password
     page.click('[data-action="sys-request"][data-kind="system.clear.class_data"]')
     page.fill('input[name="password"]', "wrong")

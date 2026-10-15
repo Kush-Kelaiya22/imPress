@@ -14,9 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db
 from ..models import ClassSession, Course, EspDevice, Poll, Quiz, Student, User
 from ..policy import allowed, class_access, require, role_label
+from ..services import features
 from ..services.records import student_scope
 
-router = APIRouter(prefix="/api", tags=["search"])
+router = APIRouter(prefix="/api", tags=["search"], dependencies=[Depends(features.require_feature("search"))])
 
 
 def _like(q: str) -> str:

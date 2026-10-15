@@ -11,6 +11,8 @@ from ..models import User
 from ..schemas import (UserLogin, TokenResponse, MeResponse, PasswordChange, ProfileUpdate,
                        PreferencesUpdate, OnboardingComplete)
 from ..auth import (
+    BOOT_ID,
+    psid_fingerprint,
     verify_password,
     get_current_user,
     hash_password,
@@ -252,6 +254,8 @@ async def session_info(
         "server_time": now,
         "idle_remaining_s": idle_remaining,
         "hard_remaining_s": hard_remaining,
+        "psid": psid_fingerprint(token),               # 1PSID: a short fingerprint of this session's id, never the id
+        "server_run": BOOT_ID,                         # the server run that issued it; a restart ends every session
     }
 
 

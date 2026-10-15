@@ -383,6 +383,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m app.console", description=__doc__.split("\n\n")[0])
     ap.add_argument("-c", "--command", action="append", default=[], help="run this command (repeatable), then exit")
     args = ap.parse_args(argv)
+    from .banner import utf8_output
+    utf8_output()
     if not _root_screen_allowed():
         print("The separate root console is switched off here (policy root.allow_access): TrustedInstaller closes it inside a "
               "container. Use the console on the container's own screen (docker run -it, docker attach).", file=sys.stderr)

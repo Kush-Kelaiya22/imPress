@@ -12,6 +12,16 @@ MARK = (
 TAGLINE = "classroom response system"
 
 
+def utf8_output() -> None:
+    """The mark and the root screen use box-drawing characters: a Windows console that defaults to a legacy code page
+    must not stop imPress from starting over them."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
 def release() -> str:
     from .config import APP_RELEASE
     return APP_RELEASE

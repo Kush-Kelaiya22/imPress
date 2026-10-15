@@ -37,6 +37,9 @@ design/mesh-authentication
 design/security-model
 design/data-integrity
 design/gpc
+design/trusted-boot
+design/integrity-protection
+design/traffic-monitor
 design/ui-design
 design/authorization
 design/scheduling
@@ -54,6 +57,11 @@ api/device-api
 guides/configuration
 guides/csv-imports
 guides/test-mode
+guides/accounts-and-onboarding
+guides/personalization
+guides/backups
+guides/console
+guides/launch-flags
 guides/production-hardening
 guides/ota-updates
 guides/releases

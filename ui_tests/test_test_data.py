@@ -1,18 +1,18 @@
-"""v2.2: the Test data page: debug mode on, generate, paste, import, off and decide."""
+"""v2.2: the Test data page: test mode on, generate, paste, import, off and decide."""
 
 from playwright.sync_api import expect
 
 from conftest import SHOTS, login
 
 
-def test_debug_mode_round_trip(server, page):
+def test_test_mode_round_trip(server, page):
     base, api = server
     page.on("dialog", lambda d: d.accept())
     login(page, base)
     page.wait_for_url("**/#/admin*")
     page.goto(base + "/#/admin/test-data")
     page.click("#td-on")
-    expect(page.locator(".sys-banner", has_text="Debug mode is on")).to_be_visible()
+    expect(page.locator(".sys-banner", has_text="Test mode")).to_be_visible()
 
     for k, v in {"teachers": 2, "courses": 2, "students": 6, "classes": 2, "classes_per_student": 1,
                  "quizzes_per_class": 1, "questions_per_quiz": 2, "polls_per_class": 0}.items():
@@ -50,5 +50,5 @@ def test_debug_mode_round_trip(server, page):
     expect(page.locator("#td-pending-modal")).to_be_visible()
     page.click("#td-p-delete")
     expect(page.locator("#td-pending-modal")).to_be_hidden()
-    expect(page.locator(".sys-banner", has_text="Debug mode is on")).to_have_count(0)
+    expect(page.locator(".sys-banner", has_text="Test mode")).to_have_count(0)
     assert api("/api/students/") == []      # the real data is back

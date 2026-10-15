@@ -56,3 +56,19 @@ CSS has no spring timing function, but `linear()` takes sampled points, so each 
 - A new component gets its movement from the tokens: `transition: transform var(--dur-spatial-fast) var(--ease-spatial-fast)`; never a literal duration.
 - A new list or grid that should stagger on entry: nothing to do if it is a direct child of `.container`, `.stats-grid`, `.class-grid` or a table body; otherwise add the selector to `Motion.stagger` and `motion.css`.
 - Always test it with reduced motion on, which is the default in the UI tests, and add a motion test only for behaviour (an end state, a replay), not for pixels.
+
+
+## The v2.2 refinement
+
+A second pass made the interface quieter and more consistent, keeping the springs above.
+
+- **Minimal.** Flat surfaces with hairline borders and no shadows on cards, no icon bubbles on figures, neutral greys with one accent, Inter at 400, 500 and 600, 24 px page titles, a single centred sign-in card. Buttons are 32 px high (28 px small), fields 36 px, corners 8 to 10 px; 44 pt targets still apply on touch screens.
+- **Plain words.** Account actions say what they do (*Add account*, *Disable*, *Delete account*), never "invite"; students are *added*; test mode explains itself in a collapsible *About the real data* instead of a stat card.
+- **More icons.** Every navigation item, status, tab and action has an icon; statuses also carry a shape (✓ ▲ ✕) so colour is never the only cue. A class has an icon from a set of 24 and a colour.
+- **Settings follow the person.** Accent, theme, text size, colour-vision mode, contrast, motion and density are attributes on `<html>` (`data-accent`, `data-scale`, `data-vision`, `data-contrast`, `data-motion`, `data-density`, `data-sidebar`), applied before first paint from a cached copy and saved to the account. A theme change animates as a circle growing from the button (View Transitions), a cross-fade, or nothing.
+- **Loading.** A page that takes more than 220 ms shows its outline (skeleton) instead of a blank screen; entry motion plays only on a route change.
+- **One shell.** A collapsible sidebar (icons only, with tooltips), a top bar with search, help, notifications, theme and the account menu, banners above everything (the integrity warning first, then test mode), and notices that blur the page.
+- **Dashboards are widgets.** A twelve-column grid; sizes small, medium, large and full width; drag, resize, add and remove in edit mode; several widgets per kind of data.
+- **A command palette** (Ctrl/⌘ K) searches data from `GET /api/search` (scoped by permission) and shows settings as live widgets.
+- **Overlays** for a disabled account, a running update and a restart: the page blurs, the notice is an `alertdialog`, the button returns to sign-in.
+- **Accessibility.** Landmarks and a skip link, labelled controls, focus-trapping dialogs, `aria-live` announcements, keyboard operation throughout, reduced motion, high contrast, text size and colour-vision modes.

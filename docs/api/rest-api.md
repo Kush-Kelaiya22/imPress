@@ -441,7 +441,7 @@ run that issued them, called the 1PSID).
 | Method & path | Guard | Body / params | Notes |
 |---|---|---|---|
 | `POST /api/admin/users` | admin | `{username, email, password?, full_name, display_name, role, designation}` | no `password`: one is generated and returned once as `temporary_password`. `role` is `teacher` or `admin` (granting `admin` needs a super admin); `super_admin` → 403 `SUPER_ADMIN_VIA_CONSOLE`. `designation` is `faculty` or `ta` |
-| `POST /api/admin/users/{id}/designation` | super_admin | `{designation: faculty\|ta}` | a teaching assistant has faculty permissions; only faculty accounts can be TAs |
+| `POST /api/admin/users/{id}/designation` | admin | `{designation: faculty\|ta}` | a teaching assistant has faculty permissions; only faculty accounts can be TAs |
 | `GET /api/admin/users/deleted` | admin | – | the trash: `{retention_days: 30, accounts: [{id, username, deleted_at, deleted_by, days_left, ...}]}` |
 | `POST /api/admin/users/deleted/{id}/restore` | admin | – | restores the account (administrator accounts need a super admin); the name must still be free (`409`) |
 | `DELETE /api/admin/users/deleted/{id}` | admin | – | removes it for good → `204` |

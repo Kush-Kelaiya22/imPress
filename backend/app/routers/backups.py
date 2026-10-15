@@ -11,9 +11,9 @@ from ..activity import log_activity
 from ..database import get_db
 from ..models import User
 from ..policy import require
-from ..services import approvals, backups
+from ..services import approvals, backups, features
 
-router = APIRouter(prefix="/api/admin/backups", tags=["backups"])
+router = APIRouter(prefix="/api/admin/backups", tags=["backups"], dependencies=[Depends(features.require_feature("backups"))])
 ADMIN = require("users.manage")
 
 

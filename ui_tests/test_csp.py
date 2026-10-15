@@ -41,7 +41,7 @@ def test_every_page_loads_and_its_buttons_work_under_the_policy(server, page):
         page.wait_for_timeout(500)
     # buttons that used to be inline handlers
     page.goto(base + "/#/admin/users")
-    page.click("text=Invite user")
+    page.click("text=Add account")
     expect(page.locator("#create-user-modal")).not_to_have_class(re.compile("hidden"))
     page.click("#create-user-modal button:has-text('Cancel')")
     expect(page.locator("#create-user-modal")).to_have_class(re.compile("hidden"))
@@ -56,8 +56,11 @@ def test_every_page_loads_and_its_buttons_work_under_the_policy(server, page):
     page.goto(base + "/#/admin/classes")
     page.once("dialog", lambda d: d.dismiss())
     page.click('button[title="Delete"] >> nth=0')               # data-call: deleteClass(id, name) with a confirm
-    page.fill("#global-search", "Policy")                       # data-input: global search
-    expect(page.locator("#search-results")).to_contain_text("Policy class")
+    page.keyboard.press("ControlOrMeta+k")                      # the command palette (global search, data-input)
+    page.fill("#palette-input", "Policy")
+    expect(page.locator(".palette")).to_contain_text("Policy class")
+    page.keyboard.press("Escape")
+
     assert page.evaluate("window.__csp") == [], page.evaluate("window.__csp")
 
 

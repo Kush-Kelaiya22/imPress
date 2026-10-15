@@ -54,6 +54,8 @@ def overrides(args: argparse.Namespace) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from .banner import utf8_output
+    utf8_output()
     argv = list(sys.argv[1:] if argv is None else argv)
     args = build_parser().parse_args(argv)
     if not args.plain and not os.environ.get("IMPRESS_PLAIN") and sys.stdin.isatty() and sys.stdout.isatty():

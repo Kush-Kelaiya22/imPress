@@ -89,11 +89,26 @@ Security and integrity switches are **root's**, set outside the application ([gl
 
 Device messages are **not** signed or authenticated by this layer: the radio and the gateway protocols are unchanged. Authenticating the ESP-NOW frames is a separate proposal ([mesh authentication](mesh-authentication.md)).
 
+## Host, files and traffic (v2.2)
+
+| Control | What it gives | Where |
+|---|---|---|
+| TrustedInstaller start-up verification | imPress is **locked** until it has checked the operating system, Python and SQLite, the data folder, the clock, processor, memory and disk against the minimum for a classroom server; features the host cannot carry are switched off, and anything that cannot run at all stays locked and says why. In a container it closes the separate root console | [trusted boot](trusted-boot.md) |
+| Authority order for features | administrator < super admin < root < TrustedInstaller: a lower level cannot undo what a higher one set, and every change is logged with who and when | [launch flags and features](../guides/launch-flags.md#who-can-change-a-feature) |
+| Integrity protection (IIPS) | the program's own files and the folder structure are hashed at first start; a difference disables imPress until root accepts it (`--rehash`) or bypasses it (`--bypass-iips`, with a warning on every page) | [integrity protection](integrity-protection.md) |
+| Traffic monitor | per-endpoint rate limits per origin and per account; a DoS or DDoS suspicion alerts administrators with the origin, pages and account; **nothing is blocked**; a super admin can sign an account out | [traffic monitor](traffic-monitor.md) |
+| Account safety badges | a 0 to 100 score per account from its behaviour: *Safe*, *Potentially Unsafe*, *Likely Compromised* | [traffic monitor](traffic-monitor.md#account-safety-badges) |
+| Default super admin and deadlock prevention | a protected `impress.default.superAdmin` whose password is new at every start; if no active super admin exists the database is rolled back and a recovery account with a 12-character password is created | [accounts](../guides/accounts-and-onboarding.md) |
+| Super admins only from the root console | no web or API route can create one | [console](../guides/console.md) |
+| 1PSID | a session identifier bound to the server run that issued it: a restart ends every session | [traffic monitor](traffic-monitor.md#1psid-the-first-party-session-identifier) |
+
 ## Sessions and passwords (v2.2)
+
+**The password rule** for administrators, faculty and teaching assistants is 8 or more characters with lower and upper case, a number and a special character (super admins: 10 or more characters); new and reset passwords are temporary until the owner chooses their own. See [accounts](../guides/accounts-and-onboarding.md).
 
 **Passwords** are stored as `$i2$` + bcrypt(base64(SHA-256(password))): bcrypt with its own random salt per password and cost factor, after a SHA-256 prehash so that long passphrases are not cut at bcrypt's 72-byte limit. Hashes from earlier versions (plain bcrypt) are still accepted and are upgraded at the next successful sign-in.
 
-**Idle limit.** A session ends after **5 minutes** without activity. For a member of staff while one of their classes is in session (activated, or inside a timetable slot, as primary teacher or co-faculty) the limit is **30 minutes**, so a teacher who talks for a while without touching the laptop is not signed out mid-lecture. The class check is cached for a minute per user. The web app's live refresh marks its requests `X-Impress-Background: 1`, which do not count as activity: an unattended screen still times out.
+**Idle limit.** A session ends after **5 minutes** without activity, **for every account including administrators and super admins**. For faculty while one of their classes is in session (activated, or inside a timetable slot, as primary teacher or co-faculty) the limit is **30 minutes**, so a teacher who talks for a while without touching the laptop is not signed out mid-lecture. The class check is cached for a minute per user. The web app's live refresh marks its requests `X-Impress-Background: 1`, which do not count as activity: an unattended screen still times out.
 
 **One device per account.** A device is the client address plus the browser and operating-system family from the `User-Agent` (a browser update is the same device; the same browser on another computer is not). While the account has a session that is still live from another device, a new sign-in is refused:
 
@@ -113,7 +128,7 @@ sequenceDiagram
     end
 ```
 
-The first device keeps working. To move to another device: sign out on the first one, wait for it to time out, or have an administrator use **End sessions** on the user. `IMPRESS_SINGLE_SESSION=false` disables the rule (for example behind a proxy that hides client addresses).
+The first device keeps working. To move to another device: sign out on the first one, wait for it to time out, or have a super admin use **Sign out everywhere** on the account (administrators cannot). `IMPRESS_SINGLE_SESSION=false` disables the rule (for example behind a proxy that hides client addresses).
 
 **Database writes** go through the database gateway, which checks the acting user's permissions per table and seals every change; changes made outside the application are detected and reverted. See [data integrity](data-integrity.md).
 
