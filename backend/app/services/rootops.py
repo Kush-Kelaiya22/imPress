@@ -44,7 +44,10 @@ async def clear_data(scope: str, keep_user_id: int | None = None, keep_session_i
     Used by the web app (after its approval and typed phrase) and by the console."""
     act_as(SYSTEM)
     backup = integrity.backup_dir() / f"before-clear-{istnow():%Y%m%d-%H%M%S}.db"
-    await integrity.copy_live_to(backup)
+    if integrity.backups_suspended():
+        backup = None                     # test mode: this is a throw-away copy, and no backup is made
+    else:
+        await integrity.copy_live_to(backup)
     keep = keep_user_id if keep_user_id is not None else -1
     async with async_session() as db:
         await db.execute(text("PRAGMA defer_foreign_keys = ON"))
@@ -66,9 +69,9 @@ async def clear_data(scope: str, keep_user_id: int | None = None, keep_session_i
             await db.execute(text("DELETE FROM approvals WHERE requested_by != :u OR (approved_by IS NOT NULL AND approved_by != :u)"), {"u": keep})
             await db.execute(text("DELETE FROM user_sessions WHERE id != :k"), {"k": keep_session_id if keep_session_id else -1})
             await db.execute(text("DELETE FROM users WHERE id != :u"), {"u": keep})
-        await log_activity(db, entry or f"system.clear_{scope}", keep_user_id, "system", None, {"flag": True, "backup": backup.name})
+        await log_activity(db, entry or f"system.clear_{scope}", keep_user_id, "system", None, {"flag": True, "backup": backup.name if backup else None})
         await db.commit()
-    return backup.name
+    return backup.name if backup else ""
 
 
 # ── status ────────────────────────────────────────────────────────────────

@@ -7,40 +7,45 @@ Root has two tools: the **root screen**, which you see when imPress is started f
 ## The root screen
 
 ```text
-imPress 2.2.x | running | http://0.0.0.0:8000
+imPress 2.2.x  |  ● running  |  http://0.0.0.0:8000
 root console · standard profile · type help for commands
 ACTIONS                   | LOGS (live)
-> Overview                | 10:41:02 INFO Application startup complete.
-  Accounts                | > status
-  Signed-in users         | version             : 2.2.0
-  Show credentials        | profile             : standard
-  Unlock account...       | active super admins : 1
-  Classrooms              | ota                 : on
-  Students                |
-  Courses                 |
-───────────────────────────────────────────────────────────────────────
-root> users list
-Tab: focus | arrows: move | Enter: select/run | PgUp/PgDn: logs
+> Overview                | 10:41:02 INFO Application startup complete.     │
+  Accounts                | > status                                        │
+  Signed-in users         | version             : 2.2.0                     │
+  Show credentials        | profile             : standard                  │
+  Unlock account...       | active super admins : 1                         █
+  Classrooms              | ota                 : on                        █
+  Students                |                                                 █
+───────────────────────────────────────────────────────────────────────────────
+root> users list                                 (a filled bar, always visible)
+Tab: pane | Shift+Up/Down, PgUp/PgDn: scroll logs | Ctrl+Home/End: oldest/live | Enter: run
 ```
 
 Start imPress in a terminal to open the dashboard. Actions are on the left, live logs and command results are on the right, and the command box stays at the bottom. The title shows the version, server state and fixed listener. The log is coloured by level; request lines are quiet.
 
 | Key or action | Result |
 | --- | --- |
-| Up / Down, then Enter in Actions | Select and run an action. An action ending in `...` fills the command box for you to complete. |
-| Start typing | Focus the command box. Enter runs the command. Commands run in order; up to eight may be pending. |
-| Tab / Shift+Tab | Move focus between Actions, Logs and the command box. Escape returns to Actions. |
-| Up / Down in the command box | Recall command history. Commands containing credential arguments are excluded. |
+| Start typing | Focus the **command bar** (the filled bar at the bottom: always visible). Enter runs the command. Commands run in order; up to eight may be pending. A command is shown in the log when it starts, not when it is queued. |
+| **Tab** in the command bar | **Completes** the command name; with several matches it lists them and fills the common part. With an empty bar, Tab moves between panes. |
+| **Shift+Up / Shift+Down** (or Alt, Ctrl) | **Scroll the logs three lines from any pane** and never move the menu. Also Option+Up/Down on terminals that send Escape first. |
+| **Page Up / Page Down** | Scroll the logs a page, from any pane. |
+| **Ctrl+Home / Ctrl+End** | Jump to the oldest / the live end of the logs, from any pane. |
+| Up / Down, then Enter in Actions | Select and run an action. An action ending in `...` fills the command bar for you to complete. |
+| Tab / Shift+Tab, Left / Right | Move focus between Actions, Logs and the command bar. Escape returns to Actions. With **Logs** focused, plain Up/Down scroll one line (a mouse wheel in a terminal sends these keys, so focus Logs first to wheel-scroll them). |
+| Up / Down in the command bar | Recall command history. Commands containing credential arguments are excluded. |
 | Left / Right, Home / End, Backspace / Delete | Edit the command without interference from incoming logs. |
 | Ctrl+A / Ctrl+E, Ctrl+U / Ctrl+K / Ctrl+W | Move to the start/end, delete before/after the cursor, or delete the previous word. |
-| Page Up / Page Down | Scroll logs from any pane. With Logs focused, arrows scroll by one line and Home / End go to the oldest/newest output. |
+| `restart` / `restart --rehash` | Stop the server and start it again. **The [flags file](launch-flags.md) is read again**, so an edit applies now. `--rehash` also accepts the program's files as the new reference. If the server stopped (an integrity lock, a flag mistake), commands still work and `restart` brings it back. |
 | `clear`, `cls`, or Clear logs | Erase the in-memory log view and repaint both panes. |
 | Ctrl+L | Redraw the complete screen. |
 | `exit`, Ctrl+C, or Stop server | Stop the server and restore the previous terminal screen and input settings. |
 
+The log pane has a **scrollbar** on its right edge (a bar shows where you are) and its title says how far above the live end you are.
+
 The dashboard keeps the most recent 2,000 messages. New output does not move a scrolled log view until its oldest messages leave that buffer. The `scroll up [lines]`, `scroll down [lines]`, `scroll top` and `scroll live` commands also work. Pasted newlines become spaces; pasting alone never executes commands. Resize the terminal to change the layout. At least 24 columns and six rows are needed for both panes.
 
-Each command runs in a separate console process with the same launch policy as the server. Command output and errors stay in the log pane; a failed command does not close the dashboard. The dashboard uses the terminal's alternate screen and restores normal input on exit, Ctrl+C, POSIX SIGTERM and SSH hangup.
+One long-lived console process answers every command (so a command takes milliseconds, not a Python start-up), with the same launch policy as the server. It starts again by itself if it ever stops, and with every `restart`. Command output and errors stay in the log pane (an error is one line, never a stack trace; set `IMPRESS_CONSOLE_TRACE=1` for the details); a failed command does not close the dashboard. The dashboard uses the terminal's alternate screen and restores normal input on exit, Ctrl+C, POSIX SIGTERM and SSH hangup.
 
 Without a terminal (a service, a pipe, a container started with `-d`) there is no screen: the logo and version are printed once, then the log is plain lines. Force that with `--plain` or `IMPRESS_PLAIN=1`.
 

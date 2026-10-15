@@ -23,7 +23,9 @@ from __future__ import annotations
 
 import logging
 import shutil
+import sqlite3
 from collections.abc import Awaitable, Callable
+from contextlib import closing
 from pathlib import Path
 
 from sqlalchemy import text
@@ -301,7 +303,9 @@ def backup(engine: AsyncEngine, from_version: int, to_version: int) -> Path | No
     if src is None or not src.exists():
         return None
     dest = src.with_name(f"{src.name}.bak-{from_version}-to-{to_version}-{istnow():%Y%m%d%H%M%S}")
-    shutil.copy2(src, dest)
+    with closing(sqlite3.connect(str(src))) as s, closing(sqlite3.connect(str(dest))) as d:
+        s.backup(d)                          # a plain file copy would miss what is still in the WAL
+    shutil.copystat(src, dest)
     log.warning("Database backup before migrating: %s", dest)
     return dest
 

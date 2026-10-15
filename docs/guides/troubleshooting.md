@@ -124,7 +124,7 @@ If resets persist on `v2`, log `esp_reset_reason()` at boot and run a soak with 
 | Symptom | Check |
 |---|---|
 | a gateway linked to the wrong class / presence shows the wrong root | fixed by #17 for new registrations; repair existing rows by re-registering the C6 with its `classroom_code` or admin re-link |
-| sessions expire unexpectedly | 5 min idle (30 min for staff during their class) / 6 h hard by default; live refresh and polling don't count as activity (by design). `IMPRESS_SESSION_IDLE_MINUTES` / `IMPRESS_SESSION_CLASS_IDLE_MINUTES` |
+| sessions expire unexpectedly | 15 min idle (60 min for staff during their class) / 6 h hard by default; live refresh and polling don't count as activity (by design). `IMPRESS_SESSION_IDLE_MINUTES` / `IMPRESS_SESSION_CLASS_IDLE_MINUTES` |
 | sign-in refused: *already signed in on another device* (409) | one device per account: sign out on the other device, or an administrator uses **End sessions** on the user (User access page). Behind a proxy that hides client addresses, set `IMPRESS_SINGLE_SESSION=false` |
 | red **Degraded** badge next to *System* | the database changed outside imPress and was restored from a backup; read the activity-log entry, then acknowledge it on the System page. See [data integrity](../design/data-integrity.md) |
 | `403 DB_WRITE_REFUSED` | the database gateway refused a write the account may not make; the activity log has the table and the reason |

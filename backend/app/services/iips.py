@@ -93,6 +93,20 @@ def _tree(files: dict[str, str]) -> tuple[dict[str, str], str]:
     return folders, folders[""]
 
 
+def build_marker(root: Path = ROOT) -> str:
+    """Which build of the program this is: the git commit of a checkout, else the release label. A change of marker is
+    an update; files that differ under the SAME marker were edited by hand."""
+    import subprocess
+    try:
+        out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, timeout=5)
+        if out.returncode == 0 and out.stdout.strip():
+            return "git:" + out.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    from ..config import APP_RELEASE
+    return "release:" + APP_RELEASE
+
+
 def snapshot(root: Path = ROOT) -> dict:
     files = _files(root)
     folders, top = _tree(files)
@@ -108,6 +122,7 @@ def write_baseline(root: Path = ROOT) -> dict:
     from ..timeutil import istnow
     doc = snapshot(root)
     doc["created_at"] = istnow().isoformat()
+    doc["build"] = build_marker(root)
     path = baseline_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"baseline": doc, "seal": _seal(doc)}, indent=1))
@@ -134,8 +149,9 @@ def compare(base: dict, now: dict) -> list[dict]:
     return changes
 
 
-def check(enabled: bool = True, rehash: bool = False, root: Path = ROOT) -> dict:
-    """Run at start-up. Sets and returns the state: ok | baseline_created | violation | bypassed | rehashed."""
+def check(enabled: bool = True, rehash: bool = False, root: Path = ROOT, auto_accept: bool = False) -> dict:
+    """Run at start-up. Sets and returns the state: ok | baseline_created | violation | bypassed | rehashed | updated.
+    `auto_accept` (policy iips.auto_accept_updates): a different build than the baseline's is an update, not tampering."""
     _state.update(enabled=enabled, changes=[], baseline_created=False)
     if not enabled:
         _state["status"] = "bypassed"
@@ -160,6 +176,11 @@ def check(enabled: bool = True, rehash: bool = False, root: Path = ROOT) -> dict
         _state.update(status="violation", changes=[{"path": path.name, "change": f"unreadable ({exc})"}])
         return _state
     changes = compare(base, snapshot(root))
+    if changes and auto_accept and base.get("build") != build_marker(root):
+        _state.update(status="updated", changes=changes[:200], total_changes=len(changes),
+                      note=f"updated from {base.get('build', 'an older build')} to {build_marker(root)}")
+        write_baseline(root)
+        return _state
     _state.update(status="violation" if changes else "ok", changes=changes[:200], total_changes=len(changes))
     return _state
 
@@ -169,7 +190,8 @@ def violation_message() -> str:
     first = ", ".join(c["path"] for c in _state["changes"][:3])
     return (f"imPress has been disabled by Root: an integrity violation was detected in the source folder "
             f"({n} difference{'s' if n != 1 else ''}: {first}{'…' if n > 3 else ''}). "
-            "Restore the original files, or start with --rehash to accept the current ones as the new reference.")
+            "Restore the original files, or start with --rehash to accept the current ones as the new reference "
+            "(in the root screen: type  restart --rehash).")
 
 
 def locked() -> bool:

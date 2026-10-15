@@ -138,6 +138,15 @@ class Console(cmd.Cmd):
             self.fail(detail.get("message", str(detail)) if isinstance(detail, dict) else str(detail))
         except SQLAlchemyError:
             self.fail("The database operation failed; nothing was committed. Check the server log and retry.")
+        except Exception as exc:                                  # noqa: BLE001  a command never ends the console
+            # Domain errors (BackupError, TestModeError, ...) carry a message fit to show; anything else is a bug,
+            # reported by name with a way to see the details rather than a traceback in the middle of the log.
+            message = getattr(exc, "message", "")
+            if os.environ.get("IMPRESS_CONSOLE_TRACE"):
+                import traceback
+                traceback.print_exc(file=self.out)
+            self.fail(message or f"{type(exc).__name__}: {exc}" + ("" if os.environ.get("IMPRESS_CONSOLE_TRACE") else
+                                                                  "  (set IMPRESS_CONSOLE_TRACE=1 for the details)"))
         return False
 
     def emptyline(self):
@@ -317,7 +326,8 @@ class Console(cmd.Cmd):
             return self.fail('system reset --confirm "RESET EVERYTHING"')
         backup = self.run(rootops.clear_data("everything", entry="console.system_reset"))
         self.run(bootstrap.after_reset("root (console)"))
-        self.say(f"the system was reset. A copy of what was there: {backup}")
+        self.say(f"the system was reset. A copy of what was there: {backup}" if backup
+                 else "the system was reset (test mode makes no backups, so no copy was kept)")
 
     def do_features(self, line):
         """features: every feature, whether it is on, and who set it last (administrators, super admins, root, TrustedInstaller)."""
@@ -590,7 +600,14 @@ class Console(cmd.Cmd):
 
     def do_verify(self, line):
         """verify: check the database's integrity now (the same as System, Verify now)"""
-        self._show(self._api("POST", "/api/admin/system/integrity/verify"))
+        data = self._api("POST", "/api/admin/system/integrity/verify")
+        if isinstance(data, dict) and "last_verification" in data:
+            last = data["last_verification"]
+            self.say(f"database: {data.get('db')}  ({last.get('summary')}, checked {str(last.get('verified_at', ''))[:19]})")
+            if data.get("degraded"):
+                self.say(f"degraded since {data['degraded'].get('since')}: {data['degraded'].get('message')}")
+        else:
+            self._show(data)
 
     # ── familiar names ──────────────────────────────────────────────────
     def do_whoami(self, line):
@@ -684,6 +701,7 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
     ap = argparse.ArgumentParser(prog="python -m app.console", description=__doc__.split("\n\n")[0])
     ap.add_argument("-c", "--command", action="append", default=[], help="run this command (repeatable), then exit")
+    ap.add_argument("--serve", action="store_true", help=argparse.SUPPRESS)      # the root screen's long-lived worker
     args = ap.parse_args(argv)
     from .banner import utf8_output
     utf8_output()
@@ -700,6 +718,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.command:
             for line in args.command:
                 con.onecmd(line)
+        elif args.serve:
+            for line in sys.stdin:                           # one command per line; END + OK/FAIL after each answer
+                con.failed = False
+                con.onecmd(line.strip())
+                print(f"\x1e{'FAIL' if con.failed else 'OK'}", flush=True)
+            con.failed = False
         elif not sys.stdin.isatty():
             for line in sys.stdin:
                 if con.onecmd(line.strip()):

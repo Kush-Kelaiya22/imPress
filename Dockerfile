@@ -17,6 +17,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     IMPRESS_DATABASE_URL=sqlite+aiosqlite:////data/impress.db \
     IMPRESS_FIRMWARE_DIR=/data/firmware_bins \
+    IMPRESS_FLAGS_FILE=/data/impress.flags.json \
     IMPRESS_HOST=0.0.0.0 \
     IMPRESS_PORT=8000
 

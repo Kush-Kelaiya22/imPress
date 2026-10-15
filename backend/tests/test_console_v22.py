@@ -15,7 +15,8 @@ BACKEND = Path(__file__).resolve().parents[1]
 def box(tmp_path):
     env = {**os.environ, "IMPRESS_DATABASE_URL": f"sqlite+aiosqlite:///{tmp_path / 'c.db'}", "IMPRESS_TEMP_BACKUP_DIR": str(tmp_path / "b"),
            "IMPRESS_FIRMWARE_DIR": str(tmp_path / "fw"), "IMPRESS_GPC": "", "PYTHONPATH": str(BACKEND),
-           "IMPRESS_DEFAULT_SUPERADMIN_PASSWORD": "Console-Test-Root-19!"}
+           "IMPRESS_DEFAULT_SUPERADMIN_PASSWORD": "Console-Test-Root-19!",
+           "IMPRESS_ENV_FILE": str(tmp_path / ".env")}
     env.pop("IMPRESS_IN_CONTAINER", None)
     (tmp_path / ".env").write_text("IMPRESS_DEFAULT_SUPERADMIN_PASSWORD=Console-Test-Root-19!\n")
 
@@ -148,7 +149,7 @@ def test_serve_stops_with_the_integrity_message_when_files_changed(box, tmp_path
     doc["baseline"]["files"]["backend/app/main.py"] = "0" * 64                  # as if main.py had been edited
     # a baseline signed with the box's own secret: the console computes it exactly as the server would
     code = ("import json,sys; sys.path.insert(0,'.'); from app.services import iips; doc=iips.snapshot();"
-            "doc['files']['backend/app/main.py']='0'*64; doc['created_at']='x';"
+            "doc['files']['backend/app/main.py']='0'*64; doc['created_at']='x'; doc['build']=iips.build_marker();"
             f"open({str(base)!r},'w').write(json.dumps({{'baseline':doc,'seal':iips._seal(doc)}}))")
     env = {**os.environ, "IMPRESS_DATABASE_URL": f"sqlite+aiosqlite:///{tmp_path / 'c.db'}", "IMPRESS_GPC": ""}
     subprocess.run([sys.executable, "-c", code], cwd=BACKEND, env=env, check=True)
@@ -192,7 +193,7 @@ def test_root_screen_keeps_scrollable_log_history(monkeypatch, capsys):
 def test_read_only_dashboard_actions_and_recovery_after_root_session_revocation(box):
     _seed_default(box)
     from app.rootscreen import MENU
-    commands = [c for _, c in MENU if c not in {"clear", "exit"} and not c.endswith(" ")]
+    commands = [c for _, c in MENU if c not in {"clear", "exit", "restart"} and not c.endswith(" ")]
     rc, out = box(*commands, "sessions end --all", "classes list", "uptime")
     assert rc == 0, out
     assert "Traceback" not in out and "sessions: ?" not in out
@@ -248,3 +249,23 @@ def test_classes_students_and_courses_from_the_shell(box):
 def test_help_is_grouped_and_familiar_names_work(box):
     rc, out = box("help", "whoami", "date", "ls")
     assert rc == 0 and "Accounts" in out and "root" in out and "password" in out
+
+
+def test_a_domain_error_is_a_message_not_a_traceback(box):
+    rc, out = box("backup save ../bad", "status")
+    assert rc == 1 and "Traceback" not in out and "Name: 1-48 letters" in out and "active super admins" in out
+
+
+def test_the_long_lived_worker_answers_many_commands_and_survives_errors(box):
+    """The root screen keeps one console process: each command ends with a marker, and a failing one does not stop it."""
+    p = subprocess.run([sys.executable, "-m", "app.console", "--serve"], cwd=BACKEND, env=box.env, capture_output=True,
+                       text=True, timeout=120, input="version\nfrobnicate\nbackup save ../bad\nusers list\nexit\nversion\n")
+    marks = [line for line in p.stdout.split("\n") if line.startswith("\x1e")]      # not splitlines(): it splits at \x1e too
+    assert marks == ["\x1eOK", "\x1eFAIL", "\x1eFAIL", "\x1eOK", "\x1eOK", "\x1eOK"], p.stdout + p.stderr
+    assert "Traceback" not in p.stdout + p.stderr and "unknown command: frobnicate" in p.stdout
+    assert p.stdout.count("2.2.0") == 2
+
+
+def test_verify_says_what_it_found_in_a_line(box):
+    rc, out = box("verify")
+    assert rc == 0 and "database: ok" in out and "rows verified" in out

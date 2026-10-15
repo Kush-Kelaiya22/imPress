@@ -1,14 +1,62 @@
 # Launch flags, features and the global policy
 
-Root decides **how imPress starts**. These decisions are made where the server is started (the command line, the container arguments, the environment), and nothing in the web app or the API can undo them. There are three layers, from the most fixed to the most flexible:
+Root decides **how imPress starts**. These decisions are made where the server is started, and nothing in the web app or the API can undo them. There are three layers, from the most fixed to the most flexible:
 
 | Layer | Who sets it | Where | Can be changed from the web app? |
 |---|---|---|---|
-| **Launch flags** and the **global policy** | root | the start command, a root-signed `global_policy_control.json`, `IMPRESS_GPC` | no |
+| **Launch flags** and the **global policy** | root | **`backend/impress.flags.json`**, the start command, a root-signed `global_policy_control.json`, `IMPRESS_GPC` | no |
 | **TrustedInstaller's decisions** | the system | at every start, from what it finds on the host | no (an administrator cannot override it) |
 | **Features** | administrators, super admins (and root) | *System → Features* | yes, within the authority rules below |
 
-## Launch flags
+## The flags file
+
+Flags no longer have to be remembered and typed at every start. They live in one file, **`backend/impress.flags.json`**, and every flag explains itself next to its value:
+
+```json
+"test_mode.forced": {
+  "value": false,
+  "about": "Test mode is forced on by root (launch flag --test-mode) and nobody can turn it off; the default super admin then signs in with a fixed lab password.",
+  "type": "bool",
+  "standard": false,
+  "hardened": false,
+  "how": "Lab use. Same as the command line's --test-mode. Not allowed in the hardened profile. Cannot be true while test_mode.allowed is false."
+}
+```
+
+The file is written the first time imPress starts (or with `python -m app.flagsfile write`) and is part of the repository, so you can read it before you run anything. **Only `value` is read**; `about`, `type`, `standard`, `hardened`, `how` and `choices` are there for the person editing it. The complete list is in the [flags reference](../reference/flags.md).
+
+To change how imPress starts: edit a `value`, save, and **restart** (in the root screen, type `restart`; the file is read again each time). That is all: `./launcher.sh` needs no arguments.
+
+| Section | What it holds |
+|---|---|
+| `profile` | `standard` (a classroom or lab) or `hardened` (a production server that refuses to start below its floor) |
+| `flags` | every [policy flag](../design/gpc.md): test mode, OTA, integrity protection, dual control, retention, backups, device and firmware rules |
+| `features` | every web-app feature by name; `false` switches it off for everybody (administrators cannot switch it back on) |
+
+**Rules that keep it safe**
+
+- **A value left as shipped is not an override.** The profile's own default applies, so one file serves both profiles and an untouched file never loosens the hardened profile. If you set a flag to the value the file shipped with, nothing changes; that is by design.
+- **In the hardened profile an edit may only make a flag safer**, exactly like the command line. To loosen one, sign a policy file with `scripts/gpc.py`.
+- **A mistake never half-applies.** An unknown flag, a value of the wrong kind, invalid JSON: imPress says which flag and does not start (exit code 2; the root screen stays open and says `Fix the file and type restart`). `python -m app.flagsfile check` validates the file without starting anything.
+- **Order of precedence**, lowest first: the profile's defaults, a root-signed `global_policy_control.json`, **the flags file**, `IMPRESS_GPC` in the environment, **the command line**. Later wins.
+- Put the file somewhere else with `IMPRESS_FLAGS_FILE=/path/impress.flags.json` (a container keeps it in its data volume).
+- The file is not part of the program's integrity check, so editing it never trips [integrity protection](../design/integrity-protection.md).
+
+**Common edits**
+
+| I want | Edit |
+|---|---|
+| a lab server where nobody can leave test mode | `flags` → `test_mode.forced` → `true` |
+| no test-data menu at all | `flags` → `test_mode.allowed` → `false` |
+| no over-the-air firmware updates | `flags` → `ota.enabled` → `false` |
+| a production server | `profile` → `hardened`, then satisfy its floor ([production hardening](production-hardening.md)) |
+| the search box off for everybody | `features` → `search` → `false` |
+| an approval to wait before it can run | `flags` → `dual_control.delay_minutes` → `30` |
+| a second sign-off before data is cleared | leave `dual_control.enabled` on (it is, by default) |
+
+## Command-line flags
+
+The same decisions can be given on the start command. They **win over the file** for that start (and over `IMPRESS_GPC`), which is handy for a one-off: `./launcher.sh --no-ota`.
 
 ```bash
 ./launcher.sh [flags]          # macOS and Linux (also: scripts/start.sh, python -m app.serve)
@@ -23,7 +71,7 @@ docker run … IMAGE [flags]     # the container's arguments are the flags
 | `--no-ota` | over-the-air updates are off: no firmware uploads, deployments or pushes, and devices are offered nothing (policy `ota.enabled=false`) |
 | `--rehash` | accept the program's files as they are now as the new reference for [integrity protection](../design/integrity-protection.md) |
 | `--bypass-iips` | start although the integrity check failed (or without it). **Every page shows a red warning**: *imPress Integrity Protection Service is disabled. Proceed with caution.* Not allowed in the hardened profile |
-| `--feature NAME=VALUE` | set any [policy flag](../design/gpc.md); repeatable. In the hardened profile an override may only make a flag safer. Example: `--feature features.disabled=search,backups` |
+| `--feature NAME=VALUE` | set any [policy flag](../design/gpc.md) (the flags file does the same for good); repeatable. In the hardened profile an override may only make a flag safer. Example: `--feature features.disabled=search,backups` |
 | `--profile standard\|hardened` | the policy profile |
 | `--host H`, `--port N` | fixed listener `0.0.0.0:8000`; any other host or port is refused |
 | `--plain` | no [root screen](console.md): the logo, then a plain log |

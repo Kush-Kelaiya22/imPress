@@ -95,6 +95,7 @@ reference/placeholders
 reference/data-model
 reference/hardware
 reference/known-issues
+reference/flags
 reference/changelog-v2.1
 reference/changelog-v2
 ```

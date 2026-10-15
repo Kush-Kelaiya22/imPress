@@ -82,6 +82,26 @@ def memory_mb() -> int | None:
     return None
 
 
+def volume_encrypted(path: Path | None = None) -> bool | None:
+    """Is the volume that holds the data folder encrypted? True / False when it can be seen, None when it cannot
+    (containers, Windows, network volumes): decision D16, #212. Best effort and read-only."""
+    path = path or _data_dir()
+    try:
+        if sys.platform == "darwin":
+            out = subprocess.run(["fdesetup", "status"], capture_output=True, text=True, timeout=5).stdout
+            return "On" in out if "FileVault" in out else None
+        if sys.platform.startswith("linux") and not in_container():
+            source = subprocess.run(["findmnt", "-no", "SOURCE", "--target", str(path)], capture_output=True, text=True,
+                                    timeout=5).stdout.strip()
+            if not source.startswith("/dev/"):
+                return None
+            types = subprocess.run(["lsblk", "-s", "-no", "TYPE", source], capture_output=True, text=True, timeout=5).stdout.split()
+            return "crypt" in types if types else None
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
 def _minimum(name: str):
     env = os.environ.get(f"IMPRESS_MIN_{name.upper()}")
     return int(env) if env and env.isdigit() else MINIMUM[name]

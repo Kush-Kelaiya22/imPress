@@ -83,6 +83,15 @@ def write_state(**changes) -> dict:
     return state
 
 
+NO_BACKUPS_IN_TEST_MODE = ("Backups are not made while test mode is on: the data is a copy for testing, and the "
+                           "backups made before it hold the real data. Turn test mode off first.")
+
+
+def backups_suspended() -> bool:
+    """Test (debug) mode: no backup is made and none is restored; the real data was set aside when it began."""
+    return bool((read_state().get("test_mode") or {}).get("on"))
+
+
 def status() -> dict:
     s = read_state()
     deg = s.get("degraded")
@@ -156,6 +165,10 @@ async def verify_now():
     from .. import dbgateway
     from ..database import Base, engine
     async with engine.connect() as conn:
+        # One snapshot for the whole check. pysqlite begins no transaction for SELECTs, so without this every
+        # query saw a different moment, and a request committing in between looked like a change made outside
+        # imPress (false "database changed" alarms, then an unwanted restore of an older backup).
+        await conn.exec_driver_sql("BEGIN")
         rep = await conn.run_sync(lambda c: dbgateway.verify(c, Base.metadata))
     _last.update(verified_at=istnow().isoformat(), ok=rep.ok, summary=rep.summary(), rows=rep.rows)
     return rep
@@ -197,7 +210,7 @@ async def startup() -> None:
             else:
                 await repair(rep, at_startup=True)
     async with _lock:
-        if (await verify_now()).ok:
+        if (await verify_now()).ok and not backups_suspended():
             await copy_live_to(backup_dir() / "startup.db")
             await copy_live_to(backup_dir() / "rolling.db")
 
@@ -207,6 +220,10 @@ async def repair(rep, at_startup: bool = False) -> None:
     d = backup_dir()
     source = next((p for p in (d / "rolling.db", d / "startup.db") if p.exists()), None)
     detail = rep.summary()
+    if backups_suspended():
+        await _flag(f"The test database changed outside imPress ({detail}). It was not restored: no backups are made or "
+                    "used while test mode is on. Turn test mode off to return to the real data.", restored=None)
+        return
     if source is None:
         await _flag(f"The database changed outside imPress ({detail}) and no backup was available to restore. "
                     "Review it; a super admin can accept its current state.", restored=None)
@@ -228,6 +245,8 @@ async def keep_forensic_copy() -> Path | None:
     """Before an automatic restore replaces it, keep the failed database (what an
     investigator needs), newest N per policy integrity.forensic_copies."""
     from .. import gpc
+    if backups_suspended():
+        return None
     try:
         dst = await copy_live_to(backup_dir() / f"forensic-{istnow():%Y%m%d-%H%M%S}.db")
     except Exception:
@@ -261,8 +280,12 @@ async def acknowledge() -> None:
 async def check_and_backup_locked() -> None:
     """check_and_backup for a caller that already holds the lock."""
     rep = await verify_now()
+    if not rep.ok and not rep.key_changed:
+        await asyncio.sleep(1)                    # a restore loses data: look twice before doing it
+        rep = await verify_now()
     if rep.ok:
-        await copy_live_to(backup_dir() / "rolling.db")
+        if not backups_suspended():
+            await copy_live_to(backup_dir() / "rolling.db")
     else:
         await repair(rep)
 

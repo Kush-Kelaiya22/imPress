@@ -13,8 +13,8 @@ Environment variables with prefix **`IMPRESS_`**, or a `.env` file in the workin
 | `IMPRESS_JWT_SECRET` | public default | Must be set in production. Legacy JWT helpers only (sessions are opaque). |
 | `IMPRESS_JWT_ALGORITHM` | `HS256` | Legacy. |
 | `IMPRESS_JWT_EXPIRE_MINUTES` | `1440` | Legacy. |
-| `IMPRESS_SESSION_IDLE_MINUTES` | `5` | Idle timeout (v2.2). Requests the web app makes on its own (live refresh) don't count as activity. |
-| `IMPRESS_SESSION_CLASS_IDLE_MINUTES` | `30` | Idle timeout for faculty (primary or co-faculty) while one of their classes is in session: activated, or inside a timetable slot including dated changes. |
+| `IMPRESS_SESSION_IDLE_MINUTES` | `15` | Idle timeout (v2.2). Requests the web app makes on its own (live refresh) don't count as activity. |
+| `IMPRESS_SESSION_CLASS_IDLE_MINUTES` | `60` | Idle timeout for faculty (primary or co-faculty) while one of their classes is in session: activated, or inside a timetable slot including dated changes. |
 | `IMPRESS_SINGLE_SESSION` | `true` | One device per account: a sign-in from another device or address is refused while the first session is alive, flagged in the activity log and shown to administrators. Admins can end a user's sessions under *User access*. |
 | `IMPRESS_PROFILE` | `standard` | The policy profile (`standard` or `hardened`). The hardened profile turns every protection on and **refuses to start** below its floor: debug off, real secrets, HTTPS required, per-device keys, signed firmware, an external audit sink. [Global policy control](../design/gpc.md). |
 | `IMPRESS_GPC` | empty | Inline policy overrides on the start command, e.g. `IMPRESS_GPC="dual_control.delay_minutes=30,test_mode.allowed=false"`. In the hardened profile an override may only make a flag safer. |

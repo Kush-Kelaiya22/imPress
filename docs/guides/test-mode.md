@@ -124,8 +124,9 @@ It proves the files are exactly what this server exported and that nobody change
 ## Notes
 
 - Only super admins see the page and the endpoints (`users.assign_role`). Generating, checking and importing require test mode to be on (`409 TEST_MODE_OFF` otherwise).
-- The integrity checks (see [data integrity](../design/data-integrity.md)) keep running in test mode, against the test database and its own backups.
-- Turn test mode off before upgrading or restarting for maintenance. A restart keeps test mode on (the state is saved next to the database), so nothing is lost, but the banner stays until you turn it off.
+- **No backups are made or restored while test mode is on.** The data is a throw-away copy, and the backups made before it hold your real data: the periodic check still *verifies* the test database, but it does not refresh the start-up and rolling backups, *Save a backup* and *Restore* answer `409 TEST_MODE`, and a clear or reset keeps no *before a clear* copy. If the test database is changed outside imPress it is flagged **Degraded** and not restored. Turn test mode off and everything returns (the backups are refreshed from the real data).
+- Turn test mode off before upgrading or restarting for maintenance. A restart keeps the test mode a super admin turned on (the state is saved next to the database), so nothing is lost, but the banner stays until you turn it off.
+- **Forced test mode ends with the start that forced it.** If you start imPress with `--test-mode` (or `test_mode.forced` in the [flags file](launch-flags.md)) and later start it normally, imPress puts the real data back by itself at start-up (the test data is kept under *Pending*, to save, export or delete). Before this, a normal start after a `--test-mode` start kept running on the test copy.
 
 
 ## Forced by root (`--test-mode`)

@@ -54,7 +54,7 @@ The launchers never select the hardened profile and never switch debug or plain 
 | `dual_control.enabled` | bool | `True` | `True` | Destructive or baseline-changing actions (accepting the current database state, clearing data) need a second super admin's approval. |
 | `dual_control.single_operator_ok` | bool | `True` | `False` | Allow the requester to approve their own action when they are the only active super admin. |
 | `dual_control.delay_minutes` | int | `0` | `15` | Minutes between an approval and the earliest moment the action may run. |
-| `dual_control.expiry_minutes` | int | `60` | `30` | Minutes an approval stays usable after its delay has passed. |
+| `dual_control.expiry_minutes` | int | `240` | `30` | Minutes an approval stays usable after its delay has passed. |
 | `system.reset_everything_allowed` | bool | `True` | `False` | Allow the 'reset everything' clear scope in the web app at all. |
 | `audit.sink_path` | str | empty | empty | Hash-chained, append-only audit file outside the database (put it on a WORM or remote-logged volume). |
 | `audit.sink_url` | str | empty | empty | HTTP(S) endpoint that also receives every audit event, signed with an HMAC (off-host copy). |
@@ -77,6 +77,7 @@ The launchers never select the hardened profile and never switch debug or plain 
 | `features.disabled` | str | empty | empty | Comma-separated features switched off by root; administrators cannot switch them on (see the System page for the list). |
 | `root.allow_access` | bool | `True` | `True` | Whether the separate root console may be opened (ssh, docker exec). TrustedInstaller switches it off inside a container: use the console attached to the container instead. |
 | `iips.enabled` | bool | `True` | `True` | imPress Integrity Protection Service: refuse to start when the program's own files changed since the last baseline. |
+| `iips.auto_accept_updates` | bool | `True` | `False` | When the program was updated (a different release or git commit than the one the baseline was made from), its new files become the reference by themselves instead of locking imPress. Files edited by hand under the same release still lock it. Off in the hardened profile: root accepts an update with --rehash. |
 | `traffic.monitor` | bool | `True` | `True` | Watch request rates per endpoint, address and account and alert administrators to unusual traffic. |
 
 "Safer" for an inline override in the hardened profile: `true`/`false` flags can only move to their protective value, numbers only in their protective direction (shorter lifetimes, longer retention; for the `0 = never` expiries any limit is safer than none), `code.verify_manifest` only towards `enforce`, a text flag (audit sink) may be filled in but not replaced, and `audit.purge_days` is *locked*: in the hardened profile only a signed file may change it, because neither direction is simply safer.

@@ -169,7 +169,6 @@ async def enable(user, session, dataset: str | None = None) -> dict:
                                          "forced": user is None,
                                          "snapshot": snap.name, "sha256": sha, "dataset": dataset,
                                          "password": secrets.token_urlsafe(9)})
-        await _refresh_backups()
     events.status({"test_mode": True})
     events.alert("Debug mode is on: imPress is running on test data. Changes are not kept in the real database.",
                  "warning", "all")
@@ -184,6 +183,21 @@ async def ensure_forced() -> None:
     """Start-up with --test-mode: test mode is on, whatever it was, and stays on."""
     if not state()["on"]:
         await enable(None, None, None)
+
+
+async def release_leftover_forced() -> bool:
+    """Start-up WITHOUT --test-mode after a start with it. Forced test mode is root's launch choice, and the state
+    file outlives the process: without this the server kept running on the test copy (the real data set aside) every
+    time it was started normally afterwards. The test data is kept in pending/ for the super admin to save or delete."""
+    tm = integrity.read_state().get("test_mode") or {}
+    if not (tm.get("on") and tm.get("forced")) or gpc.get("test_mode.forced"):
+        return False
+    try:
+        await disable(None, None)
+    except TestModeError as exc:                       # stays on, and says why, rather than stopping the server
+        events.alert(f"Test mode was forced by an earlier start and could not be left: {exc.message}", "error")
+        return False
+    return True
 
 
 async def disable(user, session) -> dict:
@@ -202,7 +216,8 @@ async def disable(user, session) -> dict:
         pending = _root() / "pending" / f"test-{istnow():%Y%m%d-%H%M%S}.db"
         await integrity.copy_live_to(pending)
         await integrity.restore_from(snap)
-        await _carry_session(pending, getattr(session, "token_hash", None), user.id)
+        if user is not None:
+            await _carry_session(pending, getattr(session, "token_hash", None), user.id)
         if not (await integrity.verify_now()).ok:
             raise TestModeError("RESTORE_FAILED", "The real database was restored but does not verify; "
                                 "it is Degraded. See the integrity panel.", 500)

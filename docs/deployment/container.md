@@ -147,6 +147,7 @@ Settings are `IMPRESS_*` environment variables, passed with `-e` or an env file 
 | `IMPRESS_DEVICE_API_KEY` | keep the provisioning key your devices are already flashed with |
 | `IMPRESS_DEVICE_KEYS_REQUIRED=true` | after every device has its own key: refuse the shared key except for registration |
 | `IMPRESS_FIRMWARE_SIGNING_KEY` | require signed firmware ([OTA → signing](../guides/ota-updates.md#signing-images)); mount the public key and give its path |
+| `IMPRESS_FLAGS_FILE` | where the [flags file](../guides/launch-flags.md) lives; the image sets `/data/impress.flags.json`, so it is written on the first start and kept in the volume. Edit it, then restart the container |
 | `IMPRESS_SESSION_IDLE_MINUTES`, `IMPRESS_SESSION_HARD_MINUTES` | change how long logins last |
 | `IMPRESS_REQUIRE_HTTPS` | `false` only for an isolated lab: allows logins over plain HTTP (#152) |
 | `IMPRESS_FORWARDED_ALLOW_IPS` | addresses of the reverse proxy whose `X-Forwarded-Proto` is trusted (default `127.0.0.1`) |

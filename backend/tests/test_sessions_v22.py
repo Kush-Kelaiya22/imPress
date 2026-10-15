@@ -23,24 +23,24 @@ def _age_sessions(db, minutes, user="impress.default.superAdmin"):
     db(go)
 
 
-def test_idle_five_minutes_signs_out(client, db):
+def test_idle_fifteen_minutes_signs_out(client, db):
     tok = login(client)
-    _age_sessions(db, 4)
+    _age_sessions(db, 14)
     assert client.get("/api/auth/me", headers=auth(tok)).status_code == 200
-    _age_sessions(db, 6)
+    _age_sessions(db, 16)
     assert client.get("/api/auth/me", headers=auth(tok)).status_code == 401
 
 
-def test_faculty_get_thirty_minutes_during_their_class(client, db):
+def test_faculty_get_an_hour_during_their_class(client, db):
     su = auth(login(client))
     _, th = make_user(client, su, "prof1")
     cid = make_class(client, su, teacher_ids=[_uid(client, su, "prof1")])
     assert client.post(f"/api/classes/{cid}/activate", headers=su).status_code == 200
     from app.auth import _class_time_cache
     _class_time_cache.clear()
-    _age_sessions(db, 20, "prof1")
-    assert client.get("/api/auth/me", headers=th).status_code == 200      # in class: 30 minutes
-    _age_sessions(db, 31, "prof1")
+    _age_sessions(db, 50, "prof1")
+    assert client.get("/api/auth/me", headers=th).status_code == 200      # in class: 60 minutes
+    _age_sessions(db, 61, "prof1")
     assert client.get("/api/auth/me", headers=th).status_code == 401
 
 
@@ -57,16 +57,16 @@ def test_a_timetable_slot_counts_as_class_time(client, db):
                meeting_schedule=[{"day": WEEKDAYS[now.weekday()], "start": start, "end": end}])
     from app.auth import _class_time_cache
     _class_time_cache.clear()
-    _age_sessions(db, 20, "prof2")
+    _age_sessions(db, 50, "prof2")
     assert client.get("/api/auth/me", headers=th).status_code == 200
 
 
-def test_a_teacher_outside_class_has_five_minutes(client, db):
+def test_a_teacher_outside_class_has_fifteen_minutes(client, db):
     su = auth(login(client))
     _, th = make_user(client, su, "prof3")
     from app.auth import _class_time_cache
     _class_time_cache.clear()
-    _age_sessions(db, 6, "prof3")
+    _age_sessions(db, 16, "prof3")
     assert client.get("/api/auth/me", headers=th).status_code == 401
 
 
@@ -108,7 +108,7 @@ def test_after_sign_out_or_timeout_another_device_may_sign_in(client, db):
     client.post("/api/auth/logout", headers=auth(tok))
     r = client.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "admin123"}, headers=OTHER_DEVICE)
     assert r.status_code == 200
-    _age_sessions(db, 6)
+    _age_sessions(db, 16)
     assert client.post("/api/auth/login", json={"username": "impress.default.superAdmin", "password": "admin123"}).status_code == 200
 
 

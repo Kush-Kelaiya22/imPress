@@ -60,7 +60,7 @@ FLAGS: dict[str, Flag] = {f.name: f for f in [
          "Allow the requester to approve their own action when they are the only active super admin."),
     Flag("dual_control.delay_minutes", "int", 0, 15, "higher",
          "Minutes between an approval and the earliest moment the action may run."),
-    Flag("dual_control.expiry_minutes", "int", 60, 30, "lower",
+    Flag("dual_control.expiry_minutes", "int", 240, 30, "lower",
          "Minutes an approval stays usable after its delay has passed."),
     Flag("system.reset_everything_allowed", "bool", True, False, "false",
          "Allow the 'reset everything' clear scope in the web app at all."),
@@ -89,6 +89,10 @@ FLAGS: dict[str, Flag] = {f.name: f for f in [
          "use the console attached to the container instead."),
     Flag("iips.enabled", "bool", True, True, "true",
          "imPress Integrity Protection Service: refuse to start when the program's own files changed since the last baseline."),
+    Flag("iips.auto_accept_updates", "bool", True, False, "false",
+         "When the program was updated (a different release or git commit than the one the baseline was made from), its "
+         "new files become the reference by themselves instead of locking imPress. Files edited by hand under the same "
+         "release still lock it. Off in the hardened profile: root accepts an update with --rehash."),
     Flag("traffic.monitor", "bool", True, True, "true",
          "Watch request rates per endpoint, address and account and alert administrators to unusual traffic."),
     Flag("deadlock_prevention.enabled", "bool", True, True, "true",

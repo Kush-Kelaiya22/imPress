@@ -93,8 +93,14 @@ MENU = (
     ("Classrooms", "classes list"), ("Students", "students list"), ("Courses", "courses list"),
     ("Devices", "devices list"), ("Firmware", "firmware list"), ("Deployments", "firmware deployments"),
     ("Quizzes", "quizzes list"), ("Polls", "polls list"), ("Feature switches", "features"),
-    ("Backups", "backup list"), ("Command help", "help"), ("Clear logs", "clear"), ("Stop server", "exit"),
+    ("Backups", "backup list"), ("Command help", "help"), ("Clear logs", "clear"), ("Restart server", "restart"),
+    ("Stop server", "exit"),
 )
+# Commands the screen handles itself, besides the console's own (see Screen.complete).
+SCREEN_COMMANDS = ("clear", "scroll", "restart", "exit", "quit", "stop")
+HINT = ("Tab: switch pane | Shift+Up/Down, PgUp/PgDn: scroll logs | Ctrl+Home/End: oldest/live | "
+        "Enter: run | Ctrl+L: redraw")
+SHORT_HINT = "Tab: pane | Shift+Up/Down: scroll | Enter: run"
 
 
 def plain(text: str) -> str:
@@ -136,6 +142,7 @@ class Screen:
         self.history: list[str] = []
         self.history_index, self.draft = 0, ""
         self.busy, self.quit, self.pending = False, False, 0
+        self.commands: list[str] = list(SCREEN_COMMANDS)      # the names Tab completes (run() adds the console's)
         self.notice = "Choose an action, or type a command."
         self._measure()
         self.dirty.set()
@@ -145,7 +152,7 @@ class Screen:
         self.rows, self.cols = max(1, size.lines), max(1, size.columns)
         self.header = 2 if self.rows >= 12 else 1
         self.left = min(25, max(8, self.cols // 3)) if self.cols >= 24 else 0
-        self.log_width = max(1, self.cols - self.left - (3 if self.left else 0))
+        self.log_width = max(1, self.cols - self.left - (3 if self.left else 0) - 1)    # the last column is the scrollbar
         self.top = self.header + 2
         self.bottom = max(self.top, self.rows - 3)
         self.page = max(1, self.bottom - self.top + 1)
@@ -167,7 +174,9 @@ class Screen:
             if self.rows < 6 or self.cols < 24:
                 return ([c(ACCENT, "imPress root"), "Resize terminal: 24 columns, 6 rows minimum."] +
                         [""] * self.rows)[:max(0, self.rows - 1)] + ["> " + self.buffer]
-            log_title = "LOGS (scrollback)" if self.scrollback else "LOGS (live)"
+            logs = self._wrapped_logs()
+            self.scrollback = min(self.scrollback, max(0, len(logs) - self.page))
+            log_title = f"LOGS (scrollback: {self.scrollback} lines above live)" if self.scrollback else "LOGS (live)"
             if self.busy:
                 log_title += " | running command"
                 if self.pending > 1:
@@ -177,11 +186,10 @@ class Screen:
                 lines.append(self.title[1] if len(self.title) > 1 else "")
             lines.append(pad(c(ACCENT if self.focus == "menu" else DIM, "ACTIONS"), self.left) + " | " +
                          c(ACCENT if self.focus == "logs" else DIM, log_title))
-            logs = self._wrapped_logs()
-            self.scrollback = min(self.scrollback, max(0, len(logs) - self.page))
             end = len(logs) - self.scrollback
             visible = logs[max(0, end - self.page):end]
             start = max(0, min(self.selected - self.page + 1, len(MENU) - self.page))
+            thumb = self._thumb(len(logs), end)
             for i in range(self.page):
                 idx = start + i
                 label = ("> " if idx == self.selected else "  ") + MENU[idx][0] if idx < len(MENU) else ""
@@ -190,13 +198,21 @@ class Screen:
                 log = visible[i] if i < len(visible) else ""
                 if not logs and i == 0:
                     log = c(DIM, "Waiting for server output...")
-                lines.append(pad(label, self.left) + c(DIM, " | ") + log)
+                bar = c(ACCENT if self.focus == "logs" else DIM, "█" if i in thumb else "│") if len(logs) > self.page else " "
+                lines.append(pad(label, self.left) + c(DIM, " | ") + pad(log, self.log_width) + bar)
             lines.append(c(DIM, "─" * self.cols))
             prompt, self.input_col = self._input_line()
             lines.append(prompt)
-            hint = "Tab: focus | arrows: move | Enter: select/run | PgUp/PgDn: logs | Ctrl+L: redraw"
-            lines.append(c(DIM, self.notice if self.busy else hint))
+            lines.append(c(DIM, self.notice if self.busy else (HINT if self.cols >= len(HINT) else SHORT_HINT)))
             return lines[:self.rows]
+
+    def _thumb(self, total: int, end: int) -> range:
+        """The rows of the scrollbar that show where the visible logs are."""
+        if total <= self.page:
+            return range(0)
+        size = max(1, self.page * self.page // total)
+        top = (end - self.page) * (self.page - size) // max(1, total - self.page)
+        return range(top, top + size)
 
     def _input_line(self) -> tuple[str, int]:
         prefix = "root> " if self.cols >= 40 else "> "
@@ -208,7 +224,11 @@ class Screen:
             offset += 1
         text = self.buffer[offset:]
         col = len(prefix) + sum(_cell_width(ch) for ch in before[offset:]) + 1
-        return c(ACCENT if self.focus == "command" else DIM, prefix) + text, min(self.cols, col)
+        bar = "48;5;236;38;5;255" if self.focus == "command" else "48;5;235;38;5;250"       # a filled bar: always visible
+        hint = "type a command (help lists them), Tab completes"
+        body = c(bar, text) if text else c("2;" + bar, hint[:max(0, self.cols - len(prefix))])
+        used = len(prefix) + (sum(_cell_width(ch) for ch in text) if text else min(len(hint), max(0, self.cols - len(prefix))))
+        return c(bar + ";1", prefix) + body + c(bar, " " * max(0, self.cols - used)), min(self.cols, col)
 
     def draw(self, clear: bool = False) -> None:
         with self.lock:
@@ -294,10 +314,32 @@ class Screen:
                 self.history.append(command)
                 self.history = self.history[-100:]
         self.history_index = len(self.history)
-        self.log(c(ORANGE, "> ") + (command.split()[0] + " [private arguments]" if sensitive else command))
         self.pending += 1
         self.busy, self.notice = True, "Commands run in order; logs continue to update."
         return command
+
+    def echo(self, command: str) -> None:
+        """Show a command in the log as it starts to run (not when it is queued), without credentials."""
+        sensitive = bool(re.search(r"password|secret|token|authorization", command, re.I))
+        self.log(c(ORANGE, "> ") + (command.split()[0] + " [private arguments]" if sensitive else command))
+
+    def complete(self) -> None:
+        """Tab in the command box: finish the command's first word, or list the choices."""
+        head = self.buffer[:self.cursor]
+        if " " in head.lstrip() or not head.strip():
+            return
+        word = head.strip()
+        names = sorted(n for n in set(self.commands) if n.startswith(word))
+        if not names:
+            self.notice = f"No command starts with {word!r}."
+        elif len(names) == 1:
+            self.buffer = names[0] + " " + self.buffer[self.cursor:].lstrip()
+            self.cursor = len(names[0]) + 1
+        else:
+            common = os.path.commonprefix(names)
+            if len(common) > len(word):
+                self.buffer, self.cursor = common + self.buffer[self.cursor:], len(common)
+            self.log(c(DIM, "  ".join(names)))
 
     def key(self, key: str) -> str | None:
         with self.lock:
@@ -306,11 +348,17 @@ class Screen:
                 self.quit = True
             elif key == "ESCAPE":
                 self.focus = "menu"
+            elif key == "TAB" and self.focus == "command" and self.buffer.strip():
+                self.complete()
             elif key in {"TAB", "BACKTAB"}:
                 panes = ["menu", "logs", "command"]
                 self.focus = panes[(panes.index(self.focus) + (-1 if key == "BACKTAB" else 1)) % 3]
             elif key in {"PAGEUP", "PAGEDOWN"}:
                 self.scroll("up" if key == "PAGEUP" else "down", self.page)
+            elif key in {"SCROLL_UP", "SCROLL_DOWN"}:          # whichever pane has the focus
+                self.scroll("up" if key == "SCROLL_UP" else "down", 3)
+            elif key in {"LOG_TOP", "LOG_LIVE"}:
+                self.scroll("top" if key == "LOG_TOP" else "live")
             elif key == "REDRAW":
                 pass                         # next full frame erases stale terminal content
             elif key.startswith(("TEXT:", "PASTE:")):
@@ -370,87 +418,202 @@ class Screen:
         return None
 
 
-def _title(version: str, state: str, args: list[str], url: str) -> list[str]:
+def _title(version: str, state: str, flags: list[str], profile: str, url: str, problem: str = "") -> list[str]:
     dot = {"running": c(GREEN, "● running"), "starting": c(YELLOW, "● starting"), "stopped": c(RED, "● stopped")}[state]
     tags = []
-    if "--test-mode" in args:
+    if "test_mode.forced=true" in flags:
         tags.append(c(YELLOW, "TEST MODE (forced)"))
-    if "--bypass-iips" in args:
+    if "iips.enabled=false" in flags:
         tags.append(c(RED + ";1", "INTEGRITY PROTECTION OFF"))
-    if "--no-ota" in args:
+    if "ota.enabled=false" in flags:
         tags.append(c(DIM, "OTA off"))
-    profile = (args[args.index("--profile") + 1] if "--profile" in args else os.environ.get("IMPRESS_PROFILE", "standard"))
+    if problem:
+        tags.append(c(RED + ";1", problem))
     return [c(BOLD + ";" + ACCENT, f"imPress {version}") + "  |  " + dot + "  |  " + c(DIM, url),
             c(DIM, f"root console · {profile} profile · type help for commands") + ("  " + "  ".join(tags) if tags else "")]
 
 
+class ConsoleProcess:
+    """One long-lived `app.console --serve`: a command costs milliseconds instead of a Python start-up each, and the
+    database engine is opened once. It restarts by itself if it dies or hangs, and with every server restart (the
+    policy is read again)."""
+
+    END = "\x1e"                                  # the console prints this and OK/FAIL after every command
+
+    def __init__(self):
+        self.proc: subprocess.Popen | None = None
+        self.lines: queue.Queue = queue.Queue()
+        self.width = 0
+
+    def _start(self, env: dict) -> None:
+        self.proc = subprocess.Popen([sys.executable, "-m", "app.console", "--serve"], stdin=subprocess.PIPE,
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=env)
+        self.lines = q = queue.Queue()
+
+        def read(proc=self.proc):
+            for line in proc.stdout:
+                q.put(line.rstrip("\n"))
+            q.put(None)
+        threading.Thread(target=read, daemon=True).start()
+
+    def stop(self) -> None:
+        proc, self.proc = self.proc, None
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+
+    def run(self, command: str, emit, env: dict, width: int, timeout: float = 600) -> bool:
+        if self.proc is not None and (self.proc.poll() is not None or width != self.width):
+            self.stop()
+        if self.proc is None:
+            self.width = width
+            self._start({**env, "IMPRESS_CONSOLE_COLUMNS": str(width)})
+        try:
+            self.proc.stdin.write(command + "\n")
+            self.proc.stdin.flush()
+        except (BrokenPipeError, OSError):
+            self.stop()
+            emit(c(RED, "The console had stopped; it will start again. Run the command once more."))
+            return False
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                line = self.lines.get(timeout=max(0.1, deadline - time.monotonic()))
+            except queue.Empty:
+                self.stop()
+                emit(c(RED, f"The command did not finish in {int(timeout)} s and was stopped."))
+                return False
+            if line is None:
+                self.proc = None
+                emit(c(RED, "The console ended unexpectedly; it starts again with the next command."))
+                return False
+            if line.startswith(self.END):
+                return line[1:] == "OK"
+            emit(line)
+
+
 def run(argv: list[str]) -> int:
+    from . import flagsfile, serve
     from .config import APP_RELEASE
+    from .console import Console
     from .terminal import Terminal
     host = argv[argv.index("--host") + 1] if "--host" in argv else "0.0.0.0"
     port = argv[argv.index("--port") + 1] if "--port" in argv else "8000"
     scheme = "https" if os.environ.get("IMPRESS_SSL_CERTFILE") else "http"
     url = f"{scheme}://{host}:{port}"
-    screen = Screen(_title(APP_RELEASE, "starting", argv, url))
     env = {**os.environ, "PYTHONUNBUFFERED": "1", "IMPRESS_ROOT_SCREEN": "1", "NO_COLOR": "1"}
+    launch: dict = {"flags": [], "profile": "standard", "problem": ""}
+
+    def read_launch() -> dict:
+        """The flags this start uses (the file is read again every time, so an edit applies on `restart`)."""
+        try:
+            profile, flags = serve.effective(argv)
+            launch.update(flags=flags, profile=profile or os.environ.get("IMPRESS_PROFILE", "standard"), problem="")
+        except flagsfile.FlagsFileError as exc:
+            launch.update(problem="FLAGS FILE ERROR", error=str(exc))
+        return launch
+
+    def title(state: str) -> list[str]:
+        return _title(APP_RELEASE, state, launch["flags"], launch["profile"], url, launch["problem"])
+
+    read_launch()
+    screen = Screen(title("starting"))
+    screen.commands = sorted({*SCREEN_COMMANDS, *(n[3:] for n in dir(Console) if n.startswith("do_") and n not in ("do_EOF", "do_quit"))})
     ready = threading.Event()
     stopping = threading.Event()
     commands: queue.Queue[str | None] = queue.Queue()
-    active: list[subprocess.Popen] = []
-    active_lock = threading.Lock()
-    child = None
+    server: dict = {"child": None}
+    console = ConsoleProcess()
 
-    def pump() -> None:
+    def console_env() -> dict:
+        """Console commands carry the same root-owned launch policy as the server."""
+        out = dict(env)
+        if launch["flags"]:
+            out["IMPRESS_GPC"] = ",".join(launch["flags"])
+        if launch["profile"]:
+            out["IMPRESS_PROFILE"] = launch["profile"]
+        return out
+
+    def pump(child: subprocess.Popen) -> None:
         assert child.stdout is not None
         for line in child.stdout:
             line = line.rstrip("\n")
             if line.strip():
                 screen.log(style_line(line))
-            if "Application startup complete" in line:
+            if "Application startup complete" in line and server["child"] is child:
                 ready.set()
-                screen.set_title(_title(APP_RELEASE, "running", argv, url))
-        screen.set_title(_title(APP_RELEASE, "stopped", argv, url))
-        screen.log(c(RED, f"the server stopped (exit code {child.wait()})"))
+                screen.set_title(title("running"))
+        code = child.wait()
+        if server["child"] is child:
+            ready.clear()
+            screen.set_title(title("stopped"))
+            screen.log(c(RED, f"the server stopped (exit code {code})"))
+            hint = {3: "imPress is locked because its files changed. Type  restart --rehash  to accept the files as they are "
+                       "now, or restore them and type  restart.",
+                    2: "The start was refused: read the message above (a flag, the flags file or the policy), fix it and type  restart."
+                    }.get(code, "Type  restart  to start it again. Commands still work while it is stopped.")
+            screen.log(c(YELLOW, hint))
+
+    def start_server(extra: tuple[str, ...] = ()) -> None:
+        read_launch()
+        ready.clear()
+        screen.set_title(title("starting"))
+        child = subprocess.Popen([sys.executable, "-m", "app.serve", "--plain", *argv, *extra], stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env, bufsize=1)
+        server["child"] = child
+        threading.Thread(target=pump, args=(child,), daemon=True).start()
+
+    def stop_server() -> None:
+        child, server["child"] = server["child"], None          # the pump of a child we stopped says nothing of it
+        if child is not None and child.poll() is None:
+            child.terminate()
+            try:
+                child.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait()
+
+    def server_alive() -> bool:
+        return server["child"] is not None and server["child"].poll() is None
 
     def command_worker() -> None:
         while not stopping.is_set():
             command = commands.get()
             if command is None:
                 break
-            while not ready.wait(0.1) and child.poll() is None and not stopping.is_set():
-                pass
-            if stopping.is_set():
-                break
             try:
-                # Isolate every print, warning and event-loop lifetime from the
-                # drawing thread. Send commands over stdin, never process args.
-                proc = subprocess.Popen([sys.executable, "-m", "app.console"],
-                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                        text=True, env={**env, "IMPRESS_CONSOLE_COLUMNS": str(screen.log_width)}, bufsize=1)
-                with active_lock:
-                    active.append(proc)
-                try:
-                    proc.stdin.write(command + "\n")
-                    proc.stdin.close()
-                    for line in proc.stdout:
-                        screen.log(line.rstrip("\n"))
-                    screen.finish(proc.wait() == 0)
-                finally:
-                    if proc.poll() is None:
-                        proc.terminate()
-                        proc.wait(timeout=15)
-                    with active_lock:
-                        active.remove(proc)
-            except Exception as exc:                       # one failed command must not end the dashboard
+                if command.split()[0] == "restart":
+                    screen.echo(command)
+                    screen.log(c(DIM, "stopping the server and starting it again (the flags file is read again) ..."))
+                    stop_server()
+                    console.stop()                                      # it reads the policy again with its next command
+                    start_server(("--rehash",) if "--rehash" in command.split() else ())
+                    ready.wait(90)
+                    screen.finish(ready.is_set())
+                    continue
+                while not ready.wait(0.1) and server_alive() and not stopping.is_set():
+                    pass                                                # commands wait for the server to finish starting
+                if stopping.is_set():
+                    break
+                screen.echo(command)
+                screen.finish(console.run(command, screen.log, console_env(), screen.log_width))
+            except Exception as exc:                                    # one failed command must not end the dashboard
                 screen.log(c(RED, f"Command could not finish ({type(exc).__name__}). Check the server log and retry."))
                 screen.finish(False)
 
     with Terminal() as terminal:
         try:
             screen.draw(clear=True)
-            child = subprocess.Popen([sys.executable, "-m", "app.serve", "--plain", *argv], stdin=subprocess.DEVNULL,
-                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env, bufsize=1)
-            threading.Thread(target=pump, daemon=True).start()
+            if launch["problem"]:
+                screen.log(c(RED, f"error: {flagsfile.path()}: {launch['error']}"))
+                screen.log(c(YELLOW, "Fix the file and type  restart.  (python -m app.flagsfile check  validates it.)"))
+                screen.set_title(title("stopped"))
+            else:
+                start_server()
             worker = threading.Thread(target=command_worker, daemon=True)
             worker.start()
             while not screen.quit:
@@ -466,17 +629,8 @@ def run(argv: list[str]) -> int:
         finally:
             stopping.set()
             commands.put(None)
-            with active_lock:
-                for proc in active:
-                    if proc.poll() is None:
-                        proc.terminate()
-            if child is not None and child.poll() is None:
-                child.terminate()
-                try:
-                    child.wait(timeout=15)
-                except subprocess.TimeoutExpired:
-                    child.kill()
-                    child.wait()
+            console.stop()
+            stop_server()
             if "worker" in locals():
                 worker.join(timeout=3)
     return 0

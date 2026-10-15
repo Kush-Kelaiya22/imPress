@@ -42,3 +42,19 @@ def test_sphinx_copies_the_committed_graph_at_build_time():
     assert "visualization.html" in config and "graph.json" in config
     assert 'output / "graph"' in config
     assert "builder-inited" in config
+
+
+def test_every_documentation_page_is_listed_in_the_index():
+    """A page the index does not list is unreachable on the published site (and -W fails the build)."""
+    listed = set(re.findall(r"^([\w\-./]+)$", (ROOT / "docs" / "index.md").read_text(), re.M))
+    pages = {p.relative_to(ROOT / "docs").with_suffix("").as_posix() for p in (ROOT / "docs").rglob("*.md")}
+    pages = {p for p in pages if " 2" not in p and not p.startswith("_build") and p != "index"}   # " 2": sync-tool duplicates
+    assert pages <= listed, sorted(pages - listed)
+
+
+def test_the_published_site_says_which_release_it_describes():
+    """#209: the site's 'latest' once showed v2.1 for a v2.2 release; the release comes from VERSION and a banner shows it."""
+    conf = (ROOT / "docs" / "conf.py").read_text()
+    assert 'release = "v2.1"' not in conf and "VERSION" in conf and '"github_version": line' in conf
+    layout = (ROOT / "docs" / "_templates" / "layout.html").read_text()
+    assert "impress_release" in layout and "impress-banner" in layout

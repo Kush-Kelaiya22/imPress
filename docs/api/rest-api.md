@@ -44,7 +44,7 @@ Errors: `401` wrong username/password · `403` account disabled · `409 ALREADY_
 
 **One device per account (v2.2).** While the account has a live session from another device (a different client address, or a different browser or operating system), the sign-in is refused with `409 {"code": "ALREADY_SIGNED_IN", "message"}`, written to the activity log as a flagged `auth.second_sign_in_blocked` entry, and administrators get a toast. Signing in again from the **same** device is allowed and creates another session. The other device must sign out, or its session must expire, or an administrator ends it (`POST /api/admin/users/{id}/end-sessions`). `IMPRESS_SINGLE_SESSION=false` turns the rule off.
 
-**Idle limit (v2.2).** `idle_timeout_s` is 300 (5 minutes, `IMPRESS_SESSION_IDLE_MINUTES`). For a teacher or administrator while one of their classes is in session (activated, or inside a timetable slot, as primary teacher or co-faculty) it is 1800 (30 minutes, `IMPRESS_SESSION_CLASS_IDLE_MINUTES`). The session endpoints report the limit that applies now. Requests with `X-Impress-Background: 1` (the web app's live refresh) do not count as activity.
+**Idle limit (v2.2).** `idle_timeout_s` is 900 (15 minutes, `IMPRESS_SESSION_IDLE_MINUTES`). For a teacher or administrator while one of their classes is in session (activated, or inside a timetable slot, as primary teacher or co-faculty) it is 3600 (60 minutes, `IMPRESS_SESSION_CLASS_IDLE_MINUTES`). The session endpoints report the limit that applies now. Requests with `X-Impress-Background: 1` (the web app's live refresh) do not count as activity.
 
 ### `GET /api/auth/me`: session
 Returns `UserResponse`: `{id, username, email, full_name, role, is_active, created_at}`.

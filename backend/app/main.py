@@ -58,6 +58,15 @@ async def lifespan(app: FastAPI):
                                + ("; ".join(code["problems"][:5]) or "MANIFEST.json is missing"))
         if code["problems"]:
             startup_alerts.append("The server's code differs from the signed manifest: " + "; ".join(code["problems"][:5]))
+    if gpc.profile() == "hardened":                  # D16 (#212): copies of the database rely on the volume being encrypted
+        from .services import boot_verify
+        encrypted = boot_verify.volume_encrypted()
+        if encrypted is False:
+            startup_alerts.append("The disk that holds the database does not appear to be encrypted. Copies of the "
+                                  "database (backups, test data, exports) are plain files: encrypt the volume (decision D16).")
+        elif encrypted is None:
+            logger.info("Disk encryption cannot be checked here (container, Windows or network volume): make sure the "
+                        "data volume is encrypted (docs/guides/production-hardening.md)")
     if https_required():
         logger.info("HTTPS required for staff traffic; devices %s (IMPRESS_REQUIRE_HTTPS, #152)",
                     "too" if gpc.device_https_only(settings) else "may use HTTP")
@@ -71,7 +80,8 @@ async def lifespan(app: FastAPI):
         logger.warning("DEBUG mode with default secrets %s — never deploy like this",
                        insecure_settings(settings))
     from .services import iips
-    verdict = iips.check(enabled=bool(gpc.get("iips.enabled")), rehash=bool(int(os.environ.get("IMPRESS_REHASH", "0"))))
+    verdict = iips.check(enabled=bool(gpc.get("iips.enabled")), rehash=bool(int(os.environ.get("IMPRESS_REHASH", "0"))),
+                         auto_accept=bool(gpc.get("iips.auto_accept_updates")))
     if iips.locked():
         logger.error(iips.violation_message())
     elif verdict["status"] == "bypassed":
@@ -112,6 +122,12 @@ async def lifespan(app: FastAPI):
     # Quiz timing (#73): advances per-question quizzes, ends total-timed ones.
     from .services.quiz_timer import quiz_timer_loop
     quiz_timer_task = asyncio.create_task(quiz_timer_loop())
+
+    if not gpc.get("test_mode.forced"):            # started normally after a --test-mode start: back to the real data
+        from .services import test_mode as _tm
+        if await _tm.release_leftover_forced():
+            logger.warning("Test mode from an earlier --test-mode start was ended: the real database is back. "
+                           "The test data was kept (System > Debug mode) to save or delete.")
 
     # The default super admin (v2.2): created if missing, with this start's password (printed once, here).
     from .services import bootstrap

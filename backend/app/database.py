@@ -16,10 +16,15 @@ async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit
 
 @event.listens_for(engine.sync_engine, "connect")
 def _sqlite_pragmas(dbapi_conn, _record):
-    """SQLite ignores foreign keys unless asked, per connection."""
+    """SQLite ignores foreign keys unless asked, per connection. A database file runs in WAL mode: readers (the
+    integrity check, the root console, backups) see one consistent snapshot and never block the writers."""
     if engine.dialect.name == "sqlite":
         cur = dbapi_conn.cursor()
         cur.execute("PRAGMA foreign_keys=ON")
+        cur.execute("PRAGMA busy_timeout=15000")
+        if ":memory:" not in settings.DATABASE_URL:
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA synchronous=NORMAL")
         cur.close()
 
 
